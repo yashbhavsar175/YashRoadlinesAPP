@@ -23,7 +23,7 @@ import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 
 // Safe area helper for status bar
-const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 24;
 
 type AdminNotificationScreenNavigationProp = NavigationProp<RootStackParamList, 'AdminNotifications'>;
 
@@ -40,7 +40,7 @@ interface FilterOption {
 
 const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): React.JSX.Element => {
   const { goBack } = navigation;
-
+  
   // State
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [filteredNotifications, setFilteredNotifications] = useState<AdminNotification[]>([]);
@@ -49,30 +49,17 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
   const [selectedFilter, setSelectedFilter] = useState<FilterOption['value']>('all');
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Filter options
+  // Filter options - using outline icons
   const filterOptions: FilterOption[] = [
-    { label: 'All', value: 'all', icon: 'list', color: '#2196F3' },
-    { label: 'Unread', value: 'unread', icon: 'radio-button-off', color: '#F44336' },
-    { label: 'Read', value: 'read', icon: 'checkmark-circle', color: '#4CAF50' },
-    { label: 'Added', value: 'add', icon: 'add-circle', color: '#4CAF50' },
-    { label: 'Updated', value: 'edit', icon: 'create', color: '#FF9800' },
+    { label: 'All', value: 'all', icon: 'list-outline', color: '#2196F3' },
+    { label: 'Unread', value: 'unread', icon: 'radio-button-off-outline', color: '#F44336' },
+    { label: 'Read', value: 'read', icon: 'checkmark-circle-outline', color: '#4CAF50' },
   ];
 
   useFocusEffect(
     useCallback(() => {
       loadNotifications();
-      
-      // Set up real-time subscription for auto-refresh
-      const subscription = NotificationService.subscribeToNotifications((notification) => {
-        console.log('🔔 AdminNotificationScreen: New notification received, refreshing...');
-        loadNotifications(false); // Refresh without loading indicator
-      });
-      
-      return () => {
-        if (subscription && typeof subscription.unsubscribe === 'function') {
-          subscription.unsubscribe();
-        }
-      };
+      return () => {};
     }, [])
   );
 
@@ -81,7 +68,7 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
     try {
       const data = await NotificationService.getNotifications(100, 0);
       setNotifications(data);
-      setUnreadCount(data.filter(n => !n.is_read).length);
+      setUnreadCount(data.filter(n => !n.is_read && !(n as any).deleted).length);
       applyFilter(data, selectedFilter);
     } catch (error) {
       console.error('❌ Error loading notifications:', error);
@@ -97,23 +84,15 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
 
     switch (filter) {
       case 'unread':
-        filtered = filtered.filter(n => !n.is_read);
+        filtered = filtered.filter(n => !n.is_read && !(n as any).deleted);
         break;
       case 'read':
-        filtered = filtered.filter(n => n.is_read);
-        break;
-      case 'add':
-        filtered = filtered.filter(n => n.type === 'add');
-        break;
-      case 'edit':
-        filtered = filtered.filter(n => n.type === 'edit');
-        break;
-      case 'delete':
-        filtered = filtered.filter(n => n.type === 'delete');
+        filtered = filtered.filter(n => n.is_read && !(n as any).deleted);
         break;
       case 'all':
       default:
-        // Show all notifications
+        // Show only non-deleted notifications by default
+        filtered = filtered.filter(n => !(n as any).deleted);
         break;
     }
 
@@ -144,7 +123,7 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
       const success = await NotificationService.markAsRead(notificationId);
       if (success) {
         // Update local state
-        const updatedNotifications = notifications.map(n =>
+        const updatedNotifications = notifications.map(n => 
           n.id === notificationId ? { ...n, is_read: true } : n
         );
         setNotifications(updatedNotifications);
@@ -161,18 +140,11 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
     try {
       const success = await NotificationService.deleteNotification(notificationId);
       if (success) {
-        // Remove notification from local state completely
+        // Remove notification from local state (since we're using hard delete now)
         const updatedNotifications = notifications.filter(n => n.id !== notificationId);
         setNotifications(updatedNotifications);
-        
-        // Update unread count if deleting an unread notification
-        const deletedNotification = notifications.find(n => n.id === notificationId);
-        if (deletedNotification && !deletedNotification.is_read) {
-          setUnreadCount(prev => prev - 1);
-        }
-        
         applyFilter(updatedNotifications, selectedFilter);
-
+        
         // Show success message
         Alert.alert('Success', 'Notification deleted successfully');
       }
@@ -239,14 +211,12 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
   );
 
   const renderNotification = ({ item, index }: { item: AdminNotification; index: number }) => (
-    <View style={index === 0 ? styles.firstNotification : null}>
-      <NotificationCard
-        notification={item}
-        onPress={handleNotificationPress}
-        onMarkAsRead={handleMarkAsRead}
-        onDelete={handleDelete}
-      />
-    </View>
+    <NotificationCard
+      notification={item}
+      onPress={handleNotificationPress}
+      onMarkAsRead={handleMarkAsRead}
+      onDelete={handleDelete}
+    />
   );
 
   const renderEmptyState = () => (
@@ -254,7 +224,7 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
       <Icon name="notifications-off" size={64} color="#CCC" />
       <Text style={styles.emptyTitle}>No notifications</Text>
       <Text style={styles.emptyMessage}>
-        {selectedFilter === 'all'
+        {selectedFilter === 'all' 
           ? 'You don\'t have any notifications yet.'
           : `No ${selectedFilter} notifications found.`}
       </Text>
@@ -283,7 +253,7 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={false} />
-
+      
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
@@ -299,33 +269,29 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
 
       {/* Stats */}
       <View style={styles.statsContainer}>
-        <View style={styles.stat}>
-          <Text style={styles.statNumber}>{notifications.length}</Text>
-          <Text style={styles.statLabel}>Total</Text>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{notifications.filter(n => !(n as any).deleted).length}</Text>
+          <Text style={styles.statLabel}>Active</Text>
         </View>
-        <View style={styles.stat}>
-          <Text style={[styles.statNumber, { color: '#F44336' }]}>{unreadCount}</Text>
+        <View style={styles.statItem}>
+          <Text style={[styles.statValue, { color: '#F44336' }]}>{unreadCount}</Text>
           <Text style={styles.statLabel}>Unread</Text>
         </View>
-        <View style={styles.stat}>
-          <Text style={[styles.statNumber, { color: '#4CAF50' }]}>{notifications.filter(n => n.is_read).length}</Text>
+        <View style={styles.statItem}>
+          <Text style={[styles.statValue, { color: '#4CAF50' }]}>{notifications.filter(n => n.is_read && !(n as any).deleted).length}</Text>
           <Text style={styles.statLabel}>Read</Text>
         </View>
       </View>
 
       {/* Filters */}
-      <View style={styles.filtersWrapper}>
-        <FlatList
-          horizontal
-          data={filterOptions}
-          renderItem={renderFilterButton}
-          keyExtractor={(item) => item.value}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filtersContainer}
-        />
-      </View>
-
-
+      <FlatList
+        horizontal
+        data={filterOptions}
+        renderItem={renderFilterButton}
+        keyExtractor={(item) => item.value}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterContainer}
+      />
 
       {/* Notifications List */}
       <FlatList
@@ -338,7 +304,6 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
         ListEmptyComponent={renderEmptyState}
         contentContainerStyle={notifications.length === 0 ? styles.emptyContainer : styles.listContainer}
         showsVerticalScrollIndicator={false}
-        style={styles.flatListStyle}
       />
     </View>
   );
@@ -372,7 +337,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
-    paddingTop: STATUSBAR_HEIGHT + 12,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -405,32 +369,29 @@ const styles = StyleSheet.create({
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingVertical: 2,
-    backgroundColor: '#F8F9FA',
+    padding: 15,
+    backgroundColor: Colors.surface, // Use surface color from theme
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: Colors.border,
+    marginBottom: 8,
   },
-  stat: {
+  statItem: { // Renamed from 'stat' to 'statItem'
     alignItems: 'center',
-    paddingVertical: 0,
   },
-  statNumber: {
+  statValue: { // Renamed from 'statNumber' to 'statValue'
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: Colors.textPrimary,
   },
   statLabel: {
-    fontSize: 11,
-    color: '#666',
-    marginTop: 2,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: 4,
   },
-  filtersWrapper: {
-    backgroundColor: '#FFFFFF',
-    marginBottom: -4,
-  },
-  filtersContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 2,
+  filterContainer: { // Renamed from 'filtersContainer' to 'filterContainer'
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
   },
   filterButton: {
     flexDirection: 'row',
@@ -469,8 +430,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   listContainer: {
-    paddingTop: 12,
-    paddingBottom: 4,
+    paddingVertical: 8,
   },
   emptyContainer: {
     flex: 1,
@@ -494,14 +454,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
-  flatListStyle: {
-    flex: 1,
-    marginTop: 0,
-  },
-  firstNotification: {
-    marginTop: -2,
-  },
-
 });
 
 export default AdminNotificationScreen;

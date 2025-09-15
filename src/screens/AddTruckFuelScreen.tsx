@@ -10,7 +10,7 @@ import Dropdown from '../components/Dropdown';
 import { saveTruckFuel, getTruckFuelEntries, TruckFuelEntry, deleteTransactionByIdImproved, syncAllDataFixed } from '../data/Storage';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
-import ActivityNotificationService from '../services/ActivityNotificationService';
+import NotificationService from '../services/NotificationService';
 
 interface DriverFuelEntry {
   id: string;
@@ -118,13 +118,8 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
     try {
       const success = await saveTruckFuel(newEntry);
       if (success) {
-        // Send push notification to admin
-        await ActivityNotificationService.notifyFuelEntry(
-          'add',
-          numAmount,
-          driverName.trim(),
-          `${fuelType} - ${estimatedQuantity.toFixed(1)}L`
-        );
+        // Send notification to admin
+        await NotificationService.notifyAdd('fuel_entry', `New fuel entry: ₹${numAmount} ${fuelType} for ${driverName.trim()}`);
         
         showAlert('Fuel entry saved successfully!');
         setDriverName('');
@@ -156,14 +151,9 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
             try {
               const success = await deleteTransactionByIdImproved(id, 'offline_truck_fuel');
               if (success) {
-                // Send delete notification to admin
+                // Send notification to admin
                 if (entryToDelete) {
-                  await ActivityNotificationService.notifyFuelEntry(
-                    'delete',
-                    entryToDelete.amount,
-                    entryToDelete.driverName,
-                    `Deleted ${entryToDelete.fuelType} entry`
-                  );
+                  await NotificationService.notifyDelete('fuel_entry', `Deleted fuel entry: ₹${entryToDelete.amount} ${entryToDelete.fuelType} for ${entryToDelete.driverName}`);
                 }
                 
                 Alert.alert('Success ✅', 'Entry deleted successfully!', [

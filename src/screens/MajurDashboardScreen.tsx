@@ -13,6 +13,7 @@ import {
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { getAgencyMajuri, AgencyMajuri } from '../data/Storage';
+import { supabase } from '../supabase';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -38,10 +39,19 @@ interface DatewiseSummary {
   isYesterday: boolean;
 }
 
+interface PaymentData {
+  majur_id: string;
+  majur_name: string;
+  received_amount: number;
+  payment_count: number;
+  last_payment_date: string | null;
+}
+
 function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.JSX.Element {
   const { goBack } = navigation;
   const [majuriData, setMajuriData] = useState<MajuriWithAgency[]>([]);
   const [datewiseSummary, setDatewiseSummary] = useState<DatewiseSummary[]>([]);
+  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -67,6 +77,35 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
       year: 'numeric',
     });
   };
+
+  const loadPaymentData = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('❌ [MajurDashboard] No authenticated user found');
+        return;
+      }
+
+      // Fetch current month payment totals for this majur
+      const { data: paymentData, error } = await supabase
+        .from('current_month_majur_totals')
+        .select('*')
+        .eq('majur_id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('❌ [MajurDashboard] Error fetching payment data:', error);
+      } else if (paymentData) {
+        console.log('💰 [MajurDashboard] Payment data loaded:', paymentData);
+        setPaymentData(paymentData);
+      } else {
+        console.log('💰 [MajurDashboard] No payment data found for current month');
+        setPaymentData(null);
+      }
+    } catch (error) {
+      console.error('❌ [MajurDashboard] Error in loadPaymentData:', error);
+    }
+  }, []);
 
   const loadMajuriData = useCallback(async () => {
     try {
@@ -142,10 +181,13 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
       
       console.log('📊 [MajurDashboard] Daily total for', selectedDate.toDateString(), ':', total);
 
+      // Load payment data
+      await loadPaymentData();
+
     } catch (error) {
       console.error('❌ [MajurDashboard] Error loading majuri data:', error);
     }
-  }, [selectedDate]);
+  }, [selectedDate, loadPaymentData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -288,6 +330,27 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
         </Text>
       </View>
 
+      {/* Payment Received Card */}
+      {paymentData && (
+        <View style={styles.paymentCard}>
+          <View style={styles.paymentHeader}>
+            <Icon name="wallet-outline" size={24} color={Colors.primary} />
+            <Text style={styles.paymentTitle}>इस महीने प्राप्त राशि</Text>
+          </View>
+          <Text style={styles.paymentAmount}>₹{paymentData.received_amount.toLocaleString('hi-IN')}</Text>
+          <View style={styles.paymentDetails}>
+            <Text style={styles.paymentCount}>
+              {paymentData.payment_count} भुगतान
+            </Text>
+            {paymentData.last_payment_date && (
+              <Text style={styles.lastPaymentDate}>
+                अंतिम भुगतान: {formatDate(paymentData.last_payment_date)}
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
+
       {/* Date Summary Section */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>दिनवार सारांश</Text>
@@ -419,6 +482,53 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+  },
+  paymentCard: {
+    backgroundColor: Colors.white,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.primary,
+  },
+  paymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  paymentTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.darkGray,
+    marginLeft: 8,
+  },
+  paymentAmount: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: Colors.primary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  paymentDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  paymentCount: {
+    fontSize: 14,
+    color: Colors.mediumGray,
+    fontWeight: '500',
+  },
+  lastPaymentDate: {
+    fontSize: 12,
+    color: Colors.mediumGray,
+    fontStyle: 'italic',
   },
   totalLabel: {
     fontSize: 16,

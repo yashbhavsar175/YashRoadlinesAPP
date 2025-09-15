@@ -10,6 +10,7 @@ export interface AdminNotification {
   type: 'add' | 'edit' | 'delete' | 'system';
   severity: 'info' | 'warning' | 'success' | 'error';
   is_read: boolean;
+  deleted?: boolean; // Optional until database column is added
   user_name: string;
   user_id: string;
   metadata: any;
@@ -41,25 +42,13 @@ class NotificationService {
   }
 
   async initialize() {
-    if (this.isInitialized) {
-      console.log('ℹ️ NotificationService already initialized');
-      return;
-    }
+    if (this.isInitialized) return;
 
     try {
-      console.log('🚀 Initializing NotificationService...');
-      
       // Get current user from AsyncStorage
       const userDataString = await AsyncStorage.getItem('user_profile');
       if (userDataString) {
         this.currentUser = JSON.parse(userDataString);
-        console.log('👤 User profile loaded:', {
-          name: this.currentUser.name,
-          email: this.currentUser.email,
-          user_type: this.currentUser.user_type
-        });
-      } else {
-        console.log('⚠️ No user profile found in AsyncStorage');
       }
       
       this.isInitialized = true;
@@ -72,22 +61,16 @@ class NotificationService {
   // Send notification to admin
   async sendAdminNotification(notificationData: NotificationData) {
     try {
-      console.log('📤 Attempting to send admin notification...');
-      
       // Get current user if not available
       if (!this.currentUser) {
         const userDataString = await AsyncStorage.getItem('user_profile');
         if (userDataString) {
           this.currentUser = JSON.parse(userDataString);
-          console.log('👤 Current user loaded from AsyncStorage:', this.currentUser);
-        } else {
-          console.log('⚠️ No user profile found in AsyncStorage');
         }
       }
 
       // Don't send notification if current user is admin
       if (this.currentUser?.email === this.ADMIN_EMAIL) {
-        console.log('🚫 Skipping notification - current user is admin');
         return;
       }
 
@@ -101,8 +84,6 @@ class NotificationService {
         metadata: notificationData.metadata || {},
       };
 
-      console.log('📝 Notification data to be saved:', notification);
-
       // Save notification to database
       const { data, error } = await supabase
         .from('admin_notifications')
@@ -112,26 +93,10 @@ class NotificationService {
 
       if (error) {
         console.error('❌ Error saving notification:', error);
-        console.error('❌ Error details:', error.message, error.details, error.hint);
         return;
       }
 
       console.log('✅ Notification saved to database:', data);
-      
-      // Trigger immediate refresh via broadcast
-      try {
-        await supabase
-          .channel('notification-refresh')
-          .send({
-            type: 'broadcast',
-            event: 'new-notification',
-            payload: { notification: data }
-          });
-        console.log('📡 Broadcast sent for immediate refresh');
-      } catch (broadcastError) {
-        console.error('❌ Broadcast error:', broadcastError);
-      }
-      
       return data;
     } catch (error) {
       console.error('❌ Error sending admin notification:', error);
@@ -214,9 +179,11 @@ class NotificationService {
     }
   }
 
-  // Delete notification (permanently remove from database)
+  // Soft delete notification (mark as deleted instead of removing)
+  // TODO: Add 'deleted' column to admin_notifications table first
   async deleteNotification(notificationId: string) {
     try {
+      // Temporarily use hard delete until 'deleted' column is added
       const { error } = await supabase
         .from('admin_notifications')
         .delete()
@@ -290,14 +257,20 @@ class NotificationService {
       mumbai_delivery: '✏️ Mumbai Delivery Updated',
     };
 
-    const message = customMessage || `${this.currentUser?.name || 'User'} updated a ${category.replace('_', ' ')}`;
+    // Format detailed edit message with better structure
+    let message = customMessage || `${this.currentUser?.name || 'User'} updated a ${category.replace('_', ' ')}`;
+    
+    // If it's a detailed audit message, format it properly
+    if (customMessage && customMessage.includes('Changes:')) {
+      message = customMessage.replace(/Changes:/g, '\n📝 Changes Made:\n');
+    }
 
     await this.sendAdminNotification({
       title: titles[category],
       message,
       type: 'edit',
       severity: 'info',
-      metadata: { category, action: 'edit' }
+      metadata: { category, action: 'edit', timestamp: new Date().toISOString() }
     });
   }
 
@@ -313,23 +286,29 @@ class NotificationService {
       mumbai_delivery: '🗑️ Mumbai Delivery Deleted',
     };
 
-    const message = customMessage || `${this.currentUser?.name || 'User'} deleted a ${category.replace('_', ' ')}`;
+    // Format detailed message with better structure
+    let message = customMessage || `${this.currentUser?.name || 'User'} deleted a ${category.replace('_', ' ')}`;
+    
+    // If it's a detailed audit message, format it properly
+    if (customMessage && customMessage.includes('DELETED:')) {
+      message = customMessage.replace(/DELETED:/g, '🚨 AUDIT TRAIL:\n📋');
+    } else if (customMessage && customMessage.includes('BULK DELETE')) {
+      message = customMessage.replace(/BULK DELETE/g, '🚨 BULK DELETE AUDIT:\n📋');
+    }
 
     await this.sendAdminNotification({
       title: titles[category],
       message,
       type: 'delete',
       severity: 'warning',
-      metadata: { category, action: 'delete' }
+      metadata: { category, action: 'delete', timestamp: new Date().toISOString() }
     });
   }
 
   // Subscribe to real-time notifications
   subscribeToNotifications(callback: (notification: AdminNotification) => void) {
-    console.log('🔗 Setting up real-time notification subscription...');
-    
     const subscription = supabase
-      .channel('admin-notifications-realtime')
+      .channel('admin-notifications')
       .on(
         'postgres_changes',
         {
@@ -339,17 +318,10 @@ class NotificationService {
         },
         (payload) => {
           console.log('📬 Real-time notification received:', payload);
-          console.log('🔔 Triggering notification callback...');
           callback(payload.new as AdminNotification);
         }
       )
-      .subscribe((status, err) => {
-        if (err) {
-          console.error('❌ Real-time subscription error:', err);
-        } else {
-          console.log('✅ Real-time subscription status:', status);
-        }
-      });
+      .subscribe();
 
     return subscription;
   }

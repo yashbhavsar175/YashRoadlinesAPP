@@ -14,7 +14,8 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { supabase } from './src/supabase';
 import { getProfile, initializeSupabaseStorage, getSyncStatus, syncAllDataFixed } from './src/data/Storage';
 import NotificationService from './src/services/NotificationService';
-import NotificationSetup from './src/services/NotificationSetup';
+import PushNotificationService from './src/services/PushNotificationService';
+import DeviceNotificationService from './src/services/DeviceNotificationService';
 import SplashScreen from './src/screens/SplashScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import BiometricAuthScreen from './src/screens/BiometricAuthScreen';
@@ -36,10 +37,15 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import TotalPaidScreen from './src/screens/TotalPaidScreen';
 import EWayBillConsolidatedScreen from './src/screens/EWayBillConsolidatedScreen';
 import AdminNotificationScreen from './src/screens/AdminNotificationScreen';
-import AdminUserManagementScreen from './src/screens/AdminUserManagementScreen';
 import UppadJamaScreen from './src/screens/UppadJamaScreen';
 import MumbaiDeliveryEntryScreen from './src/screens/MumbaiDeliveryEntryScreen';
 import BackdatedEntryScreen from './src/screens/BackdatedEntryScreen';
+import NotificationTestScreen from './src/screens/NotificationTestScreen';
+import ComprehensiveNotificationTest from './src/screens/ComprehensiveNotificationTest';
+import LeaveCashSetupScreen from './src/screens/LeaveCashSetupScreen';
+import CashVerificationScreen from './src/screens/CashVerificationScreen';
+import CashHistoryScreen from './src/screens/CashHistoryScreen';
+import UserAccessManagementScreen from './src/screens/UserAccessManagementScreen';
 import { AlertProvider } from './src/context/AlertContext';
 
 // Define the root navigator's param list and export it for usage across screens
@@ -69,12 +75,17 @@ type RootStackParamList = {
   TotalPaid: undefined;
   EWayBillConsolidated: undefined;
   AdminNotifications: undefined;
-  AdminUserManagement: undefined;
   UppadJama: undefined;
   CashBalance: undefined;
   MumbaiDelivery: undefined;
   MumbaiDeliveryEntry: undefined;
   BackdatedEntry: undefined;
+  NotificationTest: undefined;
+  ComprehensiveNotificationTest: undefined;
+  LeaveCashSetupScreen: undefined;
+  CashVerificationScreen: undefined;
+  CashHistoryScreen: undefined;
+  UserAccessManagementScreen: undefined;
 };
 
 export type { RootStackParamList };
@@ -518,14 +529,39 @@ function App(): React.JSX.Element {
       if (!isInitialized.current) {
         const initializeApp = async () => {
           try {
+            console.log('🚀 Initializing app services...');
+            
+            // Initialize Supabase storage first
             await initializeSupabaseStorage();
+            console.log('✅ Supabase storage initialized');
+            
+            // Initialize notification services properly
+            console.log('📱 Initializing notification services...');
             await NotificationService.initialize();
-            // Initialize all notification services (includes push notifications)
-            await NotificationSetup.initialize();
+            console.log('✅ NotificationService initialized');
+            
+            // Initialize push notification service
+            await PushNotificationService.initialize();
+            console.log('✅ PushNotificationService initialized');
+            
+            // DeviceNotificationService is auto-initialized via constructor
+            console.log('📱 DeviceNotificationService ready');
+            
+            // Fix notification channels and configuration
+            try {
+              const NotificationFixer = await import('./src/services/NotificationFixer');
+              await NotificationFixer.default.fixNotificationChannels();
+              console.log('✅ Notification channels fixed');
+            } catch (fixError) {
+              console.warn('⚠️ Could not fix notification channels:', fixError);
+            }
+            
+            console.log('✅ All notification services initialized');
+            
             await checkSyncStatus();
             await checkActiveUser();
           } catch (error) {
-            console.error('App initialization failed:', error);
+            console.error('❌ App initialization failed:', error);
           }
         };
         initializeApp();
@@ -741,10 +777,15 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="TotalPaid" component={TotalPaidScreen} />
                 <Stack.Screen name="EWayBillConsolidated" component={EWayBillConsolidatedScreen} />
                 <Stack.Screen name="AdminNotifications" component={AdminNotificationScreen} options={{ title: 'Admin Notifications' }} />
-                <Stack.Screen name="AdminUserManagement" component={AdminUserManagementScreen} options={{ title: 'User Management' }} />
                 <Stack.Screen name="UppadJama" component={UppadJamaScreen} options={{ title: 'Uppad/Jama' }} />
                 <Stack.Screen name="MumbaiDeliveryEntry" component={MumbaiDeliveryEntryScreen} options={{ title: 'Mumbai Delivery Entry' }} />
                 <Stack.Screen name="BackdatedEntry" component={BackdatedEntryScreen} options={{ title: 'Backdated Entry' }} />
+                <Stack.Screen name="NotificationTest" component={NotificationTestScreen} />
+                <Stack.Screen name="ComprehensiveNotificationTest" component={ComprehensiveNotificationTest} options={{ title: 'Complete Notification Test' }} />
+                <Stack.Screen name="LeaveCashSetupScreen" component={LeaveCashSetupScreen} options={{ title: 'Setup Cash Amount' }} />
+                <Stack.Screen name="CashVerificationScreen" component={CashVerificationScreen} options={{ title: 'Verify Cash' }} />
+                <Stack.Screen name="CashHistoryScreen" component={CashHistoryScreen} options={{ title: 'Cash History' }} />
+                <Stack.Screen name="UserAccessManagementScreen" component={UserAccessManagementScreen} options={{ title: 'User Access Management' }} />
               </Stack.Navigator>
 
               {shouldShowCalculator && fabPos && (

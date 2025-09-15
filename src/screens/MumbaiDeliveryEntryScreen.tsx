@@ -23,7 +23,7 @@ import { saveAgencyEntry, getAgencyEntry, deleteTransactionByIdImproved, OFFLINE
 import { useAlert } from '../context/AlertContext';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
-import ActivityNotificationService from '../services/ActivityNotificationService';
+import NotificationService from '../services/NotificationService';
 
 type MumbaiDeliveryEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'MumbaiDeliveryEntry'>;
 
@@ -106,12 +106,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       
       const success = await saveAgencyEntry(entryData);
       if (success) {
-        // Send push notification to admin
-        await ActivityNotificationService.notifyMumbaiDelivery(
-          'add',
-          'Mumbai',
-          `₹${numericAmount} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`
-        );
+        // Send notification to admin
+        await NotificationService.notifyAdd('mumbai_delivery', `New Mumbai delivery: ₹${numericAmount} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`);
         
         setTimeout(() => {
           showAlert('Mumbai delivery entry saved successfully!');
@@ -145,13 +141,9 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
             try {
               const success = await deleteTransactionByIdImproved(id, OFFLINE_KEYS.AGENCY_ENTRIES);
               if (success) {
-                // Send delete notification to admin
+                // Send notification to admin
                 if (entryToDelete) {
-                  await ActivityNotificationService.notifyMumbaiDelivery(
-                    'delete',
-                    'Mumbai',
-                    `Deleted delivery: ₹${entryToDelete.amount} - ${entryToDelete.description.slice(0, 30)}${entryToDelete.description.length > 30 ? '...' : ''}`
-                  );
+                  await NotificationService.notifyDelete('mumbai_delivery', `Deleted Mumbai delivery: ₹${entryToDelete.amount} - ${entryToDelete.description.slice(0, 30)}${entryToDelete.description.length > 30 ? '...' : ''}`);
                 }
                 
                 const updatedEntries = recentEntries.filter(entry => entry.id !== id);

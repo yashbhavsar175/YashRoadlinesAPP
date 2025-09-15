@@ -7,6 +7,8 @@ import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Dropdown from '../components/Dropdown';
 import Icon from 'react-native-vector-icons/Ionicons';
+import DeviceNotificationService from '../services/DeviceNotificationService';
+import { supabase } from '../supabase';
 
 type AgencyPaymentsScreenNavigationProp = NavigationProp<RootStackParamList, 'PaidSection'>;
 
@@ -23,6 +25,9 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
   const [agencyOptions, setAgencyOptions] = useState<{ label: string; value: string }[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [profile, setProfile] = useState<any>(null);
 
   const currentDate = new Date().toLocaleDateString('en-IN', {
     day: '2-digit',
@@ -33,6 +38,29 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      // Load user profile and admin status
+      const { data } = await supabase.auth.getUser();
+      const userId = data.user?.id ?? null;
+      setCurrentUserId(userId);
+      
+      const emailLower = (data.user?.email || '').toLowerCase();
+      const isUserAdmin = emailLower === 'yashbhavsar175@gmail.com';
+      setIsAdmin(isUserAdmin);
+
+      // Load profile
+      if (userId) {
+        try {
+          const { data: userProfile } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', userId)
+            .single();
+          setProfile(userProfile);
+        } catch (err) {
+          console.warn('Could not load profile');
+        }
+      }
+
       const storedEntries: AgencyPayment[] = await getAgencyPaymentsLocal();
       setPaidEntries(storedEntries.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()));
 
@@ -88,6 +116,29 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
       const success = await saveAgencyPayment(newPaymentEntry);
 
       if (success) {
+        // Trigger admin notification (only if user is not admin)
+        console.log('🔔 Payment saved, checking notification conditions...');
+        console.log('isAdmin:', isAdmin);
+        console.log('profile:', profile);
+        
+        // Always send notification to admin (even if admin is adding the entry)
+        if (profile) {
+          console.log('🚀 Triggering admin notification for payment...');
+          const userName = profile.username || profile.name || 'User';
+          try {
+            await DeviceNotificationService.notifyAdminEntryAdded(
+              'Agency Payment',
+              userName,
+              { agency: selectedAgency, amount: amount, billNo: billNo.trim() }
+            );
+            console.log('✅ Admin notification sent successfully');
+          } catch (notifError) {
+            console.error('❌ Admin notification error:', notifError);
+          }
+        } else {
+          console.log('❌ Notification not sent - no profile found');
+        }
+        
         Alert.alert('Success', 'Paid entry saved successfully!');
         setBillNo('');
         setPaidAmount('');
@@ -101,7 +152,7 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
     } finally {
       setSaving(false);
     }
-  }, [selectedAgency, billNo, paidAmount, loadData]);
+  }, [selectedAgency, billNo, paidAmount, loadData, isAdmin, profile]);
 
   const PaidEntryItem = memo(({ item }: { item: AgencyPayment }) => {
     const formattedDate = useMemo(

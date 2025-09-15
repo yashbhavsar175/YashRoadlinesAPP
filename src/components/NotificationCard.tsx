@@ -168,19 +168,19 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
         style={[
           styles.card,
           notification.is_read ? styles.readCard : styles.unreadCard,
-          notification.deleted && styles.deletedCard,
+          (notification as any).deleted && styles.deletedCard,
         ]}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={handlePress}
         activeOpacity={0.9}
-        disabled={notification.deleted}
+        disabled={(notification as any).deleted}
       >
         {/* Unread indicator */}
-        {!notification.is_read && !notification.deleted && <View style={styles.unreadIndicator} />}
+        {!notification.is_read && !(notification as any).deleted && <View style={styles.unreadIndicator} />}
         
         {/* Deleted indicator */}
-        {notification.deleted && (
+        {(notification as any).deleted && (
           <View style={styles.deletedBanner}>
             <Icon name="trash" size={12} color="#FFFFFF" />
             <Text style={styles.deletedText}>DELETED</Text>
@@ -241,8 +241,7 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
 const styles = StyleSheet.create({
   container: {
     marginHorizontal: 16,
-    marginBottom: 2,
-    marginTop: 0,
+    marginVertical: 4,
   },
   card: {
     backgroundColor: '#FFFFFF',

@@ -210,7 +210,11 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         if (ok) {
           // Send delete notification to admin
           if (entryToDelete) {
-            await NotificationService.notifyDelete('uppad_jama', `Deleted ${entryToDelete.entry_type} entry: ₹${entryToDelete.amount} for ${entryToDelete.person_name}`);
+            await ActivityNotificationService.notifyUppadJama(
+              'delete',
+              entryToDelete.amount,
+              `Deleted ${entryToDelete.entry_type} entry for ${entryToDelete.person_name}`
+            );
           }
           
           await loadEntries();
@@ -404,7 +408,14 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
             <Dropdown
               options={personOptions}
               selectedValue={selectedPersonId}
-              onValueChange={setSelectedPersonId}
+              onValueChange={(val) => {
+                try {
+                  setSelectedPersonId(val);
+                } catch (err) {
+                  console.error('Error selecting person:', err);
+                  Alert.alert('Error', 'Person select failed: ' + (err instanceof Error ? err.message : String(err)));
+                }
+              }}
               placeholder="Select person"
             />
 

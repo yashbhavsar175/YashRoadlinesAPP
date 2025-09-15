@@ -11,7 +11,8 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   ActivityIndicator,
-  Modal
+  Modal,
+  Alert
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { NavigationProp } from '@react-navigation/native';
@@ -33,6 +34,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import CustomDropdown from '../components/Dropdown';
 import NotificationService from '../services/NotificationService';
+import { supabase } from '../supabase';
 
 type BackdatedEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'BackdatedEntry'>;
 
@@ -98,6 +100,10 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
   const { goBack } = navigation;
   const { showAlert } = useAlert();
   
+  // Admin check
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [adminLoading, setAdminLoading] = useState<boolean>(true);
+  
   // Common states
   const [selectedEntryType, setSelectedEntryType] = useState<EntryType | null>(null);
   const [description, setDescription] = useState<string>('');
@@ -115,6 +121,39 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
   const [ratePerLiter, setRatePerLiter] = useState<string>('');
   const [personName, setPersonName] = useState<string>('');
   const [billNo, setBillNo] = useState<string>('');
+  
+  // Check admin status on mount
+  useEffect(() => {
+    const checkAdminAccess = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          Alert.alert('Access Denied', 'Please login to access this feature.');
+          goBack();
+          return;
+        }
+        
+        const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
+        const isUserAdmin = user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        
+        if (!isUserAdmin) {
+          Alert.alert('Access Denied', 'This feature is only available to administrators.');
+          goBack();
+          return;
+        }
+        
+        setIsAdmin(true);
+      } catch (error) {
+        console.error('Error checking admin access:', error);
+        Alert.alert('Error', 'Failed to verify access permissions.');
+        goBack();
+      } finally {
+        setAdminLoading(false);
+      }
+    };
+    
+    checkAdminAccess();
+  }, [goBack]);
   
   // Options
   const [agencies, setAgencies] = useState<Agency[]>([]);
@@ -251,7 +290,149 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
             amount: numericAmount,
             entry_type: entryType,
             entry_date: date.toISOString(),
-          });
+            charAt: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            charCodeAt: function (index: number): number {
+              throw new Error('Function not implemented.');
+            },
+            concat: function (...strings: string[]): string {
+              throw new Error('Function not implemented.');
+            },
+            indexOf: function (searchString: string, position?: number): number {
+              throw new Error('Function not implemented.');
+            },
+            lastIndexOf: function (searchString: string, position?: number): number {
+              throw new Error('Function not implemented.');
+            },
+            localeCompare: function (that: string): number {
+              throw new Error('Function not implemented.');
+            },
+            match: function (regexp: string | RegExp): RegExpMatchArray | null {
+              throw new Error('Function not implemented.');
+            },
+            replace: function (searchValue: string | RegExp, replaceValue: string): string {
+              throw new Error('Function not implemented.');
+            },
+            search: function (regexp: string | RegExp): number {
+              throw new Error('Function not implemented.');
+            },
+            slice: function (start?: number, end?: number): string {
+              throw new Error('Function not implemented.');
+            },
+            split: function (separator: string | RegExp, limit?: number): string[] {
+              throw new Error('Function not implemented.');
+            },
+            substring: function (start: number, end?: number): string {
+              throw new Error('Function not implemented.');
+            },
+            toLowerCase: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            toLocaleLowerCase: function (locales?: string | string[]): string {
+              throw new Error('Function not implemented.');
+            },
+            toUpperCase: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            toLocaleUpperCase: function (locales?: string | string[]): string {
+              throw new Error('Function not implemented.');
+            },
+            trim: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            length: 0,
+            substr: function (from: number, length?: number): string {
+              throw new Error('Function not implemented.');
+            },
+            codePointAt: function (pos: number): number | undefined {
+              throw new Error('Function not implemented.');
+            },
+            includes: function (searchString: string, position?: number): boolean {
+              throw new Error('Function not implemented.');
+            },
+            endsWith: function (searchString: string, endPosition?: number): boolean {
+              throw new Error('Function not implemented.');
+            },
+            normalize: function (form: 'NFC' | 'NFD' | 'NFKC' | 'NFKD'): string {
+              throw new Error('Function not implemented.');
+            },
+            repeat: function (count: number): string {
+              throw new Error('Function not implemented.');
+            },
+            startsWith: function (searchString: string, position?: number): boolean {
+              throw new Error('Function not implemented.');
+            },
+            anchor: function (name: string): string {
+              throw new Error('Function not implemented.');
+            },
+            big: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            blink: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            bold: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            fixed: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            fontcolor: function (color: string): string {
+              throw new Error('Function not implemented.');
+            },
+            fontsize: function (size: number): string {
+              throw new Error('Function not implemented.');
+            },
+            italics: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            link: function (url: string): string {
+              throw new Error('Function not implemented.');
+            },
+            small: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            strike: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            sub: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            sup: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            padStart: function (maxLength: number, fillString?: string): string {
+              throw new Error('Function not implemented.');
+            },
+            padEnd: function (maxLength: number, fillString?: string): string {
+              throw new Error('Function not implemented.');
+            },
+            trimEnd: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            trimStart: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            trimLeft: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            trimRight: function (): string {
+              throw new Error('Function not implemented.');
+            },
+            matchAll: function (regexp: RegExp): RegExpStringIterator<RegExpExecArray> {
+              throw new Error('Function not implemented.');
+            },
+            replaceAll: function (searchValue: string | RegExp, replaceValue: string): string {
+              throw new Error('Function not implemented.');
+            },
+            at: function (index: number): string | undefined {
+              throw new Error('Function not implemented.');
+            },
+            [Symbol.iterator]: function (): StringIterator<string> {
+              throw new Error('Function not implemented.');
+            }
+          }, {});
           break;
 
         case 'paid_section':
@@ -574,6 +755,32 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
         <Text style={styles.loadingText}>Loading options...</Text>
+      </View>
+    );
+  }
+
+  // Show loading screen while checking admin access
+  if (adminLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={[styles.loadingText, { marginTop: 10 }]}>Verifying access...</Text>
+      </View>
+    );
+  }
+
+  // If not admin, this component won't render (user will be redirected)
+  if (!isAdmin) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={goBack} style={styles.backButton}>
+            <Text style={styles.backButtonText}>{'<'}</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Access Denied</Text>
+          <View style={styles.headerSpacer} />
+        </View>
       </View>
     );
   }

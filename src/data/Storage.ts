@@ -108,6 +108,7 @@ export interface UserProfile {
   user_type?: 'normal' | 'majur';
   is_admin?: boolean;
   is_active?: boolean;
+  screen_access?: string[];
   created_at: string;
   updated_at?: string;
 }
@@ -140,6 +141,20 @@ export interface UppadJamaEntry {
   // source?: 'home_screen' | 'admin_panel'; // Field doesn't exist in database
 }
 
+export interface CashRecord {
+  id: string;
+  expected_amount: number;
+  actual_amount?: number;
+  notes: string;
+  setup_time: string;
+  verification_time?: string;
+  status: 'pending_verification' | 'verified_correct' | 'verified_incorrect';
+  admin_id: string;
+  difference?: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // =====================================================
 // 2. OFFLINE STORAGE KEYS
 // =====================================================
@@ -153,6 +168,7 @@ export const OFFLINE_KEYS = {
   AGENCY_ENTRIES: 'offline_agency_entries',
   UPPAD_JAMA_ENTRIES: 'offline_uppad_jama_entries',
   PERSONS: 'offline_persons',
+  CASH_RECORDS: 'offline_cash_records',
   PENDING_SYNC: 'pending_sync_operations',
   LAST_SYNC: 'last_sync_timestamp'
 };
@@ -794,6 +810,76 @@ export const getProfile = async (userId: string): Promise<UserProfile | null> =>
   }
 };
 
+export const checkCashVerificationAccess = async (): Promise<boolean> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    console.log('🔍 Checking cash verification access...');
+    console.log('User:', user ? { id: user.id, email: user.email } : 'No user');
+    
+    if (!user) {
+      console.log('❌ No authenticated user found');
+      return false; // No authenticated user
+    }
+
+    // Check if user email is the specific authorized email
+    if (user.email === 'lbhavsar31@gmail.com') {
+      console.log('✅ Access granted - Authorized email');
+      return true;
+    }
+
+    // Check if user is admin or has screen access
+    const profile = await getProfile(user.id);
+    console.log('Profile:', profile);
+    
+    if (profile?.is_admin === true) {
+      console.log('✅ Access granted - Admin user');
+      return true;
+    }
+
+    // Check if user has specific screen access
+    const screenAccess = profile?.screen_access || [];
+    if (screenAccess.includes('CashVerificationScreen') || screenAccess.includes('CashHistoryScreen')) {
+      console.log('✅ Access granted - Screen access permissions');
+      return true;
+    }
+
+    console.log('❌ Access denied - Not admin, not authorized email, and no screen access');
+    return false;
+  } catch (error) {
+    console.error('💥 Error checking cash verification access:', error);
+    return false;
+  }
+};
+
+export const checkScreenAccess = async (screenName: string): Promise<boolean> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      return false;
+    }
+
+    // Specific authorized email has access to all screens
+    if (user.email === 'lbhavsar31@gmail.com') {
+      return true;
+    }
+
+    // Check if user is admin (admin has access to all screens)
+    const profile = await getProfile(user.id);
+    if (profile?.is_admin === true) {
+      return true;
+    }
+
+    // Check specific screen access
+    const screenAccess = profile?.screen_access || [];
+    return screenAccess.includes(screenName);
+  } catch (error) {
+    console.error('Error checking screen access:', error);
+    return false;
+  }
+};
+
 export const updateProfile = async (userId: string, fullName: string): Promise<boolean> => {
   try {
     const profile = await getProfile(userId);
@@ -1319,6 +1405,8 @@ export const getPersons = async (): Promise<Person[]> => {
         .select('*')
         .order('name');
 
+      console.log('[getPersons] Supabase data:', data, 'error:', error);
+
       if (!error && data) {
         await AsyncStorage.setItem(OFFLINE_KEYS.PERSONS, JSON.stringify(data));
         return data as Person[];
@@ -1326,6 +1414,7 @@ export const getPersons = async (): Promise<Person[]> => {
     }
 
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.PERSONS);
+    console.log('[getPersons] Offline data:', offline);
     return offline ? JSON.parse(offline) : [];
   } catch (error) {
     console.error('Error getting persons:', error);
@@ -1570,6 +1659,15 @@ export const deliverOtpAlternative = async (opts: { email: string; code: string 
         });
         const json: any = await res.json().catch(() => null);
         console.log('📨 Direct fetch response:', res.status, json);
+        
+        // Handle rate limiting
+        if (res.status === 429) {
+          console.warn('⚠️ Rate limit hit, waiting 30 seconds...');
+          const retryAfter = json?.error?.includes('29s') ? 30 : 60;
+          console.log(`⏳ Waiting ${retryAfter} seconds before retry...`);
+          return false; // Don't retry automatically, let user try again
+        }
+        
         if (!res.ok) return false;
         const ok = (json?.success === true) || (json?.sent === true) || (json?.ok === true) || (json?.status === 'success') || (json?.status === 'sent');
         return !!ok;
@@ -2262,22 +2360,10 @@ export const saveAgencyPayment = async (payment: Partial<AgencyPayment> & { agen
           .single();
         data = updated;
         error = updateError;
-
-        // If no row was updated (e.g., id not found), fall back to insert
-        if (!data && (!error || (error && error.code === 'PGRST116'))) {
-          const { data: inserted, error: insertError } = await supabase
-            .from('agency_payments')
-            .insert([{ ...paymentData, created_at: new Date().toISOString() }])
-            .select()
-            .single();
-          data = inserted;
-          error = insertError;
-        }
       } else {
-        // Insert for new records, and also when trying to update a temp_* id
         const { data: inserted, error: insertError } = await supabase
           .from('agency_payments')
-          .insert([{ ...paymentData, created_at: new Date().toISOString() }])
+          .insert([paymentData])
           .select()
           .single();
         data = inserted;
@@ -2818,7 +2904,7 @@ export interface GeneralEntryInput {
   title?: string;
 }
 
-export const saveGeneralEntry = async (entryId: string, entry: GeneralEntryInput): Promise<boolean> => {
+export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolean> => {
   try {
     const online = await isOnline();
     const isUpdate = !!entry.id;
@@ -2879,10 +2965,10 @@ export const saveGeneralEntry = async (entryId: string, entry: GeneralEntryInput
       
       await AsyncStorage.setItem(OFFLINE_KEYS.GENERAL_ENTRIES, JSON.stringify(localData));
       
-      if (!isUpdate && data) {
+      if (!isUpdate && data?.id) {
         await logHistory('add', 'general_entries', data.id, entryData);
-      } else if (isUpdate) {
-        await logHistory('update', 'general_entries', entry.id!, entryData);
+      } else if (isUpdate && entry.id) {
+        await logHistory('update', 'general_entries', entry.id, entryData);
       }
       
       return true;
@@ -3386,5 +3472,233 @@ export const getMonthlyTransactions = async (month: string, year: string): Promi
   } catch (error) {
     console.error('💥 Error getting all monthly transactions:', error);
     return [];
+  }
+}
+
+// =====================================================
+// CASH TRACKING FUNCTIONS
+// =====================================================
+
+export const saveLeaveCashRecord = async (recordData: Omit<CashRecord, 'id' | 'created_at' | 'updated_at'>): Promise<void> => {
+  try {
+    const currentTime = new Date().toISOString();
+    const newRecord: CashRecord = {
+      id: `cash_${Date.now()}`,
+      ...recordData,
+      created_at: currentTime,
+      updated_at: currentTime
+    };
+
+    // Save to offline storage
+    const existingRecords = await getCashRecords();
+    const updatedRecords = [...existingRecords, newRecord];
+    await AsyncStorage.setItem(OFFLINE_KEYS.CASH_RECORDS, JSON.stringify(updatedRecords));
+
+    // Try to save to Supabase
+    try {
+      const { error } = await supabase
+        .from('cash_records')
+        .insert([newRecord]);
+
+      if (error) {
+        console.warn('Failed to save to Supabase, saved offline:', error);
+      }
+    } catch (supabaseError) {
+      console.warn('Supabase unavailable, saved offline:', supabaseError);
+    }
+
+    console.log('💰 Cash record saved successfully');
+  } catch (error) {
+    console.error('💥 Error saving cash record:', error);
+    throw error;
+  }
+};
+
+export const getCashRecords = async (): Promise<CashRecord[]> => {
+  try {
+    // Try to get from Supabase first
+    try {
+      const { data, error } = await supabase
+        .from('cash_records')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        // Also save to offline storage for backup
+        await AsyncStorage.setItem(OFFLINE_KEYS.CASH_RECORDS, JSON.stringify(data));
+        return data;
+      }
+    } catch (supabaseError) {
+      console.warn('Supabase unavailable, using offline data:', supabaseError);
+    }
+
+    // Fallback to offline storage
+    const storedData = await AsyncStorage.getItem(OFFLINE_KEYS.CASH_RECORDS);
+    return storedData ? JSON.parse(storedData) : [];
+  } catch (error) {
+    console.error('💥 Error getting cash records:', error);
+    return [];
+  }
+};
+
+export const getPendingCashRecord = async (): Promise<CashRecord | null> => {
+  try {
+    const records = await getCashRecords();
+    return records.find(record => record.status === 'pending_verification') || null;
+  } catch (error) {
+    console.error('💥 Error getting pending cash record:', error);
+    return null;
+  }
+};
+
+export const updateCashRecord = async (id: string, updates: Partial<CashRecord>): Promise<void> => {
+  try {
+    const records = await getCashRecords();
+    const recordIndex = records.findIndex(record => record.id === id);
+    
+    if (recordIndex === -1) {
+      throw new Error('Cash record not found');
+    }
+
+    const updatedRecord = {
+      ...records[recordIndex],
+      ...updates,
+      updated_at: new Date().toISOString()
+    };
+
+    records[recordIndex] = updatedRecord;
+
+    // Save to offline storage
+    await AsyncStorage.setItem(OFFLINE_KEYS.CASH_RECORDS, JSON.stringify(records));
+
+    // Try to update in Supabase
+    try {
+      const { error } = await supabase
+        .from('cash_records')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) {
+        console.warn('Failed to update in Supabase, updated offline:', error);
+      }
+    } catch (supabaseError) {
+      console.warn('Supabase unavailable, updated offline:', supabaseError);
+    }
+
+    console.log('💰 Cash record updated successfully');
+  } catch (error) {
+    console.error('💥 Error updating cash record:', error);
+    throw error;
+  }
+};
+
+export const verifyCashAmount = async (recordId: string, actualAmount: number): Promise<{ isCorrect: boolean; difference: number }> => {
+  try {
+    const records = await getCashRecords();
+    const record = records.find(r => r.id === recordId);
+    
+    if (!record) {
+      throw new Error('Cash record not found');
+    }
+
+    const difference = actualAmount - record.expected_amount;
+    const isCorrect = difference === 0;
+
+    await updateCashRecord(recordId, {
+      actual_amount: actualAmount,
+      verification_time: new Date().toISOString(),
+      status: isCorrect ? 'verified_correct' : 'verified_incorrect',
+      difference: difference
+    });
+
+    return { isCorrect, difference };
+  } catch (error) {
+    console.error('💥 Error verifying cash amount:', error);
+    throw error;
+  }
+};
+
+export const deleteCashRecord = async (id: string): Promise<void> => {
+  try {
+    const records = await getCashRecords();
+    const filteredRecords = records.filter(record => record.id !== id);
+
+    // Save to offline storage
+    await AsyncStorage.setItem(OFFLINE_KEYS.CASH_RECORDS, JSON.stringify(filteredRecords));
+
+    // Try to delete from Supabase
+    try {
+      const { error } = await supabase
+        .from('cash_records')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.warn('Failed to delete from Supabase, deleted offline:', error);
+      }
+    } catch (supabaseError) {
+      console.warn('Supabase unavailable, deleted offline:', supabaseError);
+    }
+
+    console.log('💰 Cash record deleted successfully');
+  } catch (error) {
+    console.error('💥 Error deleting cash record:', error);
+    throw error;
+  }
+};
+
+export const revertCashRecordToPending = async (id: string): Promise<void> => {
+  try {
+    const records = await getCashRecords();
+    const recordIndex = records.findIndex(record => record.id === id);
+    
+    if (recordIndex === -1) {
+      throw new Error('Cash record not found');
+    }
+
+    const record = records[recordIndex];
+    
+    // Only allow reverting verified records
+    if (record.status === 'pending_verification') {
+      throw new Error('Record is already pending verification');
+    }
+
+    // Revert the record to pending status
+    const revertedRecord: CashRecord = {
+      ...record,
+      status: 'pending_verification',
+      actual_amount: undefined,
+      verification_time: undefined,
+      difference: undefined
+    };
+
+    records[recordIndex] = revertedRecord;
+
+    // Save to offline storage
+    await AsyncStorage.setItem(OFFLINE_KEYS.CASH_RECORDS, JSON.stringify(records));
+
+    // Try to update in Supabase
+    try {
+      const { error } = await supabase
+        .from('cash_records')
+        .update({
+          status: 'pending_verification',
+          actual_amount: null,
+          verification_time: null,
+          difference: null
+        })
+        .eq('id', id);
+
+      if (error) {
+        console.warn('Failed to revert in Supabase, reverted offline:', error);
+      }
+    } catch (supabaseError) {
+      console.warn('Supabase unavailable, reverted offline:', supabaseError);
+    }
+
+    console.log('💰 Cash record reverted to pending verification successfully');
+  } catch (error) {
+    console.error('💥 Error reverting cash record:', error);
+    throw error;
   }
 };

@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import NotificationService from '../services/NotificationService';
-import { supabase } from '../supabase';
 
 interface NotificationBellProps {
   onPress?: () => void;
@@ -38,33 +37,19 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   useEffect(() => {
     loadUnreadCount();
-    const interval = setInterval(loadUnreadCount, 10000); // Check every 10 seconds (more frequent)
+    const interval = setInterval(loadUnreadCount, 30000); // Check every 30 seconds
     
     // Subscribe to real-time notifications
     const subscription = NotificationService.subscribeToNotifications((notification) => {
-      console.log('🔔 New notification received in bell:', notification);
-      // Immediate update
+      console.log('🔔 New notification received:', notification);
       loadUnreadCount();
       triggerNotificationAnimation();
     });
-    
-    // Subscribe to broadcast for immediate refresh
-    const broadcastSubscription = supabase
-      .channel('notification-refresh-bell')
-      .on('broadcast', { event: 'new-notification' }, (payload) => {
-        console.log('📡 Broadcast received in bell:', payload);
-        loadUnreadCount();
-        triggerNotificationAnimation();
-      })
-      .subscribe();
 
     return () => {
       clearInterval(interval);
       if (subscription && typeof subscription.unsubscribe === 'function') {
         subscription.unsubscribe();
-      }
-      if (broadcastSubscription && typeof broadcastSubscription.unsubscribe === 'function') {
-        broadcastSubscription.unsubscribe();
       }
     };
   }, []);

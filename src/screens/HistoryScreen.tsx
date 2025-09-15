@@ -8,6 +8,7 @@ import { getHistoryLogs, HistoryLog, syncAllDataFixed } from '../data/Storage';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { supabase } from '../supabase';
 
 type HistoryScreenNavigationProp = NavigationProp<RootStackParamList, 'History'>;
 
@@ -34,11 +35,49 @@ const formatActionText = (action: string, table: string) => {
 
 function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
   const { goBack } = navigation;
+  
+  // Admin check
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [adminLoading, setAdminLoading] = useState<boolean>(true);
+  
   const [historyLogs, setHistoryLogs] = useState<HistoryLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Check admin status on mount
+  useEffect(() => {
+    const checkAdminAccess = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          Alert.alert('Access Denied', 'Please login to access this feature.');
+          goBack();
+          return;
+        }
+        
+        const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
+        const isUserAdmin = user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        
+        if (!isUserAdmin) {
+          Alert.alert('Access Denied', 'This feature is only available to administrators.');
+          goBack();
+          return;
+        }
+        
+        setIsAdmin(true);
+      } catch (error) {
+        console.error('Error checking admin access:', error);
+        Alert.alert('Error', 'Failed to verify access permissions.');
+        goBack();
+      } finally {
+        setAdminLoading(false);
+      }
+    };
+    
+    checkAdminAccess();
+  }, [goBack]);
 
   const loadHistory = useCallback(async (dateToLoad: Date) => {
     setLoading(true);
@@ -120,6 +159,32 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
       </TouchableOpacity>
     </View>
   );
+
+  // Show loading screen while checking admin access
+  if (adminLoading) {
+    return (
+      <View style={[GlobalStyles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={[styles.loadingText, { marginTop: 10 }]}>Verifying access...</Text>
+      </View>
+    );
+  }
+
+  // If not admin, show access denied
+  if (!isAdmin) {
+    return (
+      <View style={GlobalStyles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={goBack} style={styles.backButton}>
+            <Text style={styles.backButtonText}>{'<'}</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Access Denied</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={GlobalStyles.container}>

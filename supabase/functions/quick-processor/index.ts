@@ -32,6 +32,13 @@ type JsonBody = {
   password?: string
   vehicle_from?: string
   vehicle_no?: string
+  // Push fields
+  token?: string
+  platform?: 'android' | 'ios' | 'web' | 'unknown'
+  title?: string
+  body?: string
+  data?: Record<string, unknown>
+  target_email?: string
 }
 
 function json(data: unknown, init: ResponseInit = {}) {
@@ -119,7 +126,19 @@ function getSupabaseForRequest(req: Request) {
   });
 }
 
-async function importAesKey(secret: string): Promise<CryptoKey> {
+function getServiceClient() {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  // Allow multiple possible secret names because some Supabase UIs disallow keys starting with SUPABASE_
+  const serviceKey =
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+    Deno.env.get("SERVICE_ROLE_KEY") ||
+    Deno.env.get("SUPABASE_SERVICE_KEY") ||
+    Deno.env.get("SERVICE_KEY");
+  if (!serviceKey) throw new Error("Missing service role key (set SUPABASE_SERVICE_ROLE_KEY or SERVICE_ROLE_KEY)");
+  return createClient(supabaseUrl, serviceKey);
+}
+
+async function importAesKey(secret: string): Promise<any> {
   const enc = new TextEncoder().encode(secret);
   return await crypto.subtle.importKey(
     "raw",
@@ -177,7 +196,7 @@ Deno.serve(async (req) => {
 
   let body: JsonBody
   try {
-    body = await req.json()
+    body = await req.json() as JsonBody
   } catch {
     return badRequest("Invalid JSON body")
   }
@@ -234,6 +253,199 @@ Deno.serve(async (req) => {
       entry.last = now
       rateLimitMap.set(email, entry)
       return json({ ok: true, sent: true })
+    }
+
+    // ===== PUSH: REGISTER DEVICE TOKEN =====
+    if (action === 'register_token') {
+      const supabase = getSupabaseForRequest(req);
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData?.user) {
+        return json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      const user = authData.user;
+      const token = (body.token || '').toString();
+      const platform = ((body.platform as string) || 'unknown').toString();
+      if (!token) return badRequest('Missing token');
+
+      const svc = getServiceClient();
+      const payload = {
+        token,
+        user_id: user.id,
+        email: (user.email || '').toLowerCase(),
+        platform,
+        updated_at: new Date().toISOString(),
+      } as const;
+      const { error } = await svc.from('device_tokens').upsert(payload, { onConflict: 'token' });
+      if (error) return serverError(error.message || 'DB error');
+      return json({ ok: true });
+    }
+
+    // ===== PUSH: SEND NOTIFICATION TO ADMIN VIA FCM =====
+    if (action === 'send_push') {
+      // Accept multiple secret names to be flexible with dashboard naming
+      const serverKey = Deno.env.get('FCM_SERVER_KEY') || Deno.env.get('FCM_SERVER') || Deno.env.get('FIREBASE_SERVER_KEY');
+      const saJsonRaw = Deno.env.get('FIREBASE_SA_JSON') || Deno.env.get('FIREBASE_SA');
+
+      // Helper: base64url
+      function base64url(input: Uint8Array | string) {
+        let str = typeof input === 'string' ? input : String.fromCharCode(...input);
+        // if binary, convert
+        if (typeof input !== 'string') {
+          str = '';
+          const arr = input as Uint8Array;
+          for (let i = 0; i < arr.length; i++) str += String.fromCharCode(arr[i]);
+        }
+        // btoa expects binary string
+        // deno-lint-ignore no-deprecated-deno-api
+        const b64 = btoa(str);
+        return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      }
+
+      // Convert PEM private key to ArrayBuffer
+      function pemToArrayBuffer(pem: string) {
+        // remove header/footer and newlines
+        const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, '')
+          .replace(/-----END PRIVATE KEY-----/, '')
+          .replace(/\s+/g, '');
+        const raw = atob(b64);
+        const buf = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; ++i) buf[i] = raw.charCodeAt(i);
+        return buf.buffer;
+      }
+
+      async function importPrivateKey(pem: string) {
+        const keyBuf = pemToArrayBuffer(pem);
+        return await crypto.subtle.importKey(
+          'pkcs8',
+          keyBuf,
+          { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+      }
+
+      async function signJwt(payloadObj: Record<string, unknown>, privateKeyPem: string) {
+        const header = { alg: 'RS256', typ: 'JWT' };
+        const headerB64 = base64url(JSON.stringify(header));
+        const payloadB64 = base64url(JSON.stringify(payloadObj));
+        const toSign = `${headerB64}.${payloadB64}`;
+        const key = await importPrivateKey(privateKeyPem);
+        const enc = new TextEncoder().encode(toSign);
+        const sig = await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, key, enc);
+        // base64url encode signature
+        const sigArr = new Uint8Array(sig as ArrayBuffer);
+        return `${toSign}.${base64url(sigArr)}`;
+      }
+
+      async function getAccessTokenFromServiceAccount(sa: any) {
+        const now = Math.floor(Date.now() / 1000);
+        const iat = now;
+        const exp = now + 3600; // 1 hour
+        const scope = 'https://www.googleapis.com/auth/firebase.messaging';
+        const payload = {
+          iss: sa.client_email,
+          scope,
+          aud: 'https://oauth2.googleapis.com/token',
+          exp,
+          iat,
+        } as Record<string, unknown>;
+        const signedJwt = await signJwt(payload, sa.private_key);
+        const form = new URLSearchParams();
+        form.append('grant_type', 'urn:ietf:params:oauth:grant-type:jwt-bearer');
+        form.append('assertion', signedJwt);
+        const tRes = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: form.toString(),
+        });
+        if (!tRes.ok) {
+          const txt = await tRes.text().catch(() => '');
+          throw new Error(`Token exchange failed ${tRes.status}: ${txt}`);
+        }
+  const tokenJson = await tRes.json() as any;
+  return tokenJson.access_token as string;
+      }
+
+      if (!serverKey && !saJsonRaw) return serverError('Missing FCM server key or service account JSON');
+
+  const svc = getServiceClient();
+  const targetEmail = ((body.target_email as string) || Deno.env.get('ADMIN_EMAIL') || Deno.env.get('ADMIN') || '').toLowerCase();
+      if (!targetEmail) return badRequest('No target admin email configured');
+
+      const { data: tokens, error: tErr } = await svc
+        .from('device_tokens')
+        .select('token')
+        .eq('email', targetEmail)
+        .limit(200);
+      if (tErr) return serverError(tErr.message || 'DB error');
+      const registrationTokens = (tokens || []).map((t: any) => t.token).filter(Boolean);
+      if (!registrationTokens.length) return json({ ok: false, reason: 'no-tokens' });
+
+      const title = (body.title || '').toString();
+      const message = (body.body || '').toString();
+      const data = (body.data || {}) as Record<string, unknown>;
+
+      const payload = {
+        registration_ids: registrationTokens,
+        priority: 'high',
+        notification: { title, body: message, sound: 'default' },
+        data,
+      };
+
+      // If service account JSON provided, use HTTP v1 for FCM (more secure)
+      if (saJsonRaw) {
+        let sa: any;
+        try {
+          sa = JSON.parse(saJsonRaw);
+        } catch (e) {
+          return serverError('Invalid FIREBASE_SA_JSON');
+        }
+        const projectId = sa.project_id;
+        if (!projectId) return serverError('Service account JSON missing project_id');
+
+        // get access token
+        let accessToken: string;
+        try {
+          accessToken = await getAccessTokenFromServiceAccount(sa);
+        } catch (e) {
+          return serverError(`Failed to get access token: ${(e as Error).message}`);
+        }
+
+        const results: any[] = [];
+        for (const reg of registrationTokens) {
+          const msg = {
+            message: {
+              token: reg,
+              notification: { title: title || '', body: message || '' },
+              data: Object.fromEntries(Object.entries(data || {})),
+            },
+          };
+          const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify(msg),
+          });
+          const bodyText = await res.text().catch(() => '');
+          results.push({ status: res.status, body: bodyText });
+        }
+        return json({ ok: true, results });
+      }
+
+      // Fallback: legacy server key path (if provided)
+      const res = await fetch('https://fcm.googleapis.com/fcm/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `key=${serverKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text().catch(() => '');
+      if (!res.ok) return serverError(`FCM ${res.status}: ${text}`);
+      return json({ ok: true, fcm: text });
     }
 
     // ===== EWB SETTINGS: GET (server-side decryption) =====

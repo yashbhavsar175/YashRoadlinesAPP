@@ -69,6 +69,9 @@ import { launchCamera, launchImageLibrary, CameraOptions, ImageLibraryOptions, A
 import { useAlert } from '../context/AlertContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import DeviceNotificationService from '../services/DeviceNotificationService';
+import NotificationService from '../services/NotificationService';
+
 const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 
 interface OriginalTransaction {
@@ -104,6 +107,7 @@ interface EditableTransaction {
     subLabel?: string;
     storageKey: string;
     originalData: any;
+    tableSource?: string; // Added to track which table this entry belongs to
 }
 
 type DailyReportScreenProps = { navigation: NavigationProp<RootStackParamList, 'DailyReport'> };
@@ -261,6 +265,26 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
   );
 });
 
+// Helper function to get category for notifications
+const getEntryCategory = (storageKey: string): 'agency_payment' | 'driver_transaction' | 'fuel_entry' | 'general_entry' | 'agency_entry' | 'uppad_jama' => {
+  switch (storageKey) {
+    case OFFLINE_KEYS.AGENCY_PAYMENTS:
+      return 'agency_payment';
+    case OFFLINE_KEYS.DRIVER_TRANSACTIONS:
+      return 'driver_transaction';
+    case OFFLINE_KEYS.TRUCK_FUEL:
+      return 'fuel_entry';
+    case OFFLINE_KEYS.GENERAL_ENTRIES:
+      return 'general_entry';
+    case OFFLINE_KEYS.AGENCY_ENTRIES:
+      return 'agency_entry';
+    case OFFLINE_KEYS.UPPAD_JAMA_ENTRIES:
+      return 'uppad_jama';
+    default:
+      return 'general_entry';
+  }
+};
+
 function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.Element {
   const alert = useAlert();
   const { goBack } = navigation;
@@ -331,11 +355,43 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       await deleteTransactionByIdImproved(item.id, item.storageKey);
       setRefreshKey(prev => prev + 1);
       showAlert('Transaction deleted successfully');
+      
+      // Trigger detailed admin notification for delete
+      if (profile) {
+        const userName = profile.username || profile.name || 'User';
+        
+        // Create detailed delete audit message
+        const deleteDetails = {
+          id: item.id,
+          type: getEntryCategory(item.storageKey),
+          amount: item.amount || 0,
+          description: item.label || 'No description',
+          time: item.time || 'Unknown time',
+          deletedBy: userName,
+          deletedAt: new Date().toLocaleString(),
+          storageKey: item.storageKey
+        };
+        
+        const detailedMessage = `DELETED: ${deleteDetails.type} - ₹${deleteDetails.amount} | "${deleteDetails.description}" | Time: ${deleteDetails.time} | Deleted by: ${userName} | Date: ${deleteDetails.deletedAt}`;
+        
+        // Send database notification
+        await NotificationService.notifyDelete(
+          getEntryCategory(item.storageKey),
+          detailedMessage
+        );
+        
+        // Send device notification with full details
+        await DeviceNotificationService.notifyAdminEntryDeleted(
+          item.label || 'Entry',
+          userName,
+          deleteDetails
+        );
+      }
     } catch (error) {
       console.error('Error deleting transaction:', error);
       showAlert('Failed to delete transaction');
     }
-  }, [showAlert, deleteTransactionByIdImproved]);
+  }, [showAlert, deleteTransactionByIdImproved, profile, adminUserId, currentUserId]);
 
   // Open gallery viewer
 
@@ -499,9 +555,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           });
         });
 
-        // Process other transactions (simplified to avoid type errors)
+        // Process other transactions (match manual refresh logic so edited badges and descriptions appear)
         const processedOtherTransactions: TransactionItem[] = [];
-        
+
         for (const item of otherTransactions) {
           let transactionType: 'credit' | 'debit' = 'debit';
           let label = '';
@@ -510,15 +566,18 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           let storageKey = '';
           let dateKey = new Date().toISOString();
           let edited = false;
-          
+
           if ('majuri_date' in item && 'agency_name' in item) {
             const majuriItem = item as AgencyMajuri;
             transactionType = 'debit';
             label = 'Majuri';
-            subLabel = majuriItem.agency_name;
+            subLabel = majuriItem.agency_name ? `Agency: ${majuriItem.agency_name}` : `Desc: ${majuriItem.description || 'N/A'}`;
             amount = majuriItem.amount;
             storageKey = OFFLINE_KEYS.AGENCY_MAJURI;
             dateKey = majuriItem.majuri_date;
+            if ('updated_at' in majuriItem && 'created_at' in majuriItem && majuriItem.updated_at && majuriItem.created_at) {
+              try { edited = new Date((majuriItem as any).updated_at).getTime() > new Date((majuriItem as any).created_at).getTime(); } catch { edited = false; }
+            }
           } else if ('transaction_date' in item && 'driver_name' in item) {
             const driverItem = item as DriverTransaction;
             transactionType = driverItem.type === 'earned' ? 'credit' : 'debit';
@@ -527,6 +586,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount = driverItem.amount;
             storageKey = OFFLINE_KEYS.DRIVER_TRANSACTIONS;
             dateKey = driverItem.transaction_date;
+            if ('updated_at' in driverItem && 'created_at' in driverItem && (driverItem as any).updated_at && (driverItem as any).created_at) {
+              try { edited = new Date((driverItem as any).updated_at).getTime() > new Date((driverItem as any).created_at).getTime(); } catch { edited = false; }
+            }
           } else if ('fuel_date' in item && 'truck_number' in item) {
             const fuelItem = item as TruckFuelEntry;
             transactionType = 'debit';
@@ -535,6 +597,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount = (fuelItem as any).amount || fuelItem.price_per_liter * ((fuelItem as any).quantity || 0);
             storageKey = OFFLINE_KEYS.TRUCK_FUEL;
             dateKey = fuelItem.fuel_date;
+            if ('updated_at' in fuelItem && 'created_at' in fuelItem && (fuelItem as any).updated_at && (fuelItem as any).created_at) {
+              try { edited = new Date((fuelItem as any).updated_at).getTime() > new Date((fuelItem as any).created_at).getTime(); } catch { edited = false; }
+            }
           } else if ('person_name' in item && 'entry_type' in item) {
             const uppadJamaItem = item as UppadJamaEntry;
             transactionType = uppadJamaItem.entry_type === 'credit' ? 'credit' : 'debit';
@@ -543,14 +608,22 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount = uppadJamaItem.amount;
             storageKey = OFFLINE_KEYS.UPPAD_JAMA_ENTRIES;
             dateKey = uppadJamaItem.entry_date;
+            if ('updated_at' in uppadJamaItem && 'created_at' in uppadJamaItem && (uppadJamaItem as any).updated_at && (uppadJamaItem as any).created_at) {
+              try { edited = new Date((uppadJamaItem as any).updated_at).getTime() > new Date((uppadJamaItem as any).created_at).getTime(); } catch { edited = false; }
+            }
           } else if ('entry_type' in item) {
             const generalItem = item as GeneralEntry;
             transactionType = generalItem.entry_type;
             label = generalItem.description || 'General Entry';
-            subLabel = '';
+            // Show agency when available, otherwise show a short description preview
+            const agency = (generalItem as any).agency_name;
+            subLabel = agency ? `Agency: ${agency}` : `Desc: ${generalItem.description || 'N/A'}`;
             amount = generalItem.amount;
             storageKey = OFFLINE_KEYS.GENERAL_ENTRIES;
             dateKey = generalItem.entry_date;
+            if ('updated_at' in generalItem && 'created_at' in generalItem && (generalItem as any).updated_at && (generalItem as any).created_at) {
+              try { edited = new Date((generalItem as any).updated_at).getTime() > new Date((generalItem as any).created_at).getTime(); } catch { edited = false; }
+            }
           }
 
           const time = new Date(dateKey).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -1469,29 +1542,80 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           style: "destructive",
           onPress: async () => {
             setLoading(true);
-            const allItemsMap = new Map<string, { id: string, storageKey: string }>();
+            const allItemsMap = new Map<string, { id: string, storageKey: string, item: any }>();
+            
+            // Collect detailed info for each transaction to be deleted
             transactions.forEach(t => {
               if (t.originalTransactions) {
                 t.originalTransactions.forEach((sub: any) => {
-                  allItemsMap.set(sub.id, { id: sub.id, storageKey: t.storageKey });
+                  allItemsMap.set(sub.id, { 
+                    id: sub.id, 
+                    storageKey: t.storageKey,
+                    item: sub // Store full item data for audit
+                  });
                 });
               } else {
-                allItemsMap.set(t.id, { id: t.id, storageKey: t.storageKey });
+                allItemsMap.set(t.id, { 
+                  id: t.id, 
+                  storageKey: t.storageKey,
+                  item: t // Store full item data for audit
+                });
               }
             });
 
             let successCount = 0;
+            const deletedItems = []; // Track successfully deleted items for audit
+            
             for (const id of selectedIds) {
               const itemToDelete = allItemsMap.get(id);
               if (itemToDelete) {
                 const success = await deleteTransactionByIdImproved(itemToDelete.id, itemToDelete.storageKey);
-                if (success) successCount++;
+                if (success) {
+                  successCount++;
+                  // Store deleted item details for audit
+                  deletedItems.push({
+                    id: itemToDelete.id,
+                    type: getEntryCategory(itemToDelete.storageKey),
+                    amount: itemToDelete.item?.amount || itemToDelete.item?.money || 0,
+                    description: itemToDelete.item?.label || itemToDelete.item?.remark || 'No description',
+                    time: itemToDelete.item?.time || itemToDelete.item?.created_at || 'Unknown',
+                    personName: itemToDelete.item?.personName || itemToDelete.item?.person_name || 'N/A'
+                  });
+                }
               }
             }
 
             setSelectionMode(false);
             setSelectedIds(new Set());
             await loadDailyTransactions(selectedDate);
+
+            // Send detailed notifications for bulk deletions
+            if (successCount > 0 && profile) {
+              const userName = profile.username || profile.name || 'User';
+              
+              // Create detailed audit trail for bulk delete
+              const deleteSummary = deletedItems.map((item, index) => 
+                `${index + 1}. ${item.type} - ₹${item.amount} | Person: ${item.personName} | "${item.description}" | Time: ${item.time}`
+              ).join('\n');
+              
+              const detailedMessage = `BULK DELETE by ${userName} at ${new Date().toLocaleString()}\n${successCount} transactions deleted:\n${deleteSummary}`;
+              
+              try {
+                await NotificationService.notifyDelete(
+                  'general_entry', // Default category for mixed deletions
+                  detailedMessage
+                );
+                
+                // Send device notification to admin with summary
+                await DeviceNotificationService.notifyAdminEntryUpdated(
+                  `${successCount} transactions bulk deleted from Daily Report`,
+                  'delete',
+                  'daily_report'
+                );
+              } catch (notificationError) {
+                console.warn('Failed to send delete notifications:', notificationError);
+              }
+            }
 
             showAlert(`Deleted ${successCount} item(s)`);
           }
@@ -1615,6 +1739,53 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       }
 
       if (success) {
+        // Trigger admin notification for edit (always send to admin)
+        if (profile) {
+          const userName = profile.username || profile.name || 'User';
+          
+          // Create detailed audit message showing before/after changes
+          const originalData = editingItem.originalData;
+          const changes = [];
+          
+          // Check amount changes
+          const originalAmount = originalData?.amount || 0;
+          if (originalAmount !== numAmount) {
+            changes.push(`Amount: ₹${originalAmount} → ₹${numAmount}`);
+          }
+          
+          // Check description changes  
+          const originalDesc = originalData?.description || originalData?.remark || '';
+          if (originalDesc !== editDescription) {
+            changes.push(`Description: "${originalDesc}" → "${editDescription}"`);
+          }
+          
+          // Check other field changes based on entry type
+          if (originalData?.personName && originalData.personName !== (originalData?.updatedPersonName || originalData?.personName)) {
+            changes.push(`Person: "${originalData.personName}" → "${originalData.updatedPersonName}"`);
+          }
+          
+          const changeDetails = changes.length > 0 ? changes.join(', ') : 'Minor updates';
+          const detailedMessage = `${editingItem.label || 'Entry'} edited by ${userName}. Changes: ${changeDetails}. Time: ${new Date().toLocaleString()}`;
+          
+          // Send database notification (admin will see in notification list)
+          await NotificationService.notifyEdit(
+            getEntryCategory(editingItem.tableSource || editingItem.storageKey),
+            detailedMessage
+          );
+          
+          // Send device notification (admin will get push notification)
+          await DeviceNotificationService.notifyAdminEntryUpdated(
+            `${editingItem.label || 'Entry'} Modified`,
+            userName,
+            { 
+              id: editingItem.id, 
+              before: { amount: originalAmount, description: originalDesc },
+              after: { amount: numAmount, description: editDescription },
+              changes: changeDetails,
+              timestamp: new Date().toISOString()
+            }
+          );
+        }
         showAlert('Entry updated');
         setIsEditing(false);
         setEditingItem(null);
@@ -1630,7 +1801,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     }
   };
   
-  const handleDeleteEntry = useCallback((id: string, storageKey: string, label: string) => {
+  const handleDeleteEntry = useCallback((id: string, storageKey: string, label: string, item?: any) => {
     Alert.alert(
       "Confirm Delete",
       `Are you sure you want to remove this transaction?\n\n"${label}"\n\nThis action cannot be undone.`, 
@@ -1645,6 +1816,43 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
               if (success) {
                 showAlert('Transaction deleted');
                 await loadDailyTransactions(selectedDate);
+                
+                // Send detailed notifications for individual delete
+                if (profile) {
+                  const userName = profile.username || profile.name || 'User';
+                  
+                  // Extract detailed information for audit trail
+                  const deleteDetails = {
+                    id: id,
+                    type: getEntryCategory(storageKey),
+                    label: label,
+                    amount: item?.amount || item?.money || 0,
+                    description: item?.remark || item?.description || label,
+                    time: item?.time || item?.created_at || 'Unknown time',
+                    personName: item?.personName || item?.person_name || 'N/A',
+                    deletedBy: userName,
+                    deletedAt: new Date().toLocaleString(),
+                    storageKey: storageKey
+                  };
+                  
+                  const detailedMessage = `DELETED: ${deleteDetails.type} - ₹${deleteDetails.amount} | Person: ${deleteDetails.personName} | "${deleteDetails.description}" | Original Time: ${deleteDetails.time} | Deleted by: ${userName} | Deleted at: ${deleteDetails.deletedAt}`;
+                  
+                  try {
+                    await NotificationService.notifyDelete(
+                      getEntryCategory(storageKey),
+                      detailedMessage
+                    );
+                    
+                    // Send detailed device notification to admin
+                    await DeviceNotificationService.notifyAdminEntryUpdated(
+                      `${deleteDetails.type} Deleted: ${label}`,
+                      'delete',
+                      'daily_report'
+                    );
+                  } catch (notificationError) {
+                    console.warn('Failed to send delete notifications:', notificationError);
+                  }
+                }
               } else {
                 showAlert('Failed to delete transaction');
               }
@@ -1656,7 +1864,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         }
       ]
     );
-  }, [showAlert, selectedDate, loadDailyTransactions]);
+  }, [showAlert, selectedDate, loadDailyTransactions, profile]);
 
   const getItemLayout = useCallback((_: any, index: number) => ({
     length: 80, // Approximate height of each item

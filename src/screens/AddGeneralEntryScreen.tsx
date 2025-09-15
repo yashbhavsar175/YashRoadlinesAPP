@@ -8,7 +8,9 @@ import { GlobalStyles } from '../theme/styles';
 import { saveGeneralEntry, GeneralEntryInput, getAgencies } from '../data/Storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAlert } from '../context/AlertContext';
-import ActivityNotificationService from '../services/ActivityNotificationService';
+import NotificationService from '../services/NotificationService';
+import DeviceNotificationService from '../services/DeviceNotificationService';
+import { supabase } from '../supabase';
 type AddGeneralEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'AddGeneralEntry'>;
 
 interface AddGeneralEntryScreenProps {
@@ -64,10 +66,23 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
       const success = await saveGeneralEntry(input);
 
       if (success) {
-        // Send push notification to admin
-        await ActivityNotificationService.notifyGeneralEntry(
-          'add',
-          `${entryType.toUpperCase()}: ₹${numAmount} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`
+        // Get current user info for notifications
+        const { data: { user } } = await supabase.auth.getUser();
+        const userName = user?.user_metadata?.full_name || user?.email || 'User';
+        
+        // Send notification to admin
+        await NotificationService.notifyAdd('general_entry', `New ${entryType} entry: ₹${numAmount} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`);
+        
+        // Send device notification to admin
+        await DeviceNotificationService.notifyAdminEntryAdded(
+          'General Entry', 
+          userName, 
+          {
+            type: entryType,
+            amount: numAmount,
+            description: description.trim(),
+            agency: agencyName
+          }
         );
         
         showAlert('Entry saved successfully!');
@@ -144,6 +159,21 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
               <Text style={[styles.radioText, entryType === 'credit' && styles.radioTextSelected]}>Credit</Text>
             </TouchableOpacity>
           </View>
+          
+          {/* Test notification button - remove this after testing */}
+          <TouchableOpacity 
+            onPress={() => DeviceNotificationService.sendTestNotification()} 
+            style={[GlobalStyles.buttonPrimary, { backgroundColor: '#FF9800', marginBottom: 10 }]}
+          >
+            <Text style={GlobalStyles.buttonPrimaryText}>🧪 Test Notification</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            onPress={() => DeviceNotificationService.requestPermissions()} 
+            style={[GlobalStyles.buttonPrimary, { backgroundColor: '#9C27B0', marginBottom: 10 }]}
+          >
+            <Text style={GlobalStyles.buttonPrimaryText}>🔔 Request Permissions</Text>
+          </TouchableOpacity>
           
           <TouchableOpacity onPress={handleSaveEntry} disabled={saving} style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}>
             <Text style={GlobalStyles.buttonPrimaryText}>{saving ? 'Saving...' : 'Save Entry'}</Text>
