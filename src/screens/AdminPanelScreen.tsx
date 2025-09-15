@@ -560,6 +560,20 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                 )}
               </View>
 
+              {/* User Display Name Management */}
+              <View style={styles.subSection}>
+                <TouchableOpacity
+                  onPress={() => navigate('AdminUserManagement')}
+                  style={styles.subSectionHeader}
+                >
+                  <View style={styles.subSectionHeaderLeft}>
+                    <Icon name="person-outline" size={20} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+                    <Text style={styles.subSectionTitle}>User Display Names</Text>
+                  </View>
+                  <Icon name="chevron-forward" size={22} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
               {/* Person Management */}
               <View style={styles.subSection}>
                 <TouchableOpacity

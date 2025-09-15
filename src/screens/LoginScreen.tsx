@@ -114,7 +114,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
         const resendAt = parseInt(resendAtStr || '0', 10) || 0;
         const secs = resendAt > now ? Math.ceil((resendAt - now) / 1000) : 0;
         startResendTimer(secs);
-      } catch {}
+      } catch { }
     };
     loadSecurityState();
     return () => {
@@ -194,7 +194,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       }
 
       // Set OTP phase regardless of email success (for testing)
-      try { await AsyncStorage.setItem('otp_pending', '1'); } catch {}
+      try { await AsyncStorage.setItem('otp_pending', '1'); } catch { }
       setSignedInUserId(data.user.id);
       setOtpPhase(true);
       // Initialize OTP attempt counters and cooldowns
@@ -205,7 +205,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
         setAttemptsLeft(OTP_MAX_ATTEMPTS);
         setLockUntil(0);
         startResendTimer(0);
-      } catch {}
+      } catch { }
 
     } catch (error: any) {
       console.error('Login error:', error);
@@ -236,18 +236,18 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       if (!ok) {
         const nextAttempts = Math.max(0, attemptsLeft - 1);
         setAttemptsLeft(nextAttempts);
-        try { await AsyncStorage.setItem(keyAttempts(signedInUserId), `${nextAttempts}`); } catch {}
+        try { await AsyncStorage.setItem(keyAttempts(signedInUserId), `${nextAttempts}`); } catch { }
         if (nextAttempts <= 0) {
           const lockMs = Date.now() + OTP_LOCK_MINUTES * 60 * 1000;
           setLockUntil(lockMs);
-          try { await AsyncStorage.setItem(keyLockUntil(signedInUserId), `${lockMs}`); } catch {}
+          try { await AsyncStorage.setItem(keyLockUntil(signedInUserId), `${lockMs}`); } catch { }
           Alert.alert('Too Many Attempts', `You are locked for ${OTP_LOCK_MINUTES} minutes.`);
         } else {
           Alert.alert('Incorrect OTP', `The OTP is invalid or expired. Attempts left: ${nextAttempts}`);
         }
         return;
       }
-      try { await AsyncStorage.removeItem('otp_pending'); } catch {}
+      try { await AsyncStorage.removeItem('otp_pending'); } catch { }
       // Clear security state on success
       try {
         await AsyncStorage.multiRemove([
@@ -255,7 +255,38 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
           keyLockUntil(signedInUserId),
           keyResendAt(signedInUserId),
         ]);
-      } catch {}
+      } catch { }
+      
+      // Save user profile to AsyncStorage for NotificationService
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const profile = await getProfile(user.id);
+          const userName = profile?.full_name?.trim() || 
+                          profile?.username?.trim() || 
+                          user.email?.split('@')[0] || 
+                          'User';
+          
+          const userProfile = {
+            id: user.id,
+            email: user.email,
+            name: userName,
+            user_type: profile?.user_type || 'normal'
+          };
+          await AsyncStorage.setItem('user_profile', JSON.stringify(userProfile));
+          console.log('✅ User profile saved to AsyncStorage for notifications');
+          
+          // Initialize NotificationService
+          const NotificationService = require('../services/NotificationService').default;
+          const NotificationSetup = require('../services/NotificationSetup').default;
+          await NotificationService.initialize();
+          await NotificationSetup.reinitialize();
+          console.log('✅ All notification services initialized');
+        }
+      } catch (error) {
+        console.error('❌ Error saving user profile for notifications:', error);
+      }
+      
       setOtpPhase(false);
       setOtpInput('');
       navigation.replace('Home');
@@ -349,9 +380,9 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       }
 
       console.log('🔄 Resending OTP to:', email.trim());
-if (__DEV__) {
-  console.log('OTP generation request processed');
-}
+      if (__DEV__) {
+        console.log('OTP generation request processed');
+      }
 
       const deliverySuccess = await deliverOtpAlternative({
         email: email.trim(),
@@ -366,7 +397,7 @@ if (__DEV__) {
         console.log('✅ OTP resent successfully');
         // Start cooldown
         const nextAt = Date.now() + RESEND_COOLDOWN_SEC * 1000;
-        try { await AsyncStorage.setItem(keyResendAt(signedInUserId), `${nextAt}`); } catch {}
+        try { await AsyncStorage.setItem(keyResendAt(signedInUserId), `${nextAt}`); } catch { }
         startResendTimer(RESEND_COOLDOWN_SEC);
       } else {
         Alert.alert(
@@ -388,7 +419,7 @@ if (__DEV__) {
     setOtpPhase(false);
     setOtpInput('');
     setSignedInUserId(null);
-    try { await AsyncStorage.removeItem('otp_pending'); } catch {}
+    try { await AsyncStorage.removeItem('otp_pending'); } catch { }
     try {
       if (signedInUserId) {
         await AsyncStorage.multiRemove([
@@ -397,7 +428,7 @@ if (__DEV__) {
           keyResendAt(signedInUserId),
         ]);
       }
-    } catch {}
+    } catch { }
     clearResendTimer();
     await supabase.auth.signOut();
   };
@@ -597,7 +628,7 @@ if (__DEV__) {
                 <Text style={[GlobalStyles.linkText, { textAlign: 'center' }]}>Cancel</Text>
               </TouchableOpacity>
 
-              
+
             </View>
           )}
         </View>

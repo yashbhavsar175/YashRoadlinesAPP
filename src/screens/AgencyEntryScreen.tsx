@@ -33,6 +33,7 @@ import {
   OFFLINE_KEYS,
 } from '../data/Storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import ActivityNotificationService from '../services/ActivityNotificationService';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 
@@ -204,6 +205,12 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
       };
       const success = await saveAgencyEntry(entryData);
       if (success) {
+        // Send push notification to admin
+        await ActivityNotificationService.notifyAgencyEntry(
+          'add',
+          `${entryType.toUpperCase()}: ₹${numericAmount} for ${selectedAgency} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`
+        );
+        
         // Using a small timeout to ensure the alert is shown after the state updates
         setTimeout(() => {
           showAlert('Entry saved successfully!');
@@ -233,8 +240,17 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
           style: "destructive",
           onPress: async () => {
             try {
+              const entryToDelete = recentEntries.find(entry => entry.id === id);
               const success = await deleteTransactionByIdImproved(id, OFFLINE_KEYS.AGENCY_ENTRIES);
               if (success) {
+                // Send delete notification to admin
+                if (entryToDelete) {
+                  await ActivityNotificationService.notifyAgencyEntry(
+                    'delete',
+                    `Deleted ${entryToDelete.entry_type} entry: ₹${entryToDelete.amount} for ${entryToDelete.agency_name}`
+                  );
+                }
+                
                 const updatedEntries = recentEntries.filter(entry => entry.id !== id);
                 setRecentEntries(updatedEntries);
                 showAlert('Entry deleted successfully!');

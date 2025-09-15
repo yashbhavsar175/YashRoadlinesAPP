@@ -32,6 +32,7 @@ import { useAlert } from '../context/AlertContext';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import CustomDropdown from '../components/Dropdown';
+import NotificationService from '../services/NotificationService';
 
 type BackdatedEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'BackdatedEntry'>;
 
@@ -285,7 +286,11 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
       }
 
       if (success) {
-        showAlert(`${entryTypeOptions.find(t => t.value === selectedEntryType)?.label} saved successfully for ${date.toLocaleDateString('en-IN')}!`);
+        // Send notification to admin
+        const entryTypeName = entryTypeOptions.find(t => t.value === selectedEntryType)?.label || selectedEntryType;
+        await NotificationService.notifyAdd(selectedEntryType as any, `Backdated ${entryTypeName}: ₹${numericAmount} for ${date.toLocaleDateString('en-IN')}`);
+        
+        showAlert(`${entryTypeName} saved successfully for ${date.toLocaleDateString('en-IN')}!`);
         resetForm();
       } else {
         showAlert('Failed to save entry');

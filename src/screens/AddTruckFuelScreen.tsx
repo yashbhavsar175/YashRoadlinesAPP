@@ -10,6 +10,7 @@ import Dropdown from '../components/Dropdown';
 import { saveTruckFuel, getTruckFuelEntries, TruckFuelEntry, deleteTransactionByIdImproved, syncAllDataFixed } from '../data/Storage';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
+import ActivityNotificationService from '../services/ActivityNotificationService';
 
 interface DriverFuelEntry {
   id: string;
@@ -117,6 +118,14 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
     try {
       const success = await saveTruckFuel(newEntry);
       if (success) {
+        // Send push notification to admin
+        await ActivityNotificationService.notifyFuelEntry(
+          'add',
+          numAmount,
+          driverName.trim(),
+          `${fuelType} - ${estimatedQuantity.toFixed(1)}L`
+        );
+        
         showAlert('Fuel entry saved successfully!');
         setDriverName('');
         setAmount('');
@@ -133,6 +142,8 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
   };
   
   const handleDeleteEntry = async (id: string) => {
+    const entryToDelete = fuelEntries.find(entry => entry.id === id);
+    
     Alert.alert(
       "Confirm Delete",
       "Are you sure you want to permanently delete this entry?",
@@ -145,6 +156,16 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
             try {
               const success = await deleteTransactionByIdImproved(id, 'offline_truck_fuel');
               if (success) {
+                // Send delete notification to admin
+                if (entryToDelete) {
+                  await ActivityNotificationService.notifyFuelEntry(
+                    'delete',
+                    entryToDelete.amount,
+                    entryToDelete.driverName,
+                    `Deleted ${entryToDelete.fuelType} entry`
+                  );
+                }
+                
                 Alert.alert('Success ✅', 'Entry deleted successfully!', [
                   { text: 'OK', onPress: loadFuelEntries }
                 ]);

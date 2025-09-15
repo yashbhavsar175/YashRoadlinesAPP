@@ -1,22 +1,23 @@
 // HomeScreen.tsx - Complete with Black & White Theme + Majur Dashboard
 import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  Alert, 
-  Modal, 
-  Dimensions, 
-  TouchableOpacity, 
-  Text, 
-  Platform, 
-  StatusBar, 
-  ScrollView, 
-  TextInput, 
+import {
+  View,
+  StyleSheet,
+  Alert,
+  Modal,
+  Dimensions,
+  TouchableOpacity,
+  Text,
+  Platform,
+  StatusBar,
+  ScrollView,
+  TextInput,
   KeyboardAvoidingView,
   FlatList,
   ActivityIndicator,
   RefreshControl
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -24,6 +25,14 @@ import { supabase } from '../supabase';
 import { GlobalStyles } from '../theme/styles';
 import { getProfile, updateProfile, getAgencyMajuri, AgencyMajuri, getUppadJamaEntries, UppadJamaEntry, getAllTransactionsForDate, syncAllDataFixed } from '../data/Storage';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { NotificationBell } from '../components/NotificationBell';
+import { FlatGrid } from 'react-native-super-grid';
+
+// Get screen dimensions for responsive design
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const isTablet = screenWidth >= 768;
+const isSmallScreen = screenWidth < 340;
+const isMediumScreen = screenWidth >= 340 && screenWidth < 768;
 
 // Black & White Theme Colors
 const BWColors = {
@@ -72,11 +81,11 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   const [isProfileLoading, setIsProfileLoading] = useState<boolean>(true);
   const isMountedRef = useRef(true);
   const hasInitializedRef = useRef(false);
-  
+
   // Majur Dashboard states
-  const [majuriData, setMajuriData] = useState<{displayDate: string; isToday: boolean; isYesterday: boolean; id: string; majuri_date: string; amount: number; agency_name: string; description?: string}[]>([]);
-  const [combinedData, setCombinedData] = useState<{displayDate: string; isToday: boolean; isYesterday: boolean; id: string; date: string; amount: number; name: string; description?: string; type: 'majuri' | 'uppad_jama'; entry_type?: string}[]>([]);
-  const [datewiseSummary, setDatewiseSummary] = useState<{date: string; displayDate: string; totalAmount: number; isToday: boolean; isYesterday: boolean}[]>([]);
+  const [majuriData, setMajuriData] = useState<{ displayDate: string; isToday: boolean; isYesterday: boolean; id: string; majuri_date: string; amount: number; agency_name: string; description?: string }[]>([]);
+  const [combinedData, setCombinedData] = useState<{ displayDate: string; isToday: boolean; isYesterday: boolean; id: string; date: string; amount: number; name: string; description?: string; type: 'majuri' | 'uppad_jama'; entry_type?: string }[]>([]);
+  const [datewiseSummary, setDatewiseSummary] = useState<{ date: string; displayDate: string; totalAmount: number; isToday: boolean; isYesterday: boolean }[]>([]);
   const [majurLoading, setMajurLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const today = new Date();
@@ -86,23 +95,151 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   const [dailyTotal, setDailyTotal] = useState<number>(0);
   const [filteredData, setFilteredData] = useState<any[]>([]);
 
+  // Responsive state management
+  const [screenData, setScreenData] = useState(Dimensions.get('window'));
+
+  useEffect(() => {
+    const onChange = (result: any) => {
+      setScreenData(result.window);
+    };
+
+    const subscription = Dimensions.addEventListener('change', onChange);
+    return () => subscription?.remove();
+  }, []);
+
+  // Button data for responsive grid
+  const financialButtons = [
+    { id: 'paid', title: 'Paid Section', icon: 'cash-outline', route: 'PaidSection', bgColor: '#e8f5e8', iconColor: '#4caf50' },
+    { id: 'majuri', title: 'Add Majuri', icon: 'hammer-outline', route: 'AddMajuri', bgColor: '#fff3e0', iconColor: '#ff9800' },
+    { id: 'agency', title: 'Agency Entry', icon: 'business-outline', route: 'AgencyEntry', bgColor: '#e3f2fd', iconColor: '#2196f3' },
+    { id: 'general', title: 'General Entry', icon: 'journal-outline', route: 'AddGeneralEntry', bgColor: '#f3e5f5', iconColor: '#9c27b0' },
+    { id: 'uppad', title: 'Uppad/Jama', icon: 'people-outline', route: 'UppadJama', bgColor: '#fce4ec', iconColor: '#e91e63' },
+    { id: 'mumbai', title: 'Mumbai Delivery', icon: 'car-outline', route: 'MumbaiDeliveryEntry', bgColor: '#e0f2f1', iconColor: '#009688' },
+    { id: 'backdated', title: 'Backdated Entry', icon: 'time-outline', route: 'BackdatedEntry', bgColor: '#fff8e1', iconColor: '#ffc107' },
+  ];
+
+  const statementButtons = [
+    { id: 'statement', title: 'Statement', icon: 'list-outline', route: 'Statement', bgColor: '#f1f8e9', iconColor: '#689f38' },
+    { id: 'monthly', title: 'Monthly Statement', icon: 'calendar-outline', route: 'MonthlyStatement', bgColor: '#e8eaf6', iconColor: '#3f51b5' },
+    { id: 'daily', title: 'Daily Report', icon: 'document-text-outline', route: 'DailyReport', bgColor: '#fff3e0', iconColor: '#ff6f00' },
+    ...(isAdmin ? [{ id: 'history', title: 'History Log', icon: 'time-outline', route: 'History', bgColor: '#ffebee', iconColor: '#d32f2f' }] : []),
+  ];
+
+  const driverButtons = [
+    { id: 'driver', title: 'Driver Account', icon: 'person-circle-outline', route: 'DriverDetails', bgColor: '#e1f5fe', iconColor: '#0277bd' },
+    { id: 'fuel', title: 'Add Truck Fuel', icon: 'water-outline', route: 'AddTruckFuel', bgColor: '#f3e5f5', iconColor: '#7b1fa2' },
+    // Temporary debug button - remove after testing
+    ...(userName !== 'Admin' ? [{ id: 'debug', title: 'Test Notification', icon: 'bug-outline', route: 'DEBUG_NOTIFICATION', bgColor: '#ffebee', iconColor: '#f44336' }] : []),
+  ];
+
+  // Calculate responsive dimensions
+  const getItemDimension = () => {
+    const padding = currentIsSmallScreen ? 80 : 96;
+    const availableWidth = currentWidth - padding;
+
+    if (currentIsSmallScreen) {
+      return availableWidth; // 1 column for small screens (full width)
+    } else {
+      return Math.floor(availableWidth / 2) - 6; // 2 columns for medium/large/tablet screens
+    }
+  };
+
+  const handleDebugNotification = async () => {
+    try {
+      console.log('🧪 === NOTIFICATION DEBUG START ===');
+
+      // Check user profile
+      let userProfile = await AsyncStorage.getItem('user_profile');
+      console.log('👤 User profile:', userProfile);
+
+      if (!userProfile) {
+        console.log('🔧 No user profile found, creating one...');
+
+        // Get current user and create profile
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const profile = await getProfile(user.id);
+          const userName = profile?.full_name?.trim() ||
+            profile?.username?.trim() ||
+            user.email?.split('@')[0] ||
+            'User';
+
+          const newUserProfile = {
+            id: user.id,
+            email: user.email,
+            name: userName,
+            user_type: profile?.user_type || 'normal'
+          };
+
+          await AsyncStorage.setItem('user_profile', JSON.stringify(newUserProfile));
+          console.log('✅ User profile created:', newUserProfile);
+          userProfile = JSON.stringify(newUserProfile);
+        } else {
+          Alert.alert('Error', 'No authenticated user found. Please login again.');
+          return;
+        }
+      }
+
+      // Initialize and test notification service
+      const NotificationService = require('../services/NotificationService').default;
+      await NotificationService.initialize();
+
+      const result = await NotificationService.sendAdminNotification({
+        title: '🧪 Debug Test',
+        message: 'Manual test notification from debug button',
+        type: 'system',
+        severity: 'info'
+      });
+
+      if (result) {
+        Alert.alert('Success!', 'Test notification sent. Check admin account.');
+      } else {
+        Alert.alert('Failed', 'Test notification failed. Check console logs.');
+      }
+
+      console.log('🧪 === NOTIFICATION DEBUG END ===');
+    } catch (error) {
+      console.error('❌ Debug error:', error);
+      Alert.alert('Error', `Debug failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const renderButton = ({ item }: { item: any }) => (
+    <TouchableOpacity
+      onPress={() => {
+        if (item.route === 'DEBUG_NOTIFICATION') {
+          handleDebugNotification();
+        } else {
+          navigate(item.route);
+        }
+      }}
+      style={[styles.gridButton, { backgroundColor: item.bgColor }]}
+      activeOpacity={0.8}
+    >
+      <View style={[styles.iconContainer, { backgroundColor: item.iconColor }]}>
+        <Icon name={item.icon} size={currentIsSmallScreen ? 24 : 26} color="#ffffff" />
+      </View>
+      <Text style={styles.gridButtonText}>{item.title}</Text>
+    </TouchableOpacity>
+  );
+
   const updateFilteredData = useCallback((data: any[], date: Date) => {
     // Normalize the comparison dates to ignore time
     const normalizedSelectedDate = new Date(date);
     normalizedSelectedDate.setHours(0, 0, 0, 0);
-    
+
     const selectedDateEntries = data.filter(item => {
       const itemDate = new Date(item.date);
       itemDate.setHours(0, 0, 0, 0);
       return itemDate.getTime() === normalizedSelectedDate.getTime();
     });
-    
+
     const total = selectedDateEntries.reduce((sum, item) => {
       if (item.type === 'majuri') return sum + item.amount;
       else if (item.type === 'uppad_jama') return item.entry_type === 'credit' ? sum + item.amount : sum - item.amount;
       return sum;
     }, 0);
-    
+
     setDailyTotal(total);
     setFilteredData(selectedDateEntries);
   }, [setDailyTotal, setFilteredData]);
@@ -113,7 +250,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       updateFilteredData(combinedData, selectedDate);
     }
   }, [combinedData, selectedDate, updateFilteredData]);
-  
+
   // Force refresh when loading completes
   useEffect(() => {
     if (combinedData.length > 0 && !majurLoading) {
@@ -127,7 +264,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
     try {
       const { data: { user }, error } = await supabase.auth.getUser();
-      
+
       if (error || !user) {
         setUserInitial('?');
         setUserRole('Guest');
@@ -135,14 +272,14 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         setIsProfileLoading(false);
         return;
       }
-      
+
       let profile = await getProfile(user.id);
-      
+
       if (!profile) {
         await new Promise(resolve => setTimeout(resolve, 500));
         profile = await getProfile(user.id);
       }
-      
+
       if (profile?.full_name && profile.full_name.trim()) {
         if (isMountedRef.current) {
           setUserName(profile.full_name);
@@ -195,13 +332,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
     if (isToday) return 'आज';
     if (isYesterday) return 'कल';
-    
+
     const dayName = getDayName(date);
     const dateStr = date.toLocaleDateString('hi-IN', {
       day: '2-digit',
       month: 'short',
     });
-    
+
     return `${dayName}, ${dateStr}`;
   };
 
@@ -210,40 +347,40 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       setMajurLoading(true);
       // Clear previous data to force refresh
       setFilteredData([]);
-      
+
       // पहले sync करें - Solution 1
       console.log('HomeScreen - loadMajurData - Starting data sync...');
       await syncAllDataFixed();
       console.log('HomeScreen - loadMajurData - Data sync completed');
-      
+
       // Load both majuri and uppad/jama entries
       const allMajuri: AgencyMajuri[] = await getAgencyMajuri();
       const allUppadJama: UppadJamaEntry[] = await getUppadJamaEntries();
-      
+
       console.log('HomeScreen - loadMajurData - Total uppad/jama entries:', allUppadJama.length);
       console.log('HomeScreen - loadMajurData - Recent uppad/jama sample:', allUppadJama.slice(0, 3));
-      
+
       // Get current date and set time to start of day
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       sevenDaysAgo.setHours(0, 0, 0, 0);
-      
+
       // Filter majuri entries from the last 7 days
       const recentMajuri = allMajuri.filter(item => {
         const itemDate = new Date(item.majuri_date);
         return itemDate >= sevenDaysAgo;
       });
-      
+
       // Filter uppad/jama entries from the last 7 days (exclude admin panel entries)
       const recentUppadJama = allUppadJama.filter(item => {
         const itemDate = new Date(item.entry_date);
-        return itemDate >= sevenDaysAgo && 
-               (!item.description || !item.description.includes('Admin Panel'));
+        return itemDate >= sevenDaysAgo &&
+          (!item.description || !item.description.includes('Admin Panel'));
       });
-      
+
       console.log('HomeScreen - After filtering - Recent uppad/jama count:', recentUppadJama.length);
       console.log('HomeScreen - Recent uppad/jama entries:', recentUppadJama);
-      
+
       // Convert majuri entries to combined format
       const majuriCombined = recentMajuri.map(item => ({
         id: `majuri-${item.id}`,
@@ -256,7 +393,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         isToday: new Date(item.majuri_date).toDateString() === new Date().toDateString(),
         isYesterday: new Date(item.majuri_date).toDateString() === new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toDateString(),
       }));
-      
+
       // Convert uppad/jama entries to combined format, excluding Uppad (debit) entries
       // For Jama (credit) entries, we show them as negative amounts in the dashboard
       const uppadJamaCombined = recentUppadJama
@@ -273,31 +410,31 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           isToday: new Date(item.entry_date).toDateString() === new Date().toDateString(),
           isYesterday: new Date(item.entry_date).toDateString() === new Date(new Date().setDate(new Date().getDate() - 1)).toDateString(),
         }));
-      
+
       // Combine all entries
       const allCombined = [...majuriCombined, ...uppadJamaCombined];
-      
+
       // Sort all positive entries first (newest first), then all negative entries (newest first)
       const sortedCombined = allCombined.sort((a, b) => {
         // First sort by sign (positive first, then negative)
         if (a.amount >= 0 && b.amount < 0) return -1; // a is positive, b is negative
         if (a.amount < 0 && b.amount >= 0) return 1;  // a is negative, b is positive
-        
+
         // If both are same sign, sort by date (newest first)
         const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (dateDiff !== 0) return dateDiff;
-        
+
         // If same date, sort by absolute amount (largest first)
         return Math.abs(b.amount) - Math.abs(a.amount);
       });
 
       setCombinedData(sortedCombined);
-      
+
       // Update filtered data with the latest combined data
       updateFilteredData(sortedCombined, selectedDate);
-      
+
       // Keep original majuri data for backward compatibility
-      const sortedMajuri = recentMajuri.sort((a, b) => 
+      const sortedMajuri = recentMajuri.sort((a, b) =>
         new Date(b.majuri_date).getTime() - new Date(a.majuri_date).getTime()
       );
 
@@ -316,7 +453,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       });
 
       setMajuriData(majuriWithDisplay);
-      
+
       // Create an array of the last 7 days
       const last7Days = Array.from({ length: 7 }, (_, i) => {
         const date = new Date();
@@ -324,14 +461,14 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         date.setHours(0, 0, 0, 0);
         return date;
       });
-      
+
       // Create a map of dates to their entries for combined data
       const dateToEntries = new Map();
       sortedCombined.forEach(item => {
         const date = new Date(item.date);
         date.setHours(0, 0, 0, 0);
         const dateString = date.toDateString();
-        
+
         if (!dateToEntries.has(dateString)) {
           dateToEntries.set(dateString, {
             entries: [],
@@ -341,7 +478,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             isYesterday: date.toDateString() === new Date(new Date().setDate(new Date().getDate() - 1)).toDateString()
           });
         }
-        
+
         const dayData = dateToEntries.get(dateString);
         dayData.entries.push(item);
         // Calculate amount based on type and entry_type
@@ -352,12 +489,12 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           dayData.totalAmount += item.entry_type === 'credit' ? item.amount : -item.amount;
         }
       });
-      
+
       // Create summary for all 7 days, including those with zero entries
       const summary = last7Days.map(date => {
         const dateString = date.toDateString();
         const dayData = dateToEntries.get(dateString);
-        
+
         if (dayData) {
           return {
             date: dateString,
@@ -368,7 +505,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             hasEntries: true
           };
         }
-        
+
         // For days with no entries
         return {
           date: dateString,
@@ -379,7 +516,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           hasEntries: false
         };
       }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
+
       setDatewiseSummary(summary);
       updateFilteredData(combinedData, selectedDate);
     } catch (error) {
@@ -406,7 +543,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
-      
+
       const loadData = async () => {
         try {
           if (userType === 'majur') {
@@ -424,7 +561,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       };
 
       loadData();
-      
+
       return () => {
         isActive = false;
         isMountedRef.current = false;
@@ -441,8 +578,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     // Set up real-time subscription for majuri data
     const majuriChannel = supabase
       .channel('agency_majuri_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'agency_majuri' }, 
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'agency_majuri' },
         (payload) => {
           console.log('Majuri data changed, refreshing...', payload);
           loadMajurData();
@@ -453,7 +590,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     // Set up broadcast listener for manual refresh triggers
     const broadcastChannel = supabase
       .channel('majur-dashboard-refresh')
-      .on('broadcast', 
+      .on('broadcast',
         { event: 'refresh-dashboard' },
         (payload) => {
           console.log('HomeScreen - Received broadcast refresh signal:', payload);
@@ -469,9 +606,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     const uppadJamaChannel = supabase
       .channel('uppad_jama_entries_changes')
       .on('postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
+        {
+          event: '*',
+          schema: 'public',
           table: 'uppad_jama_entries',
           filter: 'entry_type=eq.credit' // Only listen to jama (credit) entries
         },
@@ -502,22 +639,31 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
   // Remove automatic polling - only refresh on specific events
 
-  // Updated Styles with Black & White Theme
+  // Enhanced Styles with Modern UI Design - Responsive
+  const currentWidth = screenData.width;
+  const currentIsTablet = currentWidth >= 768;
+  const currentIsSmallScreen = currentWidth < 340;
+
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: BWColors.surfaceVariant,
+      backgroundColor: '#f8f9fa',
     },
     iconContainer: {
-      width: 56,
-      height: 56,
-      borderRadius: 16,
+      width: currentIsSmallScreen ? 56 : 64,
+      height: currentIsSmallScreen ? 56 : 64,
+      borderRadius: 20,
       justifyContent: 'center',
       alignItems: 'center',
-      marginBottom: 12,
-      backgroundColor: BWColors.surface,
-      borderWidth: 1,
-      borderColor: BWColors.borderLight,
+      marginBottom: currentIsSmallScreen ? 12 : 16,
+      backgroundColor: '#ffffff',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.1,
+      shadowRadius: 12,
+      elevation: 6,
+      borderWidth: 0.5,
+      borderColor: 'rgba(0,0,0,0.05)',
     },
     loadingContainer: {
       padding: 48,
@@ -531,15 +677,20 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       marginTop: 16,
     },
     appBar: {
-      backgroundColor: BWColors.primary,
+      backgroundColor: '#1a1a1a',
       padding: 20,
       paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 16 : 50,
-      paddingBottom: 24,
+      paddingBottom: 28,
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      borderBottomLeftRadius: 0,
-      borderBottomRightRadius: 0,
+      borderBottomLeftRadius: 24,
+      borderBottomRightRadius: 24,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
     },
     appBarTitle: {
       color: BWColors.surface,
@@ -571,6 +722,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     scrollViewContent: {
       padding: 20,
       paddingTop: 24,
+      paddingBottom: 40,
     },
     dateSelectorContainer: {
       flexDirection: 'row',
@@ -746,16 +898,30 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       lineHeight: 24,
     },
     card: {
-      backgroundColor: BWColors.surface,
-      borderRadius: 20,
-      padding: 24,
-      marginBottom: 20,
-      borderWidth: 2,
-      borderColor: BWColors.borderLight,
-      shadowColor: BWColors.shadow,
-      shadowOpacity: 0.1,
-      shadowRadius: 12,
-      elevation: 4,
+      backgroundColor: '#ffffff',
+      borderRadius: 24,
+      padding: currentIsSmallScreen ? 20 : 28,
+      marginBottom: 24,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.12,
+      shadowRadius: 16,
+      elevation: 8,
+      borderWidth: 0,
+    },
+    categoryTitle: {
+      fontSize: currentIsSmallScreen ? 18 : 22,
+      fontWeight: '800',
+      color: '#1a1a1a',
+      marginBottom: 8,
+      letterSpacing: -0.3,
+    },
+    categoryDescription: {
+      fontSize: currentIsSmallScreen ? 13 : 15,
+      color: '#666666',
+      marginBottom: currentIsSmallScreen ? 16 : 24,
+      lineHeight: currentIsSmallScreen ? 18 : 22,
+      fontWeight: '500',
     },
     modalBackdrop: {
       flex: 1,
@@ -898,48 +1064,47 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     buttonGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      justifyContent: 'space-between',
+      justifyContent: currentIsSmallScreen ? 'center' : currentIsTablet ? 'space-around' : 'space-between',
       marginTop: 8,
+      gap: currentIsSmallScreen ? 8 : 12,
     },
     gridButton: {
-      width: '48%',
-      backgroundColor: BWColors.surface,
-      borderRadius: 16,
-      padding: 24,
+      backgroundColor: '#ffffff',
+      borderRadius: 20,
+      padding: currentIsSmallScreen ? 16 : 20,
       marginBottom: 16,
       alignItems: 'center',
-      borderWidth: 2,
-      borderColor: BWColors.borderLight,
-      shadowColor: BWColors.shadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-      elevation: 3,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      elevation: 4,
+      borderWidth: 0,
+      minHeight: currentIsSmallScreen ? 100 : 120,
+      justifyContent: 'center',
     },
     gridButtonText: {
-      marginTop: 12,
-      fontSize: 15,
+      marginTop: currentIsSmallScreen ? 8 : 12,
+      fontSize: currentIsSmallScreen ? 12 : 14,
       fontWeight: '700',
-      color: BWColors.text,
+      color: '#1a1a1a',
       textAlign: 'center',
-      lineHeight: 20,
+      lineHeight: currentIsSmallScreen ? 16 : 18,
+      letterSpacing: -0.1,
     },
     syncStatusButton: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       padding: 16,
-      backgroundColor: BWColors.surface,
+      backgroundColor: '#ffffff',
       borderRadius: 16,
-      marginTop: 24,
-      marginBottom: 24,
-      borderWidth: 2,
-      borderColor: BWColors.borderLight,
-      shadowColor: BWColors.shadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.1,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
       shadowRadius: 8,
       elevation: 3,
+      marginTop: 8,
     },
     syncStatusText: {
       marginLeft: 8,
@@ -964,17 +1129,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       fontSize: 13,
       fontWeight: '700',
     },
-    categoryTitle: {
-      fontSize: 20,
-      fontWeight: '800',
-      color: BWColors.text,
-      marginBottom: 8,
-    },
-    categoryDescription: {
-      fontSize: 14,
-      color: BWColors.textSecondary,
-      marginBottom: 16,
-      lineHeight: 20,
+    gridList: {
+      marginTop: 8,
+      flex: 1,
     },
     majuriInfo: {
       flex: 1,
@@ -1011,7 +1168,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     const isSelected = viewMode === 'date' && selectedDate.toDateString() === item.date;
     const date = new Date(item.date);
     const dayName = date.toLocaleDateString('en-IN', { weekday: 'short' });
-    
+
     return (
       <TouchableOpacity
         style={[
@@ -1075,7 +1232,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
               setUserInitial('');
               setShowNamePrompt(false);
               setProfileNameInput('');
-              
+
               const { error } = await supabase.auth.signOut();
               if (error) throw error;
               replace('Login');
@@ -1132,347 +1289,224 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             </Text>
           </View>
         </View>
-        <TouchableOpacity 
-          onPress={userType === 'majur' ? handleLogout : () => setIsProfileMenuVisible(true)}
-          activeOpacity={0.8}
-        >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{userInitial}</Text>
-          </View>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* Notification Bell for Admin */}
+          {isAdmin && (
+            <NotificationBell
+              onPress={() => navigate('AdminNotifications')}
+              size={22}
+              color="#FFFFFF"
+              badgeColor="#F44336"
+              textColor="#FFFFFF"
+            />
+          )}
+          <TouchableOpacity
+            onPress={userType === 'majur' ? handleLogout : () => setIsProfileMenuVisible(true)}
+            activeOpacity={0.8}
+            style={{ marginLeft: isAdmin ? 12 : 0 }}
+          >
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{userInitial}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {userType === 'majur' ? (
-  // MAJUR DASHBOARD - Black & White Theme
-  <View style={styles.container}>
-    <ScrollView
-      contentContainerStyle={[styles.scrollViewContent, { padding: 20 }]}
-      refreshControl={
-        <RefreshControl 
-          refreshing={refreshing} 
-          onRefresh={onRefresh}
-          colors={[BWColors.primary]}
-          tintColor={BWColors.primary}
-        />
-      }
-    >
-      {/* Date Selector */}
-      <View style={styles.dateSelectorContainer}>
-        <TouchableOpacity 
-          onPress={() => handleDateChange(new Date(selectedDate.setDate(selectedDate.getDate() - 1)))}
-          style={styles.navButton}
-          activeOpacity={0.7}
-        >
-          <Icon name="chevron-back" size={24} color={BWColors.primary} />
-        </TouchableOpacity>
-        
-        <View style={styles.dateDisplay}>
-          <Text style={styles.dateText}>
-            {viewMode === 'all' ? 'All Entries' : formatDate(selectedDate.toISOString())}
-          </Text>
-        </View>
-
-        
-        <TouchableOpacity 
-          onPress={() => handleDateChange(new Date(selectedDate.setDate(selectedDate.getDate() + 2)))}
-          style={styles.navButton}
-          activeOpacity={0.7}
-        >
-          <Icon name="chevron-forward" size={24} color={BWColors.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Date Summary Section */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>तारीख के हिसाब से</Text>
-      </View>
-
-      <FlatList
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        data={datewiseSummary}
-        renderItem={renderDateSummary}
-        keyExtractor={(item) => item.date}
-        contentContainerStyle={styles.dateSummaryContent}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Icon name="calendar-outline" size={48} color={BWColors.textTertiary} />
-            <Text style={styles.emptyText}>कोई एंट्री नहीं मिली</Text>
-          </View>
-        }
-      />
-
-      {/* Majuri Entries Section */}
-      <View style={[styles.sectionHeader, { marginTop: 32 }]}>
-        <Text style={styles.sectionTitle}>
-          {viewMode === 'all' ? 'सभी एंट्री' : `${formatDate(selectedDate.toISOString())} की एंट्री`}
-        </Text>
-      </View>
-
-      {majurLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={BWColors.primary} />
-          <Text style={styles.loadingText}>लोड हो रहा है...</Text>
-        </View>
-      ) : (viewMode === 'all' ? combinedData : filteredData).length > 0 ? (
-        <View style={styles.majuriList}>
-          {(viewMode === 'all' ? combinedData : filteredData).map((item, index, array) => {
-            // For Majur dashboard, show Jama entries as negative amounts
-            // Majuri is always positive, Uppad/Jama entries are shown as negative
-            const isPositive = item.type === 'majuri';
-            const symbol = isPositive ? '+' : '-';
-            const symbolColor = isPositive ? '#2E7D32' : '#D32F2F';
-            
-            // Debug log for symbol logic
-            if (item.type === 'uppad_jama') {
-              console.log('HomeScreen - Symbol debug:', {
-                name: item.name,
-                type: item.type,
-                entry_type: item.entry_type,
-                isPositive: isPositive,
-                symbol: symbol
-              });
+        // MAJUR DASHBOARD - Black & White Theme
+        <View style={styles.container}>
+          <ScrollView
+            contentContainerStyle={[styles.scrollViewContent, { padding: 20 }]}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[BWColors.primary]}
+                tintColor={BWColors.primary}
+              />
             }
-            
-            return (
-              <React.Fragment key={item.id}>
-                <View style={styles.majuriItem}>
-                  <View style={styles.majuriInfo}>
-                    <Text style={styles.agencyName} numberOfLines={1} ellipsizeMode="tail">
-                      {item.name}
-                    </Text>
-                    {item.description ? (
-                      <Text style={styles.majuriDescription} numberOfLines={2} ellipsizeMode="tail">
-                        {item.description}
-                      </Text>
-                    ) : null}
-                    <Text style={[styles.majuriType, { color: BWColors.textSecondary }]}>
-                      {item.type === 'majuri' ? 'मजूरी' : item.entry_type === 'credit' ? 'जमा' : 'उप्पद'}
-                    </Text>
-                  </View>
-                  <View style={styles.amountContainer}>
-                    <Text style={[styles.symbolText, { color: symbolColor }]}>{symbol}</Text>
-                    <Text style={[styles.majuriAmount, { color: symbolColor }]}>
-                      ₹{item.amount.toLocaleString('hi-IN')}
-                    </Text>
-                  </View>
+          >
+            {/* Date Selector */}
+            <View style={styles.dateSelectorContainer}>
+              <TouchableOpacity
+                onPress={() => handleDateChange(new Date(selectedDate.setDate(selectedDate.getDate() - 1)))}
+                style={styles.navButton}
+                activeOpacity={0.7}
+              >
+                <Icon name="chevron-back" size={24} color={BWColors.primary} />
+              </TouchableOpacity>
+
+              <View style={styles.dateDisplay}>
+                <Text style={styles.dateText}>
+                  {viewMode === 'all' ? 'All Entries' : formatDate(selectedDate.toISOString())}
+                </Text>
+              </View>
+
+
+              <TouchableOpacity
+                onPress={() => handleDateChange(new Date(selectedDate.setDate(selectedDate.getDate() + 2)))}
+                style={styles.navButton}
+                activeOpacity={0.7}
+              >
+                <Icon name="chevron-forward" size={24} color={BWColors.primary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Date Summary Section */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>तारीख के हिसाब से</Text>
+            </View>
+
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={datewiseSummary}
+              renderItem={renderDateSummary}
+              keyExtractor={(item) => item.date}
+              contentContainerStyle={styles.dateSummaryContent}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Icon name="calendar-outline" size={48} color={BWColors.textTertiary} />
+                  <Text style={styles.emptyText}>कोई एंट्री नहीं मिली</Text>
                 </View>
-                {index < array.length - 1 && (
-                  <View style={styles.separator} />
-                )}
-              </React.Fragment>
-            );
-          })}
+              }
+            />
+
+            {/* Majuri Entries Section */}
+            <View style={[styles.sectionHeader, { marginTop: 32 }]}>
+              <Text style={styles.sectionTitle}>
+                {viewMode === 'all' ? 'सभी एंट्री' : `${formatDate(selectedDate.toISOString())} की एंट्री`}
+              </Text>
+            </View>
+
+            {majurLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={BWColors.primary} />
+                <Text style={styles.loadingText}>लोड हो रहा है...</Text>
+              </View>
+            ) : (viewMode === 'all' ? combinedData : filteredData).length > 0 ? (
+              <View style={styles.majuriList}>
+                {(viewMode === 'all' ? combinedData : filteredData).map((item, index, array) => {
+                  // For Majur dashboard, show Jama entries as negative amounts
+                  // Majuri is always positive, Uppad/Jama entries are shown as negative
+                  const isPositive = item.type === 'majuri';
+                  const symbol = isPositive ? '+' : '-';
+                  const symbolColor = isPositive ? '#2E7D32' : '#D32F2F';
+
+                  // Debug log for symbol logic
+                  if (item.type === 'uppad_jama') {
+                    console.log('HomeScreen - Symbol debug:', {
+                      name: item.name,
+                      type: item.type,
+                      entry_type: item.entry_type,
+                      isPositive: isPositive,
+                      symbol: symbol
+                    });
+                  }
+
+                  return (
+                    <React.Fragment key={item.id}>
+                      <View style={styles.majuriItem}>
+                        <View style={styles.majuriInfo}>
+                          <Text style={styles.agencyName} numberOfLines={1} ellipsizeMode="tail">
+                            {item.name}
+                          </Text>
+                          {item.description ? (
+                            <Text style={styles.majuriDescription} numberOfLines={2} ellipsizeMode="tail">
+                              {item.description}
+                            </Text>
+                          ) : null}
+                          <Text style={[styles.majuriType, { color: BWColors.textSecondary }]}>
+                            {item.type === 'majuri' ? 'मजूरी' : item.entry_type === 'credit' ? 'जमा' : 'उप्पद'}
+                          </Text>
+                        </View>
+                        <View style={styles.amountContainer}>
+                          <Text style={[styles.symbolText, { color: symbolColor }]}>{symbol}</Text>
+                          <Text style={[styles.majuriAmount, { color: symbolColor }]}>
+                            ₹{item.amount.toLocaleString('hi-IN')}
+                          </Text>
+                        </View>
+                      </View>
+                      {index < array.length - 1 && (
+                        <View style={styles.separator} />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Icon name="document-text-outline" size={64} color={BWColors.textTertiary} />
+                <Text style={styles.emptyText}>
+                  {viewMode === 'all'
+                    ? 'कोई मजूरी एंट्री नहीं मिली'
+                    : `${formatDate(selectedDate.toISOString())} के लिए कोई एंट्री नहीं मिली`}
+                </Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Icon name="document-text-outline" size={64} color={BWColors.textTertiary} />
-          <Text style={styles.emptyText}>
-            {viewMode === 'all' 
-              ? 'कोई मजूरी एंट्री नहीं मिली' 
-              : `${formatDate(selectedDate.toISOString())} के लिए कोई एंट्री नहीं मिली`}
-          </Text>
-        </View>
-      )}
-    </ScrollView>
-  </View>
       ) : (
         // NORMAL USER DASHBOARD
         <>
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={styles.scrollViewContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.card}>
-              <Text style={styles.categoryTitle}>Financial Entries</Text>
-              <Text style={styles.categoryDescription}>Record payments, labor charges, and other transactions.</Text>
-              <View style={styles.buttonGrid}>
-                <TouchableOpacity 
-                  onPress={() => navigate('PaidSection')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="cash-outline" size={28} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Paid Section</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  onPress={() => navigate('AddMajuri')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="hammer-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Add Majuri</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => navigate('AgencyEntry')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="business-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Agency Entry</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => navigate('AddGeneralEntry')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="journal-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>General Entry</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => navigate('UppadJama')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="people-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Uppad/Jama</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => navigate('MumbaiDeliveryEntry')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="car-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Mumbai Delivery</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => navigate('BackdatedEntry')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="time-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Backdated Entry</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.categoryTitle}>Driver & Truck Management</Text>
-              <Text style={styles.categoryDescription}>Manage driver transactions and record fuel expenses.</Text>
-              <View style={styles.buttonGrid}>
-                <TouchableOpacity 
-                  onPress={() => navigate('DriverDetails')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="person-circle-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Driver Account</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => navigate('AddTruckFuel')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="water-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Add Truck Fuel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.categoryTitle}>Statements & Reports</Text>
-              <Text style={styles.categoryDescription}>View, generate, and share detailed financial reports.</Text>
-              <View style={styles.buttonGrid}>
-                <TouchableOpacity 
-                  onPress={() => navigate('Statement')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="list-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Statement</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  onPress={() => navigate('MonthlyStatement')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="calendar-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Monthly Statement</Text>
-                </TouchableOpacity>
-
-                
-
-                <TouchableOpacity 
-                  onPress={() => navigate('DailyReport')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="document-text-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Daily Report</Text>
-                </TouchableOpacity>
-
-                {isAdmin && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('History')} 
-                    style={styles.gridButton}
+          <FlatList
+            data={[
+              { type: 'category', title: 'Financial Entries', description: 'Record payments, labor charges, and other transactions.', buttons: financialButtons },
+              { type: 'category', title: 'Driver & Truck Management', description: 'Manage driver transactions and record fuel expenses.', buttons: driverButtons },
+              { type: 'category', title: 'Statements & Reports', description: 'View, generate, and share detailed financial reports.', buttons: statementButtons },
+              { type: 'sync' }
+            ]}
+            renderItem={({ item }) => {
+              if (item.type === 'sync') {
+                return (
+                  <TouchableOpacity
+                    onPress={onSyncStatusPress}
+                    style={styles.syncStatusButton}
                     activeOpacity={0.8}
                   >
-                    <View style={styles.iconContainer}>
-                      <Icon name="time-outline" size={26} color={BWColors.primary} />
-                    </View>
-                    <Text style={styles.gridButtonText}>History Log</Text>
+                    <Icon
+                      name={syncStatus.isOnline ? 'cloud-done-outline' : 'cloud-offline-outline'}
+                      size={20}
+                      color={syncStatus.isOnline ? BWColors.primary : BWColors.textSecondary}
+                    />
+                    <Text style={[
+                      styles.syncStatusText,
+                      { color: syncStatus.isOnline ? BWColors.primary : BWColors.textSecondary }
+                    ]}>
+                      {syncStatus.isOnline ? 'Online' : 'Offline'}
+                    </Text>
+                    {syncStatus.pendingOperations > 0 && (
+                      <View style={styles.pendingIndicator}>
+                        <Icon name="sync-outline" size={14} color={BWColors.textSecondary} />
+                        <Text style={styles.pendingText}>{syncStatus.pendingOperations} pending</Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
-                )}
-              </View>
-            </View>
+                );
+              }
 
-            <TouchableOpacity 
-              onPress={onSyncStatusPress} 
-              style={styles.syncStatusButton}
-              activeOpacity={0.8}
-            >
-              <Icon 
-                name={syncStatus.isOnline ? 'cloud-done-outline' : 'cloud-offline-outline'} 
-                size={20} 
-                color={syncStatus.isOnline ? BWColors.primary : BWColors.textSecondary} 
-              />
-              <Text style={[
-                styles.syncStatusText,
-                { color: syncStatus.isOnline ? BWColors.primary : BWColors.textSecondary }
-              ]}>
-                {syncStatus.isOnline ? 'Online' : 'Offline'}
-              </Text>
-              {syncStatus.pendingOperations > 0 && (
-                <View style={styles.pendingIndicator}>
-                  <Icon name="sync-outline" size={14} color={BWColors.textSecondary} />
-                  <Text style={styles.pendingText}>{syncStatus.pendingOperations} pending</Text>
+              return (
+                <View style={styles.card}>
+                  <Text style={styles.categoryTitle}>{item.title}</Text>
+                  <Text style={styles.categoryDescription}>{item.description}</Text>
+                  <FlatGrid
+                    itemDimension={getItemDimension()}
+                    data={item.buttons || []}
+                    style={styles.gridList}
+                    spacing={12}
+                    renderItem={renderButton}
+                    staticDimension={currentWidth - (currentIsSmallScreen ? 80 : 96)}
+                    fixed={false}
+                    maxItemsPerRow={currentIsSmallScreen ? 1 : 2}
+                    scrollEnabled={false}
+                  />
                 </View>
-              )}
-            </TouchableOpacity>
-          </ScrollView>
+              );
+            }}
+            keyExtractor={(item, index) => `${item.type}-${index}`}
+            contentContainerStyle={styles.scrollViewContent}
+            showsVerticalScrollIndicator={false}
+          />
 
           {/* Profile Menu Modal */}
           <Modal
@@ -1497,9 +1531,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
                 {isAdmin && (
                   <TouchableOpacity onPress={() => {
-                  setIsProfileMenuVisible(false);
-                  navigate('AdminPanel');
-                }} style={styles.menuItem}>
+                    setIsProfileMenuVisible(false);
+                    navigate('AdminPanel');
+                  }} style={styles.menuItem}>
                     <Icon name="cog-outline" size={20} color={BWColors.text} style={styles.menuIcon} />
                     <Text style={styles.menuItemText}>Admin Panel</Text>
                   </TouchableOpacity>
@@ -1537,7 +1571,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         visible={showNamePrompt}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => {}}
+        onRequestClose={() => { }}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.namePromptContainer}>

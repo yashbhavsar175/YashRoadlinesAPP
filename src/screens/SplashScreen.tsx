@@ -7,6 +7,7 @@ import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BiometricAuthService } from '../services/BiometricAuthService';
+import { responsiveFontSize, responsiveSpacing } from '../utils/responsive';
 
 type SplashScreenNavigationProp = NavigationProp<RootStackParamList, 'Splash'>;
 
@@ -76,7 +77,16 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
       <StatusBar barStyle="light-content" backgroundColor={Colors.primaryDark} />
       
       <Animated.View style={[styles.mainContent, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-        <Text style={styles.appName}>Yash Roadlines</Text>
+        <View style={styles.titleContainer}>
+          <Text 
+            style={styles.appName}
+            numberOfLines={1}
+            adjustsFontSizeToFit={true}
+            minimumFontScale={0.6}
+          >
+            Yash Roadlines
+          </Text>
+        </View>
         <Text style={styles.tagline}>Financial Management</Text>
       </Animated.View>
     </View>
@@ -93,17 +103,28 @@ const styles = StyleSheet.create({
   mainContent: {
     alignItems: 'center',
     zIndex: 1,
+    paddingHorizontal: responsiveSpacing(10),
+    width: '100%',
+  },
+  titleContainer: {
+    alignItems: 'center',
+    marginBottom: responsiveSpacing(15),
+    width: '100%',
   },
   appName: {
-    fontSize: 48,
+    fontSize: responsiveFontSize(34),
     fontWeight: 'bold',
     color: Colors.accent,
-    marginBottom: 10,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    width: '100%',
   },
   tagline: {
-    fontSize: 18,
+    fontSize: responsiveFontSize(14),
     color: Colors.surface,
     opacity: 0.7,
+    textAlign: 'center',
+    marginTop: responsiveSpacing(5),
   },
 });
 

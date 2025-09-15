@@ -105,17 +105,34 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+    
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libjsc.so'
+    }
 }
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
-    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:react-android") {
+        exclude group: 'com.android.support'
+    }
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
     }
+    
+    // Force use of AndroidX
+    implementation 'androidx.core:core:1.16.0'
+}
+
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.core:core:1.16.0'
+    }
+    exclude group: 'com.android.support'
 }
 
 // Copy vector icon fonts from node_modules into the app on build

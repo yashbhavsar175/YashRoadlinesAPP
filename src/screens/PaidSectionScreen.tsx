@@ -8,6 +8,7 @@ import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Dropdown from '../components/Dropdown';
 import Icon from 'react-native-vector-icons/Ionicons';
+import NotificationService from '../services/NotificationService';
 
 type PaidSectionScreenNavigationProp = NavigationProp<RootStackParamList, 'PaidSection'>;
 
@@ -103,6 +104,9 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
       const success = await saveAgencyPayment(newPaymentEntry);
 
       if (success) {
+        // Send notification to admin
+        await NotificationService.notifyAdd('agency_payment', `New payment: ₹${amount} for ${selectedAgency} - Bill #${billNo.trim()}`);
+        
         showAlert('Payment saved successfully');
         setBillNo('');
         setPaidAmount('');

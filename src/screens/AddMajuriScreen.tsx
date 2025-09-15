@@ -8,6 +8,7 @@ import { saveAgencyMajuri, getAgencyMajuri, AgencyMajuri, getAgencies, Agency, s
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Icon from 'react-native-vector-icons/Ionicons';
+import NotificationService from '../services/NotificationService';
 
 type AddMajuriScreenNavigationProp = NavigationProp<RootStackParamList, 'AddMajuri'>;
 
@@ -84,6 +85,9 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
     const success = await saveAgencyMajuri(newMajuriEntry);
 
     if (success) {
+      // Send notification to admin
+      await NotificationService.notifyAdd('agency_majuri', `New majuri entry: ₹${amount} for ${selectedAgency}`);
+      
       showAlert('Majuri saved successfully');
       setMajuriAmount('');
       setDescription('');

@@ -929,10 +929,33 @@ export const generateAndStoreOtp = async (userId: string): Promise<{ code: strin
   try {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+    
+    // Store OTP in database
     const { error } = await supabase
       .from('otp_codes')
       .insert([{ user_id: userId, code, expires_at: expiresAt }]);
     if (error) throw error;
+    
+    // Get user email to send OTP
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.email) {
+      console.log('📧 Attempting to send OTP to:', user.email);
+      
+      // Try to send OTP via email
+      const emailSent = await deliverOtpAlternative({ 
+        email: user.email, 
+        code: code 
+      });
+      
+      if (emailSent) {
+        console.log('✅ OTP email sent successfully');
+      } else {
+        console.warn('⚠️ OTP email failed, but OTP stored in database');
+        // For debugging - log OTP to console
+        console.log(`🔐 DEBUG OTP for ${user.email}: ${code}`);
+      }
+    }
+    
     return { code };
   } catch (e) {
     const err: any = e;
@@ -2795,7 +2818,7 @@ export interface GeneralEntryInput {
   title?: string;
 }
 
-export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolean> => {
+export const saveGeneralEntry = async (entryId: string, entry: GeneralEntryInput): Promise<boolean> => {
   try {
     const online = await isOnline();
     const isUpdate = !!entry.id;

@@ -20,6 +20,7 @@ import {
   deleteTransactionByIdImproved
 } from '../data/Storage';
 import UppadJamaStatement from '../components/UppadJamaStatement'; // Added import
+import ActivityNotificationService from '../services/ActivityNotificationService';
 
 
 type UppadJamaScreenNavigationProp = NavigationProp<RootStackParamList, 'UppadJama'>;
@@ -204,8 +205,14 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
     Alert.alert('Delete Entry', 'Are you sure you want to delete this entry?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
+        const entryToDelete = entries.find(entry => entry.id === id);
         const ok = await deleteTransactionByIdImproved(id, OFFLINE_KEYS.UPPAD_JAMA_ENTRIES);
         if (ok) {
+          // Send delete notification to admin
+          if (entryToDelete) {
+            await NotificationService.notifyDelete('uppad_jama', `Deleted ${entryToDelete.entry_type} entry: ₹${entryToDelete.amount} for ${entryToDelete.person_name}`);
+          }
+          
           await loadEntries();
           showAlert('Entry deleted.');
         } else {
@@ -278,6 +285,13 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         Alert.alert('Error ❌', 'Failed to save entry. Please try again.');
         return;
       }
+
+      // Send push notification to admin
+      await ActivityNotificationService.notifyUppadJama(
+        'add',
+        num,
+        `${entryType.toUpperCase()}: ${selectedPersonName}${description?.trim() ? ` - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}` : ''}`
+      );
 
       // Clear form
       setAmount('');

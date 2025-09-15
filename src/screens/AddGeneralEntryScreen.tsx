@@ -8,6 +8,7 @@ import { GlobalStyles } from '../theme/styles';
 import { saveGeneralEntry, GeneralEntryInput, getAgencies } from '../data/Storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAlert } from '../context/AlertContext';
+import ActivityNotificationService from '../services/ActivityNotificationService';
 type AddGeneralEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'AddGeneralEntry'>;
 
 interface AddGeneralEntryScreenProps {
@@ -63,6 +64,12 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
       const success = await saveGeneralEntry(input);
 
       if (success) {
+        // Send push notification to admin
+        await ActivityNotificationService.notifyGeneralEntry(
+          'add',
+          `${entryType.toUpperCase()}: ₹${numAmount} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`
+        );
+        
         showAlert('Entry saved successfully!');
         // Reset fields for next entry
         setDescription('');

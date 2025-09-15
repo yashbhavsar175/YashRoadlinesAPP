@@ -13,6 +13,8 @@ import Icon from 'react-native-vector-icons/Ionicons';
 // No need for enableScreens with stack navigator
 import { supabase } from './src/supabase';
 import { getProfile, initializeSupabaseStorage, getSyncStatus, syncAllDataFixed } from './src/data/Storage';
+import NotificationService from './src/services/NotificationService';
+import NotificationSetup from './src/services/NotificationSetup';
 import SplashScreen from './src/screens/SplashScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import BiometricAuthScreen from './src/screens/BiometricAuthScreen';
@@ -32,7 +34,9 @@ import DriverStatementScreen from './src/screens/DriverStatementScreen';
 import AgencyEntryScreen from './src/screens/AgencyEntryScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import TotalPaidScreen from './src/screens/TotalPaidScreen';
-// import EWayBillConsolidatedScreen from './src/screens/EWayBillConsolidatedScreen';
+import EWayBillConsolidatedScreen from './src/screens/EWayBillConsolidatedScreen';
+import AdminNotificationScreen from './src/screens/AdminNotificationScreen';
+import AdminUserManagementScreen from './src/screens/AdminUserManagementScreen';
 import UppadJamaScreen from './src/screens/UppadJamaScreen';
 import MumbaiDeliveryEntryScreen from './src/screens/MumbaiDeliveryEntryScreen';
 import BackdatedEntryScreen from './src/screens/BackdatedEntryScreen';
@@ -63,7 +67,9 @@ type RootStackParamList = {
   History: undefined;
   AgencyEntry: undefined;
   TotalPaid: undefined;
-  // EWayBillConsolidated: undefined;
+  EWayBillConsolidated: undefined;
+  AdminNotifications: undefined;
+  AdminUserManagement: undefined;
   UppadJama: undefined;
   CashBalance: undefined;
   MumbaiDelivery: undefined;
@@ -513,6 +519,9 @@ function App(): React.JSX.Element {
         const initializeApp = async () => {
           try {
             await initializeSupabaseStorage();
+            await NotificationService.initialize();
+            // Initialize all notification services (includes push notifications)
+            await NotificationSetup.initialize();
             await checkSyncStatus();
             await checkActiveUser();
           } catch (error) {
@@ -730,7 +739,9 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="History" component={HistoryScreen} />
                 <Stack.Screen name="AgencyEntry" component={AgencyEntryScreen} />
                 <Stack.Screen name="TotalPaid" component={TotalPaidScreen} />
-                {/* <Stack.Screen name="EWayBillConsolidated" component={EWayBillConsolidatedScreen} /> */}
+                <Stack.Screen name="EWayBillConsolidated" component={EWayBillConsolidatedScreen} />
+                <Stack.Screen name="AdminNotifications" component={AdminNotificationScreen} options={{ title: 'Admin Notifications' }} />
+                <Stack.Screen name="AdminUserManagement" component={AdminUserManagementScreen} options={{ title: 'User Management' }} />
                 <Stack.Screen name="UppadJama" component={UppadJamaScreen} options={{ title: 'Uppad/Jama' }} />
                 <Stack.Screen name="MumbaiDeliveryEntry" component={MumbaiDeliveryEntryScreen} options={{ title: 'Mumbai Delivery Entry' }} />
                 <Stack.Screen name="BackdatedEntry" component={BackdatedEntryScreen} options={{ title: 'Backdated Entry' }} />
