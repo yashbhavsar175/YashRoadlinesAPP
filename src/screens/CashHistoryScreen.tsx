@@ -8,6 +8,8 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  StatusBar,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getCashRecords, CashRecord, deleteCashRecord, revertCashRecordToPending, checkCashVerificationAccess } from '../data/Storage';
@@ -227,6 +229,20 @@ const CashHistoryScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      
+      {/* Header */}
+      <View style={styles.navigationHeader}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-back" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Cash History</Text>
+        <View style={styles.headerRight} />
+      </View>
+
       {/* Summary Cards */}
       <View style={styles.summarySection}>
         <Text style={styles.sectionTitle}>Cash Verification Summary</Text>
@@ -292,7 +308,7 @@ const CashHistoryScreen: React.FC = () => {
                       {getStatusText(record.status)}
                     </Text>
                   </View>
-                  <View style={styles.headerRight}>
+                  <View style={styles.recordHeaderRight}>
                     <Text style={styles.dateText}>
                       {formatDate(record.setup_time)}
                     </Text>
@@ -395,6 +411,30 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
+  },
+  navigationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 50,
+    paddingBottom: 16,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+    textAlign: 'center',
+    marginRight: 40,
+  },
+  headerRight: {
+    width: 40,
   },
   centerContainer: {
     flex: 1,
@@ -533,7 +573,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  headerRight: {
+  recordHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },

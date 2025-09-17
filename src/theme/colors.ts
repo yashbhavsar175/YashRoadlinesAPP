@@ -1,6 +1,7 @@
 export const Colors = {
   primary: '#212121', // Dark Grey (almost black) for primary background (e.g., AppBar, strong buttons)
   primaryDark: '#000000', // Black for splash screen background
+  primaryLight: '#E8F5E8', // Light green/grey for info boxes
   accent: '#FFD700', // Gold/Yellow for accents and text (e.g., splash logo)
   background: '#F5F5F5', // Light Grey for screen backgrounds
   surface: '#FFFFFF', // White for cards, modals, etc.

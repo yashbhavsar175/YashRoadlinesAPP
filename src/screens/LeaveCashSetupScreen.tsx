@@ -9,9 +9,11 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { saveLeaveCashRecord } from '../data/Storage';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 const LeaveCashSetupScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -72,15 +74,30 @@ const LeaveCashSetupScreen: React.FC = () => {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Text style={styles.title}>💰 Leave with Cash Setup</Text>
-          <Text style={styles.subtitle}>Set expected cash amount when leaving office</Text>
-        </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      
+      {/* Header */}
+      <View style={styles.navigationHeader}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-back" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Leave Cash Setup</Text>
+        <View style={styles.headerRight} />
+      </View>
+
+      <KeyboardAvoidingView 
+        style={styles.keyboardContainer} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.contentHeader}>
+            <Text style={styles.title}>💰 Leave with Cash Setup</Text>
+            <Text style={styles.subtitle}>Set expected cash amount when leaving office</Text>
+          </View>
 
         <View style={styles.formContainer}>
           <View style={styles.inputGroup}>
@@ -139,7 +156,8 @@ const LeaveCashSetupScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
@@ -148,9 +166,40 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  navigationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 0 + 10 : 50,
+    paddingBottom: 16,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+    textAlign: 'center',
+    marginRight: 40, // To center properly with back button
+  },
+  headerRight: {
+    width: 40, // Same width as back button for balance
+  },
+  keyboardContainer: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
     padding: 20,
+  },
+  contentHeader: {
+    alignItems: 'center',
+    marginBottom: 30,
   },
   header: {
     alignItems: 'center',

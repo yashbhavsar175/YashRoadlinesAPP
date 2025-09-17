@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getPendingCashRecord, verifyCashAmount, CashRecord, deleteCashRecord, checkCashVerificationAccess } from '../data/Storage';
@@ -47,7 +48,9 @@ const CashVerificationScreen: React.FC = () => {
 
   const loadPendingCashRecord = async () => {
     try {
+      console.log('🔍 DEBUG: Loading pending cash record...');
       const record = await getPendingCashRecord();
+      console.log('🔍 DEBUG: Pending cash record result:', record);
       setCurrentRecord(record);
     } catch (error) {
       console.error('Error loading cash record:', error);
@@ -230,7 +233,7 @@ const CashVerificationScreen: React.FC = () => {
             Only administrators and authorized users can verify cash amounts.
           </Text>
           <TouchableOpacity
-            style={styles.backButton}
+            style={styles.actionBackButton}
             onPress={() => navigation.goBack()}
           >
             <Text style={styles.backButtonText}>← Go Back</Text>
@@ -260,23 +263,38 @@ const CashVerificationScreen: React.FC = () => {
   }
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Text style={styles.title}>🔍 Cash Verification</Text>
-          <Text style={styles.subtitle}>Enter actual cash amount received</Text>
-          
-          {/* Admin Revoke Button */}
-          <TouchableOpacity
-            style={styles.revokeButton}
-            onPress={handleRevokeCashRecord}
-            disabled={loading}
-          >
-            <Icon name="trash-outline" size={16} color="#fff" />
-            <Text style={styles.revokeButtonText}>Revoke Entry</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      
+      {/* Header */}
+      <View style={styles.navigationHeader}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-back" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Cash Verification</Text>
+        <View style={styles.headerRight} />
+      </View>
+
+      <KeyboardAvoidingView 
+        style={styles.keyboardContainer} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.contentHeader}>
+            <Text style={styles.title}>🔍 Cash Verification</Text>
+            <Text style={styles.subtitle}>Enter actual cash amount received</Text>
+            
+            {/* Admin Revoke Button */}
+            <TouchableOpacity
+              style={styles.revokeButton}
+              onPress={handleRevokeCashRecord}
+              disabled={loading}
+            >
+              <Icon name="trash-outline" size={16} color="#fff" />
+              <Text style={styles.revokeButtonText}>Revoke Entry</Text>
           </TouchableOpacity>
         </View>
 
@@ -338,7 +356,8 @@ const CashVerificationScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
@@ -347,9 +366,40 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  navigationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 50,
+    paddingBottom: 16,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+    textAlign: 'center',
+    marginRight: 40,
+  },
+  headerRight: {
+    width: 40,
+  },
+  keyboardContainer: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
     padding: 20,
+  },
+  contentHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   header: {
     alignItems: 'center',
@@ -540,7 +590,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
-  backButton: {
+  actionBackButton: {
     backgroundColor: '#6c757d',
     borderRadius: 8,
     padding: 15,

@@ -5,7 +5,7 @@ import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import { getAgencyPaymentsLocal, syncAllDataFixed, getAgencyEntry, AgencyPayment, AgencyEntry } from '../data/Storage';
+import { getAgencyPaymentsLocal, syncAllDataFixed, getAgencyEntry, AgencyPayment, AgencyEntry, clearPaymentCache } from '../data/Storage';
 import { useAlert } from '../context/AlertContext';
 import { supabase } from '../supabase';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -61,11 +61,24 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
     return adjustments;
   };
 
-  const loadPaidData = useCallback(async () => {
+  const loadPaidData = useCallback(async (forceClearCache = false) => {
     setLoading(true);
     try {
+      // Clear cache if requested to get fresh data
+      if (forceClearCache) {
+        console.log('🔄 Force clearing cache for fresh data...');
+        await clearPaymentCache();
+      }
+      
       const allPayments = await getAgencyPaymentsLocal();
       const allAgencyEntries = await getAgencyEntry();
+      
+      console.log('📊 Total Paid Data:', {
+        paymentsCount: allPayments.length,
+        entriesCount: allAgencyEntries.length,
+        sampledPayment: allPayments[0],
+        sampledEntry: allAgencyEntries[0]
+      });
       
       const paymentsMap = new Map<string, AgencyPayment[]>();
       const deliveriesMap = new Map<string, AgencyEntry[]>();
@@ -147,7 +160,7 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
 
   useFocusEffect(
     useCallback(() => {
-      loadPaidData();
+      loadPaidData(true); // Force clear cache on focus
       return () => {};
     }, [loadPaidData])
   );
@@ -156,12 +169,12 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
     setRefreshing(true);
     try {
       await syncAllDataFixed();
+      // Force clear cache and reload fresh data
+      await loadPaidData(true);
       showAlert('Data synced successfully');
     } catch (error) {
       console.error('Sync failed:', error);
       showAlert('Sync failed. Using local data');
-    } finally {
-      await loadPaidData();
     }
   };
   

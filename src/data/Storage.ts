@@ -173,6 +173,30 @@ export const OFFLINE_KEYS = {
   LAST_SYNC: 'last_sync_timestamp'
 };
  
+// =====================================================
+// CACHE CLEAR FUNCTION - To refresh data after filter changes
+// =====================================================
+export const clearPaymentCache = async (): Promise<void> => {
+  try {
+    console.log('🧹 Clearing payment cache to refresh data...');
+    await AsyncStorage.removeItem(OFFLINE_KEYS.AGENCY_PAYMENTS);
+    await AsyncStorage.removeItem(OFFLINE_KEYS.AGENCY_ENTRIES);
+    console.log('✅ Payment cache cleared successfully');
+  } catch (error) {
+    console.error('❌ Error clearing payment cache:', error);
+  }
+};
+
+export const clearAllCache = async (): Promise<void> => {
+  try {
+    console.log('🧹 Clearing all offline cache...');
+    const keys = Object.values(OFFLINE_KEYS);
+    await Promise.all(keys.map(key => AsyncStorage.removeItem(key)));
+    console.log('✅ All cache cleared successfully');
+  } catch (error) {
+    console.error('❌ Error clearing cache:', error);
+  }
+};
 
 // =====================================================
 // 3. DATE UTILITY FUNCTIONS
@@ -822,9 +846,9 @@ export const checkCashVerificationAccess = async (): Promise<boolean> => {
       return false; // No authenticated user
     }
 
-    // Check if user email is the specific authorized email
-    if (user.email === 'lbhavsar31@gmail.com') {
-      console.log('✅ Access granted - Authorized email');
+    // Check if user email is the admin email
+    if (user.email === 'yashbhavsar175@gmail.com') {
+      console.log('✅ Access granted - Admin email');
       return true;
     }
 
@@ -860,8 +884,8 @@ export const checkScreenAccess = async (screenName: string): Promise<boolean> =>
       return false;
     }
 
-    // Specific authorized email has access to all screens
-    if (user.email === 'lbhavsar31@gmail.com') {
+    // Admin email has access to all screens
+    if (user.email === 'yashbhavsar175@gmail.com') {
       return true;
     }
 
@@ -978,19 +1002,51 @@ export const setUserActive = async (userId: string, active: boolean): Promise<bo
 
 export const createProfileIfMissing = async (userId: string, email: string, userType: 'normal' | 'majur' = 'normal'): Promise<boolean> => {
   try {
+    // First check if profile already exists
     const existing = await getProfile(userId);
-    if (existing) return true;
+    if (existing) {
+      console.log('✅ Profile already exists for user:', userId);
+      return true;
+    }
 
+    console.log('🔄 Creating new profile for user:', userId);
+    
     const username = email?.split('@')[0] || email || '';
     const { error } = await supabase
       .from('user_profiles')
-      .insert({ id: userId, full_name: username, username, user_type: userType, is_active: true });
+      .insert({ 
+        id: userId, 
+        full_name: username, 
+        username, 
+        user_type: userType, 
+        is_active: true,
+        screen_access: []
+      });
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Error creating profile for new user:', error);
+      
+      // Check if error is because profile already exists
+      if (error.code === '23505' || error.message.includes('duplicate') || error.message.includes('already exists')) {
+        console.log('ℹ️ Profile already exists (duplicate key error), returning success');
+        return true;
+      }
+      
+      throw error;
+    }
+    
+    console.log('✅ Profile created successfully for user:', userId);
     return true;
-  } catch (error) {
-    console.error('Error creating profile for new user:', error);
-    return false;
+  } catch (error: any) {
+    console.error('💥 Failed to create profile for new user:', error);
+    
+    // If it's a duplicate key error, consider it success
+    if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('already exists')) {
+      console.log('ℹ️ Profile creation failed due to duplicate, but profile exists - returning success');
+      return true;
+    }
+    
+    throw error;
   }
 };
 
@@ -2471,6 +2527,10 @@ export const getAgencyPaymentsLocal = async (): Promise<AgencyPayment[]> => {
         console.error('Failed to fetch from Supabase, using local data:', error);
       }
     }
+    
+    // Filter out deleted entries from local data
+    localData = localData.filter((item: any) => !item.deleted_at);
+    
     return localData;
   } catch (error) {
     console.error('Error getting agency payments:', error);
@@ -3110,7 +3170,9 @@ export const getAgencyEntry = async (): Promise<AgencyEntry[]> => {
       }
     }
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
-    return offline ? JSON.parse(offline) : [];
+    const offlineData = offline ? JSON.parse(offline) : [];
+    
+    return offlineData;
   } catch (error) {
     console.error('Error getting agency entries:', error);
     return [];
@@ -3489,10 +3551,13 @@ export const saveLeaveCashRecord = async (recordData: Omit<CashRecord, 'id' | 'c
       updated_at: currentTime
     };
 
+    console.log('🔍 DEBUG: Saving new cash record:', newRecord);
+
     // Save to offline storage
     const existingRecords = await getCashRecords();
     const updatedRecords = [...existingRecords, newRecord];
     await AsyncStorage.setItem(OFFLINE_KEYS.CASH_RECORDS, JSON.stringify(updatedRecords));
+    console.log('🔍 DEBUG: Saved to offline storage. Total records:', updatedRecords.length);
 
     // Try to save to Supabase
     try {
@@ -3502,6 +3567,8 @@ export const saveLeaveCashRecord = async (recordData: Omit<CashRecord, 'id' | 'c
 
       if (error) {
         console.warn('Failed to save to Supabase, saved offline:', error);
+      } else {
+        console.log('🔍 DEBUG: Successfully saved to Supabase');
       }
     } catch (supabaseError) {
       console.warn('Supabase unavailable, saved offline:', supabaseError);
@@ -3516,6 +3583,7 @@ export const saveLeaveCashRecord = async (recordData: Omit<CashRecord, 'id' | 'c
 
 export const getCashRecords = async (): Promise<CashRecord[]> => {
   try {
+    console.log('🔍 DEBUG: Getting cash records from Supabase...');
     // Try to get from Supabase first
     try {
       const { data, error } = await supabase
@@ -3523,18 +3591,25 @@ export const getCashRecords = async (): Promise<CashRecord[]> => {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
+        console.log('🔍 DEBUG: Supabase cash records:', data);
         // Also save to offline storage for backup
         await AsyncStorage.setItem(OFFLINE_KEYS.CASH_RECORDS, JSON.stringify(data));
         return data;
+      } else {
+        console.log('🔍 DEBUG: Supabase error or no data:', error);
+        console.log('🔍 DEBUG: Falling back to offline storage...');
       }
     } catch (supabaseError) {
       console.warn('Supabase unavailable, using offline data:', supabaseError);
     }
 
     // Fallback to offline storage
+    console.log('🔍 DEBUG: Getting cash records from offline storage...');
     const storedData = await AsyncStorage.getItem(OFFLINE_KEYS.CASH_RECORDS);
-    return storedData ? JSON.parse(storedData) : [];
+    const offlineRecords = storedData ? JSON.parse(storedData) : [];
+    console.log('🔍 DEBUG: Offline cash records:', offlineRecords);
+    return offlineRecords;
   } catch (error) {
     console.error('💥 Error getting cash records:', error);
     return [];
@@ -3543,8 +3618,15 @@ export const getCashRecords = async (): Promise<CashRecord[]> => {
 
 export const getPendingCashRecord = async (): Promise<CashRecord | null> => {
   try {
+    console.log('🔍 DEBUG: Getting all cash records...');
     const records = await getCashRecords();
-    return records.find(record => record.status === 'pending_verification') || null;
+    console.log('🔍 DEBUG: All cash records:', records);
+    console.log('🔍 DEBUG: Looking for records with status "pending_verification"...');
+    
+    const pendingRecord = records.find(record => record.status === 'pending_verification');
+    console.log('🔍 DEBUG: Found pending record:', pendingRecord);
+    
+    return pendingRecord || null;
   } catch (error) {
     console.error('💥 Error getting pending cash record:', error);
     return null;

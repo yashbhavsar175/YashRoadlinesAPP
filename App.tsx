@@ -46,7 +46,11 @@ import LeaveCashSetupScreen from './src/screens/LeaveCashSetupScreen';
 import CashVerificationScreen from './src/screens/CashVerificationScreen';
 import CashHistoryScreen from './src/screens/CashHistoryScreen';
 import UserAccessManagementScreen from './src/screens/UserAccessManagementScreen';
+import AdminPasswordChangeScreen from './src/screens/AdminPasswordChangeScreen';
+import AdminUserManagementScreen from './src/screens/AdminUserManagementScreen';
 import { AlertProvider } from './src/context/AlertContext';
+import { UserAccessProvider } from './src/context/UserAccessContext';
+import AuthLogoutService from './src/services/AuthLogoutService';
 
 // Define the root navigator's param list and export it for usage across screens
 type RootStackParamList = {
@@ -86,6 +90,9 @@ type RootStackParamList = {
   CashVerificationScreen: undefined;
   CashHistoryScreen: undefined;
   UserAccessManagementScreen: undefined;
+  AdminPasswordChangeScreen: undefined;
+  AdminUserManagement: undefined;
+  DebugScreenAccess: undefined;
 };
 
 export type { RootStackParamList };
@@ -544,6 +551,10 @@ function App(): React.JSX.Element {
             await PushNotificationService.initialize();
             console.log('✅ PushNotificationService initialized');
             
+            // Initialize auth logout service for real-time logout
+            await AuthLogoutService.getInstance().initialize();
+            console.log('✅ AuthLogoutService initialized');
+            
             // DeviceNotificationService is auto-initialized via constructor
             console.log('📱 DeviceNotificationService ready');
             
@@ -725,16 +736,17 @@ function App(): React.JSX.Element {
   
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <AlertProvider>
-          <NavigationContainer
-            ref={navigationRef as React.Ref<NavigationContainerRef<RootStackParamList>>}
-            onStateChange={(state: NavigationState | undefined) => {
-              if (state) {
-                const currentRoute = state.routes[state.index];
-                setCurrentRouteName(currentRoute?.name);
-              }
-            }}
-          >
+        <UserAccessProvider>
+          <AlertProvider>
+            <NavigationContainer
+              ref={navigationRef as React.Ref<NavigationContainerRef<RootStackParamList>>}
+              onStateChange={(state: NavigationState | undefined) => {
+                if (state) {
+                  const currentRoute = state.routes[state.index];
+                  setCurrentRouteName(currentRoute?.name);
+                }
+              }}
+            >
             <View style={styles.container}>
               <Stack.Navigator
                 initialRouteName="Splash"
@@ -786,7 +798,9 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="CashVerificationScreen" component={CashVerificationScreen} options={{ title: 'Verify Cash' }} />
                 <Stack.Screen name="CashHistoryScreen" component={CashHistoryScreen} options={{ title: 'Cash History' }} />
                 <Stack.Screen name="UserAccessManagementScreen" component={UserAccessManagementScreen} options={{ title: 'User Access Management' }} />
-              </Stack.Navigator>
+                <Stack.Screen name="AdminPasswordChangeScreen" component={AdminPasswordChangeScreen} options={{ title: 'Change User Password' }} />
+                <Stack.Screen name="AdminUserManagement" component={AdminUserManagementScreen} options={{ title: 'User Display Names' }} />              
+            </Stack.Navigator>
 
               {shouldShowCalculator && fabPos && (
                 <>
@@ -808,6 +822,7 @@ function App(): React.JSX.Element {
             </View>
           </NavigationContainer>
         </AlertProvider>
+      </UserAccessProvider>
       </GestureHandlerRootView>
     );
   }

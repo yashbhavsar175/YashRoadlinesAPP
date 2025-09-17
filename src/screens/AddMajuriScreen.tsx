@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, StatusBar, Platform, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, StatusBar, Platform, Keyboard, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { useAlert } from '../context/AlertContext';
 import { NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
@@ -122,7 +122,11 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
   );
 
   return (
-    <View style={GlobalStyles.container}>
+    <KeyboardAvoidingView 
+      style={GlobalStyles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
       <View style={styles.header}>
@@ -132,6 +136,13 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
         <Text style={styles.headerTitle}>Add Majuri</Text>
         <View style={styles.headerSpacer} />
       </View>
+
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 
       <View style={[GlobalStyles.card, { paddingBottom: 48 }]}>
         <View style={styles.cardContent}>
@@ -198,7 +209,8 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
         <Text style={GlobalStyles.buttonPrimaryText}>Go Back</Text>
       </TouchableOpacity>
 
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

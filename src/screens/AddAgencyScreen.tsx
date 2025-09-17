@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, StyleSheet, Alert, FlatList, Text, TextInput, TouchableOpacity, StatusBar, Platform, ActivityIndicator, ScrollView } from 'react-native';
+import { View, StyleSheet, Alert, FlatList, Text, TextInput, TouchableOpacity, StatusBar, Platform, ActivityIndicator, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { useAlert } from '../context/AlertContext';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
@@ -76,7 +76,11 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
   );
 
   return (
-    <View style={GlobalStyles.container}>
+    <KeyboardAvoidingView 
+      style={GlobalStyles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
       <View style={styles.header}>
@@ -87,7 +91,11 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollViewContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollViewContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={GlobalStyles.card}>
           <View style={styles.cardContent}>
             <Text style={GlobalStyles.title}>Add New Agency</Text>
@@ -133,7 +141,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
       <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
         <Text style={GlobalStyles.buttonPrimaryText}>Go Back</Text>
       </TouchableOpacity>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

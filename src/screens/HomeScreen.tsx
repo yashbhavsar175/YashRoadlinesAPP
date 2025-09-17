@@ -18,6 +18,7 @@ import {
   RefreshControl
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useUserAccess } from '../context/UserAccessContext';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { supabase } from '../supabase';
@@ -62,7 +63,7 @@ const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 
 function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenProps): React.JSX.Element {
   const { navigate, replace } = navigation;
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const { isAdmin: contextIsAdmin, screenAccess, hasScreenAccess: contextHasScreenAccess, refreshPermissions, isLoading: contextLoading, lastUpdated } = useUserAccess();
   const [userInitial, setUserInitial] = useState<string>('');
   const [userName, setUserName] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('User');
@@ -73,6 +74,16 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   const [isProfileLoading, setIsProfileLoading] = useState<boolean>(true);
   const isMountedRef = useRef(true);
   const hasInitializedRef = useRef(false);
+
+  // Reset initialization flag when component mounts
+  useEffect(() => {
+    hasInitializedRef.current = false;
+    isMountedRef.current = true;
+    
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   
   // Majur Dashboard states
   const [majuriData, setMajuriData] = useState<{displayDate: string; isToday: boolean; isYesterday: boolean; id: string; majuri_date: string; amount: number; agency_name: string; description?: string}[]>([]);
@@ -122,7 +133,14 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     }
   }, [combinedData, selectedDate, majurLoading, updateFilteredData]);
 
-  const fetchUserAndAdminStatus = useCallback(async () => {
+  // Helper function to check if user has access to specific screen
+  const hasScreenAccess = useCallback((screenName: string): boolean => {
+    const result = contextIsAdmin || contextHasScreenAccess(screenName);
+    console.log(`🔍 Screen Access Check: ${screenName} = ${result} (admin: ${contextIsAdmin}, context: ${contextHasScreenAccess(screenName)})`);
+    return result;
+  }, [contextIsAdmin, contextHasScreenAccess]);
+
+  const fetchUserProfile = useCallback(async () => {
     if (!isMountedRef.current) return;
     setIsProfileLoading(true);
 
@@ -132,7 +150,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       if (error || !user) {
         setUserInitial('?');
         setUserRole('Guest');
-        setIsAdmin(false);
         setIsProfileLoading(false);
         return;
       }
@@ -160,30 +177,25 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         setUserType(profile?.user_type || 'normal');
       }
 
-      if (user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-        console.log('🔧 DEBUG: User is admin!', user.email);
-        setIsAdmin(true);
-        setUserRole('Admin');
-      } else {
-        console.log('🔧 DEBUG: User is NOT admin', {
-          userEmail: user.email,
-          adminEmail: ADMIN_EMAIL,
-          emailsMatch: user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()
-        });
-        setIsAdmin(false);
-        setUserRole('User');
-      }
+      // Use context admin status instead of local state
+      setUserRole(contextIsAdmin ? 'Admin' : 'User');
+
+      console.log('🔧 DEBUG: User profile loaded:', {
+        userId: user.id,
+        userEmail: user.email,
+        displayName: profile?.full_name || user.email,
+        userType: profile?.user_type || 'normal'
+      });
     } catch (e) {
-      console.error("Error fetching user status:", e);
+      console.error("Error fetching user profile:", e);
       setUserInitial('?');
       setUserRole('Guest');
-      setIsAdmin(false);
     } finally {
       if (isMountedRef.current) {
         setIsProfileLoading(false);
       }
     }
-  }, []);
+  }, [contextIsAdmin]);
 
   // Majur Dashboard functions
   const getDayName = (date: Date) => {
@@ -416,17 +428,21 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       
       const loadData = async () => {
         try {
+          console.log('🔄 HomeScreen: Starting data load...');
+          
+          // Always refresh permissions when screen comes into focus
+          await refreshPermissions();
+          
+          // Load user profile
+          await fetchUserProfile();
+          
           if (userType === 'majur') {
             await loadMajurData();
-          } else if (!hasInitializedRef.current || !userName) {
-            await fetchUserAndAdminStatus();
           }
+          
+          console.log('✅ HomeScreen: Data load completed');
         } catch (error) {
-          console.error('Error loading data:', error);
-        } finally {
-          if (isActive) {
-            setIsProfileLoading(false);
-          }
+          console.error('❌ HomeScreen: Error loading data:', error);
         }
       };
 
@@ -436,8 +452,17 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         isActive = false;
         isMountedRef.current = false;
       };
-    }, [fetchUserAndAdminStatus, userName, userType, loadMajurData])
+    }, [userType]) // Removed other dependencies to prevent infinite loop
   );
+
+  // Watch for permission changes and force re-render
+  useEffect(() => {
+    console.log('🔄 HomeScreen: Permissions updated, re-rendering UI...', {
+      lastUpdated,
+      isAdmin: contextIsAdmin,
+      screenAccessCount: Object.keys(screenAccess).length
+    });
+  }, [lastUpdated, contextIsAdmin, screenAccess]);
 
   // Real-time subscription for majur dashboard auto-refresh
   useEffect(() => {
@@ -1141,7 +1166,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {/* Notification Bell for Admin */}
-          {isAdmin && (
+          {contextIsAdmin && (
             <NotificationBell
               onPress={() => navigate('AdminNotifications')}
               size={22}
@@ -1153,7 +1178,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           <TouchableOpacity 
             onPress={userType === 'majur' ? handleLogout : () => setIsProfileMenuVisible(true)}
             activeOpacity={0.8}
-            style={{ marginLeft: isAdmin ? 12 : 0 }}
+            style={{ marginLeft: contextIsAdmin ? 12 : 0 }}
           >
             <View style={styles.avatar}>
             <Text style={styles.avatarText}>{userInitial}</Text>
@@ -1304,77 +1329,98 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             contentContainerStyle={styles.scrollViewContent}
             showsVerticalScrollIndicator={false}
           >
+            {/* Financial Entries - Only show if user has access to any financial screen */}
+            {(contextIsAdmin || 
+              hasScreenAccess('PaidSectionScreen') || 
+              hasScreenAccess('AddMajuriScreen') || 
+              hasScreenAccess('AgencyEntryScreen') || 
+              hasScreenAccess('AddGeneralEntryScreen') || 
+              hasScreenAccess('UppadJamaScreen') || 
+              hasScreenAccess('MumbaiDeliveryEntryScreen') || 
+              hasScreenAccess('BackdatedEntryScreen')) && (
             <View style={styles.card}>
               <Text style={styles.categoryTitle}>Financial Entries</Text>
               <Text style={styles.categoryDescription}>Record payments, labor charges, and other transactions.</Text>
               <View style={styles.buttonGrid}>
-                <TouchableOpacity 
-                  onPress={() => navigate('PaidSection')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="cash-outline" size={28} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Paid Section</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('PaidSectionScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('PaidSection')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="cash-outline" size={28} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Paid Section</Text>
+                  </TouchableOpacity>
+                )}
                 
-                <TouchableOpacity 
-                  onPress={() => navigate('AddMajuri')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="hammer-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Add Majuri</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('AddMajuriScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('AddMajuri')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="hammer-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Add Majuri</Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity 
-                  onPress={() => navigate('AgencyEntry')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="business-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Agency Entry</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('AgencyEntryScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('AgencyEntry')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="business-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Agency Entry</Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity 
-                  onPress={() => navigate('AddGeneralEntry')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="journal-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>General Entry</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('AddGeneralEntryScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('AddGeneralEntry')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="journal-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>General Entry</Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity 
-                  onPress={() => navigate('UppadJama')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="people-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Uppad/Jama</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('UppadJamaScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('UppadJama')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="people-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Uppad/Jama</Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity 
-                  onPress={() => navigate('MumbaiDeliveryEntry')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="car-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Mumbai Delivery</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('MumbaiDeliveryEntryScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('MumbaiDeliveryEntry')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="car-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Mumbai Delivery</Text>
+                  </TouchableOpacity>
+                )}
 
-                {isAdmin && (
+                {(contextIsAdmin || hasScreenAccess('BackdatedEntryScreen')) && (
                   <TouchableOpacity 
                     onPress={() => navigate('BackdatedEntry')} 
                     style={styles.gridButton}
@@ -1388,73 +1434,95 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
               </View>
             </View>
+            )}
 
+            {/* Driver & Truck Management - Only show if user has access to any driver/truck screen */}
+            {(contextIsAdmin || 
+              hasScreenAccess('DriverDetailsScreen') || 
+              hasScreenAccess('AddTruckFuelScreen')) && (
             <View style={styles.card}>
               <Text style={styles.categoryTitle}>Driver & Truck Management</Text>
               <Text style={styles.categoryDescription}>Manage driver transactions and record fuel expenses.</Text>
               <View style={styles.buttonGrid}>
-                <TouchableOpacity 
-                  onPress={() => navigate('DriverDetails')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="person-circle-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Driver Account</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('DriverDetailsScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('DriverDetails')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="person-circle-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Driver Account</Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity 
-                  onPress={() => navigate('AddTruckFuel')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="water-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Add Truck Fuel</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('AddTruckFuelScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('AddTruckFuel')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="water-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Add Truck Fuel</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
+            )}
 
+            {/* Statements & Reports - Only show if user has access to any report screen */}
+            {(contextIsAdmin || 
+              hasScreenAccess('StatementScreen') || 
+              hasScreenAccess('MonthlyStatementScreen') || 
+              hasScreenAccess('DailyReportScreen') || 
+              hasScreenAccess('HistoryScreen')) && (
             <View style={styles.card}>
               <Text style={styles.categoryTitle}>Statements & Reports</Text>
               <Text style={styles.categoryDescription}>View, generate, and share detailed financial reports.</Text>
               <View style={styles.buttonGrid}>
-                <TouchableOpacity 
-                  onPress={() => navigate('Statement')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="list-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Statement</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('StatementScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('Statement')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="list-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Statement</Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity 
-                  onPress={() => navigate('MonthlyStatement')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="calendar-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Monthly Statement</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('MonthlyStatementScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('MonthlyStatement')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="calendar-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Monthly Statement</Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity 
-                  onPress={() => navigate('DailyReport')} 
-                  style={styles.gridButton}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.iconContainer}>
-                    <Icon name="document-text-outline" size={26} color={BWColors.primary} />
-                  </View>
-                  <Text style={styles.gridButtonText}>Daily Report</Text>
-                </TouchableOpacity>
+                {(contextIsAdmin || hasScreenAccess('DailyReportScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('DailyReport')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="document-text-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Daily Report</Text>
+                  </TouchableOpacity>
+                )}
 
-                {isAdmin && (
+                {(contextIsAdmin || hasScreenAccess('HistoryScreen')) && (
                   <TouchableOpacity 
                     onPress={() => navigate('History')} 
                     style={styles.gridButton}
@@ -1468,44 +1536,55 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
               </View>
             </View>
+            )}
 
-            {isAdmin && (
+            {/* Cash Management Section - Show if user has any cash-related access */}
+            {(contextIsAdmin || hasScreenAccess('CashVerificationScreen') || hasScreenAccess('CashHistoryScreen') || hasScreenAccess('LeaveCashSetupScreen') || hasScreenAccess('ManageCashScreen')) && (
               <View style={styles.card}>
                 <Text style={styles.categoryTitle}>💰 Cash Management</Text>
                 <Text style={styles.categoryDescription}>Track and verify cash amounts when leaving office.</Text>
                 <View style={styles.buttonGrid}>
-                  <TouchableOpacity 
-                    onPress={() => navigate('LeaveCashSetupScreen')} 
-                    style={styles.gridButton}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.iconContainer}>
-                      <Icon name="wallet-outline" size={26} color={BWColors.primary} />
-                    </View>
-                    <Text style={styles.gridButtonText}>Setup Cash Amount</Text>
-                  </TouchableOpacity>
+                  {/* Setup Cash Amount - Admin only */}
+                  {(contextIsAdmin || hasScreenAccess('LeaveCashSetupScreen')) && (
+                    <TouchableOpacity 
+                      onPress={() => navigate('LeaveCashSetupScreen')} 
+                      style={styles.gridButton}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.iconContainer}>
+                        <Icon name="wallet-outline" size={26} color={BWColors.primary} />
+                      </View>
+                      <Text style={styles.gridButtonText}>Setup Cash Amount</Text>
+                    </TouchableOpacity>
+                  )}
 
-                  <TouchableOpacity 
-                    onPress={() => navigate('CashVerificationScreen')} 
-                    style={styles.gridButton}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.iconContainer}>
-                      <Icon name="checkmark-circle-outline" size={26} color={BWColors.primary} />
-                    </View>
-                    <Text style={styles.gridButtonText}>Verify Cash</Text>
-                  </TouchableOpacity>
+                  {/* Verify Cash - Based on permission */}
+                  {(contextIsAdmin || hasScreenAccess('CashVerificationScreen')) && (
+                    <TouchableOpacity 
+                      onPress={() => navigate('CashVerificationScreen')} 
+                      style={styles.gridButton}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.iconContainer}>
+                        <Icon name="checkmark-circle-outline" size={26} color={BWColors.primary} />
+                      </View>
+                      <Text style={styles.gridButtonText}>Verify Cash</Text>
+                    </TouchableOpacity>
+                  )}
 
-                  <TouchableOpacity 
-                    onPress={() => navigate('CashHistoryScreen')} 
-                    style={styles.gridButton}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.iconContainer}>
-                      <Icon name="receipt-outline" size={26} color={BWColors.primary} />
-                    </View>
-                    <Text style={styles.gridButtonText}>Cash History</Text>
-                  </TouchableOpacity>
+                  {/* Cash History - Based on permission */}
+                  {(contextIsAdmin || hasScreenAccess('CashHistoryScreen')) && (
+                    <TouchableOpacity 
+                      onPress={() => navigate('CashHistoryScreen')} 
+                      style={styles.gridButton}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.iconContainer}>
+                        <Icon name="receipt-outline" size={26} color={BWColors.primary} />
+                      </View>
+                      <Text style={styles.gridButtonText}>Cash History</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             )}
@@ -1558,11 +1637,16 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
                 {/* Debug: Log admin status */}
                 {(() => {
-                  console.log('🔧 DEBUG: Profile menu rendering with isAdmin =', isAdmin, 'userRole =', userRole);
+                  console.log('🔧 DEBUG: Profile menu rendering with permissions:', {
+                    contextIsAdmin,
+                    userRole,
+                    screenAccess: screenAccess
+                  });
                   return null;
                 })()}
 
-                {isAdmin && (
+                {/* Admin Panel - Based on permission */}
+                {(contextIsAdmin || hasScreenAccess('AdminPanelScreen')) && (
                   <TouchableOpacity onPress={() => {
                   setIsProfileMenuVisible(false);
                   navigate('AdminPanel');
@@ -1572,7 +1656,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                   </TouchableOpacity>
                 )}
 
-                {isAdmin && (
+                {/* User Access Management - Based on permission */}
+                {(contextIsAdmin || hasScreenAccess('UserAccessManagementScreen')) && (
                   <TouchableOpacity onPress={() => {
                   console.log('🔧 DEBUG: User Access Management clicked');
                   setIsProfileMenuVisible(false);

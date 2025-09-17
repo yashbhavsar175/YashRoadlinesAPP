@@ -8,10 +8,13 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
+  StatusBar,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../supabase';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useUserAccess } from '../context/UserAccessContext';
 
 interface UserProfile {
   id: string;
@@ -30,33 +33,214 @@ interface ScreenPermission {
   screen_name: string;
   display_name: string;
   description: string;
+  category: string;
 }
 
 const AVAILABLE_SCREENS: ScreenPermission[] = [
+  // Financial Entry Screens
+  {
+    screen_name: 'AddMajuriScreen',
+    display_name: 'Add Majuri',
+    description: 'Add labor charges and majuri entries',
+    category: 'Financial Entry'
+  },
+  {
+    screen_name: 'AgencyEntryScreen',
+    display_name: 'Agency Entry',
+    description: 'Record agency transactions and payments',
+    category: 'Financial Entry'
+  },
+  {
+    screen_name: 'AddGeneralEntryScreen',
+    display_name: 'General Entry',
+    description: 'Add general financial transactions',
+    category: 'Financial Entry'
+  },
+  {
+    screen_name: 'UppadJamaScreen',
+    display_name: 'Uppad/Jama',
+    description: 'Record debit and credit entries',
+    category: 'Financial Entry'
+  },
+  {
+    screen_name: 'MumbaiDeliveryEntryScreen',
+    display_name: 'Mumbai Delivery',
+    description: 'Record Mumbai delivery transactions',
+    category: 'Financial Entry'
+  },
+  {
+    screen_name: 'BackdatedEntryScreen',
+    display_name: 'Backdated Entry',
+    description: 'Add historical transactions with past dates',
+    category: 'Financial Entry'
+  },
+  {
+    screen_name: 'AgencyPaymentsScreen',
+    display_name: 'Agency Payments',
+    description: 'Manage agency payment records',
+    category: 'Financial Entry'
+  },
+  {
+    screen_name: 'AddAgencyScreen',
+    display_name: 'Add Agency',
+    description: 'Create new agency records',
+    category: 'Financial Entry'
+  },
+
+  // Driver & Vehicle Management
+  {
+    screen_name: 'DriverDetailsScreen',
+    display_name: 'Driver Details',
+    description: 'Manage driver information and transactions',
+    category: 'Driver & Vehicle'
+  },
+  {
+    screen_name: 'DriverStatementScreen',
+    display_name: 'Driver Statement',
+    description: 'View driver financial statements',
+    category: 'Driver & Vehicle'
+  },
+  {
+    screen_name: 'AddTruckFuelScreen',
+    display_name: 'Truck Fuel Entry',
+    description: 'Record fuel expenses and truck maintenance',
+    category: 'Driver & Vehicle'
+  },
+
+  // Reports & Statements
+  {
+    screen_name: 'DailyReportScreen',
+    display_name: 'Daily Report',
+    description: 'Generate and view daily financial reports',
+    category: 'Reports'
+  },
+  {
+    screen_name: 'StatementScreen',
+    display_name: 'Statement',
+    description: 'View financial statements and summaries',
+    category: 'Reports'
+  },
+  {
+    screen_name: 'MonthlyStatementScreen',
+    display_name: 'Monthly Statement',
+    description: 'Generate monthly financial statements',
+    category: 'Reports'
+  },
+  {
+    screen_name: 'TotalPaidScreen',
+    display_name: 'Total Paid',
+    description: 'View total payment summaries',
+    category: 'Reports'
+  },
+  {
+    screen_name: 'EWayBillConsolidatedScreen',
+    display_name: 'E-Way Bill Consolidated',
+    description: 'Manage consolidated E-Way Bill reports',
+    category: 'Reports'
+  },
+  {
+    screen_name: 'PaidSectionScreen',
+    display_name: 'Paid Section',
+    description: 'View and manage payment sections',
+    category: 'Reports'
+  },
+
+  // Cash Management
   {
     screen_name: 'CashVerificationScreen',
     display_name: 'Cash Verification',
-    description: 'Verify actual cash amounts received'
+    description: 'Verify actual cash amounts received',
+    category: 'Cash Management'
   },
   {
     screen_name: 'CashHistoryScreen',
     display_name: 'Cash History',
-    description: 'View cash verification history and records'
+    description: 'View cash verification history and records',
+    category: 'Cash Management'
   },
+  {
+    screen_name: 'LeaveCashSetupScreen',
+    display_name: 'Leave Cash Setup',
+    description: 'Setup expected cash amounts for verification',
+    category: 'Cash Management'
+  },
+  {
+    screen_name: 'ManageCashScreen',
+    display_name: 'Manage Cash',
+    description: 'Comprehensive cash management tools',
+    category: 'Cash Management'
+  },
+
+  // Administration
   {
     screen_name: 'AdminPanelScreen',
     display_name: 'Admin Panel',
-    description: 'Administrative controls and settings'
+    description: 'Administrative controls and settings',
+    category: 'Administration'
   },
   {
     screen_name: 'AdminUserManagementScreen',
     display_name: 'User Management',
-    description: 'Manage users and their permissions'
+    description: 'Manage users and their permissions',
+    category: 'Administration'
+  },
+  {
+    screen_name: 'AdminNotificationScreen',
+    display_name: 'Admin Notifications',
+    description: 'Manage system notifications and alerts',
+    category: 'Administration'
+  },
+  {
+    screen_name: 'AdminPasswordChangeScreen',
+    display_name: 'Password Change',
+    description: 'Administrative password management',
+    category: 'Administration'
+  },
+  {
+    screen_name: 'UserAccessManagementScreen',
+    display_name: 'User Access Management',
+    description: 'Control user access to specific screens',
+    category: 'Administration'
+  },
+  {
+    screen_name: 'HistoryScreen',
+    display_name: 'History Log',
+    description: 'View system activity history and logs',
+    category: 'Administration'
+  },
+
+  // Special Dashboards
+  {
+    screen_name: 'MajurDashboardScreen',
+    display_name: 'Majur Dashboard',
+    description: 'Specialized dashboard for majur users',
+    category: 'Dashboards'
+  },
+
+  // System & Testing
+  {
+    screen_name: 'BiometricAuthScreen',
+    display_name: 'Biometric Authentication',
+    description: 'Biometric security and authentication',
+    category: 'System'
+  },
+  {
+    screen_name: 'NotificationTestScreen',
+    display_name: 'Notification Test',
+    description: 'Test system notification functionality',
+    category: 'System'
+  },
+  {
+    screen_name: 'PushDiagnosticsScreen',
+    display_name: 'Push Diagnostics',
+    description: 'Diagnose push notification issues',
+    category: 'System'
   }
 ];
 
 const UserAccessManagementScreen: React.FC = () => {
   const navigation = useNavigation();
+  const { refreshPermissions } = useUserAccess();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -81,6 +265,12 @@ const UserAccessManagementScreen: React.FC = () => {
       }
 
       setUsers(data || []);
+      console.log('🔍 Debug: Users loaded with screen access:', data?.map(u => ({
+        name: u.full_name,
+        id: u.id,
+        screen_access: u.screen_access,
+        access_count: u.screen_access?.length || 0
+      })));
     } catch (error) {
       console.error('Error in loadUsers:', error);
       Alert.alert('Error', 'Failed to load users');
@@ -116,7 +306,7 @@ const UserAccessManagementScreen: React.FC = () => {
 
       if (error) {
         console.error('Error updating user access:', error);
-        Alert.alert('Error', 'Failed to update user access');
+        Alert.alert('Error', `Failed to update user access: ${error.message}`);
         return;
       }
 
@@ -127,7 +317,25 @@ const UserAccessManagementScreen: React.FC = () => {
           : u
       ));
 
-      Alert.alert('Success', 'User access updated successfully');
+      // Show detailed success message
+      const actionText = hasAccess ? 'granted' : 'removed';
+      const screenDisplayName = AVAILABLE_SCREENS.find(s => s.screen_name === screenName)?.display_name || screenName;
+      Alert.alert(
+        'Success', 
+        `${screenDisplayName} access ${actionText} for ${user.full_name || user.username}. Changes will be visible immediately.`
+      );
+
+      console.log('✅ Screen access updated:', {
+        userId,
+        userName: user.full_name || user.username,
+        screenName,
+        hasAccess,
+        newAccess: currentAccess
+      });
+
+      // Refresh permissions in context for real-time updates across app
+      await refreshPermissions();
+      console.log('🔄 Real-time permissions refreshed after access update');
     } catch (error) {
       console.error('Error in updateUserAccess:', error);
       Alert.alert('Error', 'Failed to update user access');
@@ -142,6 +350,7 @@ const UserAccessManagementScreen: React.FC = () => {
 
   const renderUserCard = (user: UserProfile) => {
     const userAccess = user.screen_access || [];
+    console.log(`🔍 Debug: Rendering user ${user.full_name} with access:`, userAccess);
     
     return (
       <View key={user.id} style={styles.userCard}>
@@ -181,22 +390,39 @@ const UserAccessManagementScreen: React.FC = () => {
         {selectedUser?.id === user.id && (
           <View style={styles.permissionsSection}>
             <Text style={styles.permissionsTitle}>Screen Access Permissions</Text>
-            {AVAILABLE_SCREENS.map(screen => {
-              const hasAccess = userAccess.includes(screen.screen_name);
+            
+            {/* Group screens by category */}
+            {['Financial Entry', 'Driver & Vehicle', 'Reports', 'Cash Management', 'Administration', 'Dashboards', 'System'].map(category => {
+              const categoryScreens = AVAILABLE_SCREENS.filter(screen => screen.category === category);
+              if (categoryScreens.length === 0) return null;
+              
               return (
-                <View key={screen.screen_name} style={styles.permissionItem}>
-                  <View style={styles.permissionInfo}>
-                    <Text style={styles.permissionName}>{screen.display_name}</Text>
-                    <Text style={styles.permissionDescription}>{screen.description}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.toggleButton, hasAccess ? styles.toggleOn : styles.toggleOff]}
-                    onPress={() => updateUserAccess(user.id, screen.screen_name, !hasAccess)}
-                  >
-                    <Text style={[styles.toggleText, hasAccess ? styles.toggleTextOn : styles.toggleTextOff]}>
-                      {hasAccess ? 'ON' : 'OFF'}
-                    </Text>
-                  </TouchableOpacity>
+                <View key={category} style={styles.categorySection}>
+                  <Text style={styles.categoryTitle}>{category}</Text>
+                  {categoryScreens.map(screen => {
+                    const hasAccess = userAccess.includes(screen.screen_name);
+                    console.log(`🔍 Permission check: ${screen.display_name} for ${user.full_name}:`, {
+                      screen_name: screen.screen_name,
+                      userAccess,
+                      hasAccess
+                    });
+                    return (
+                      <View key={screen.screen_name} style={styles.permissionItem}>
+                        <View style={styles.permissionInfo}>
+                          <Text style={styles.permissionName}>{screen.display_name}</Text>
+                          <Text style={styles.permissionDescription}>{screen.description}</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.toggleButton, hasAccess ? styles.toggleOn : styles.toggleOff]}
+                          onPress={() => updateUserAccess(user.id, screen.screen_name, !hasAccess)}
+                        >
+                          <Text style={[styles.toggleText, hasAccess ? styles.toggleTextOn : styles.toggleTextOff]}>
+                            {hasAccess ? 'ON' : 'OFF'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
                 </View>
               );
             })}
@@ -217,7 +443,21 @@ const UserAccessManagementScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      
+      {/* Header */}
+      <View style={styles.navigationHeader}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-back" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>User Access Management</Text>
+        <View style={styles.headerRight} />
+      </View>
+
+      <View style={styles.contentHeader}>
         <Text style={styles.title}>👥 User Access Management</Text>
         <Text style={styles.subtitle}>Manage user permissions for different screens</Text>
       </View>
@@ -269,6 +509,34 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
+  },
+  navigationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 50,
+    paddingBottom: 16,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+    textAlign: 'center',
+    marginRight: 40,
+  },
+  headerRight: {
+    width: 40,
+  },
+  contentHeader: {
+    padding: 20,
+    paddingBottom: 10,
   },
   centerContainer: {
     flex: 1,
@@ -435,6 +703,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#2c3e50',
     marginBottom: 15,
+  },
+  categorySection: {
+    marginBottom: 20,
+  },
+  categoryTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#34495e',
+    marginBottom: 10,
+    paddingBottom: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ecf0f1',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   permissionItem: {
     flexDirection: 'row',

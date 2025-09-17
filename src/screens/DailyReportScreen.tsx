@@ -48,6 +48,7 @@ import {
   TruckFuelEntry,
   AgencyEntry,
   OFFLINE_KEYS,
+  clearAllCache,
   syncAllDataFixed,
   saveAgencyPayment,
   saveAgencyMajuri,
@@ -482,9 +483,15 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   // Load profile, cash adjustment and transactions when selectedDate changes
   useEffect(() => {
     console.log('🚀 useEffect triggered for selectedDate:', selectedDate.toISOString().split('T')[0]);
-    const loadData = async () => {
+    const loadData = async (forceClearCache = false) => {
       console.log('🔄 Loading data for date:', selectedDate.toISOString().split('T')[0]);
       try {
+        // Clear cache if requested to get fresh data
+        if (forceClearCache) {
+          console.log('🧹 Clearing cache for fresh data...');
+          await clearAllCache();
+        }
+        
         console.log('📋 Loading profile...');
         await loadProfile();
         
@@ -1424,6 +1431,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     console.log('🔄 MANUAL REFRESH started for date:', selectedDate.toISOString().split('T')[0]);
     setRefreshing(true);
     try {
+      console.log('🧹 MANUAL REFRESH: Clearing cache for fresh data...');
+      await clearAllCache();
+      
       console.log('🔄 MANUAL REFRESH: Syncing all data...');
       await syncAllDataFixed();
       console.log('🔄 MANUAL REFRESH: Loading daily transactions...');

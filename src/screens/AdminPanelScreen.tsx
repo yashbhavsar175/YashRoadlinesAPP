@@ -515,6 +515,13 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                     <TouchableOpacity onPress={loadUsers} style={[GlobalStyles.buttonPrimary, { marginTop: 8 }]}>
                       <Text style={GlobalStyles.buttonPrimaryText}>Refresh</Text>
                     </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      onPress={() => navigate('AdminPasswordChangeScreen')} 
+                      style={[GlobalStyles.buttonPrimary, { marginTop: 8, backgroundColor: Colors.warning }]}
+                    >
+                      <Text style={GlobalStyles.buttonPrimaryText}>Change User Password</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>

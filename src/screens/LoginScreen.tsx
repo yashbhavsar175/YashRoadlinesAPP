@@ -136,7 +136,19 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       });
 
       if (error) {
-        Alert.alert('Login Failed', error.message);
+        // Log full error object for debugging
+        try { console.error('🔴 signInWithPassword error (full):', error); } catch (e) { console.error('Error logging sign-in error', e); }
+
+        // Show detailed alert to capture Supabase error fields during debugging
+        const errMsg = (() => {
+          try {
+            return JSON.stringify(error, Object.getOwnPropertyNames(error));
+          } catch (e) {
+            return String(error);
+          }
+        })();
+
+        Alert.alert('Login Failed', `Detailed error: ${errMsg}`);
         return;
       }
 
@@ -145,9 +157,75 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
         return;
       }
 
-      // Ensure profile exists
-      await createProfileIfMissing(data.user.id, email.trim());
+      console.log('🔍 Starting login process for user:', data.user.id, 'email:', data.user.email);
+      
+      // First, let's test direct database access
+      try {
+        console.log('🔍 Testing direct database access...');
+        const { data: testData, error: testError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+        
+        if (testError && testError.code !== 'PGRST116') {
+          console.error('❌ Direct database test failed:', testError);
+          Alert.alert('Database Error', `Database access failed: ${testError.message}`);
+          return;
+        }
+        
+        if (testData) {
+          console.log('✅ Direct database test: Profile already exists:', testData);
+        } else {
+          console.log('ℹ️ Direct database test: No profile found, will create one');
+        }
+      } catch (dbTestError) {
+        console.error('❌ Database connection test failed:', dbTestError);
+        Alert.alert('Database Error', 'Cannot connect to database. Please check your internet connection.');
+        return;
+      }
+
+      // Ensure profile exists - with multiple fallback attempts
+      let profileCreated = false;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (!profileCreated && attempts < maxAttempts) {
+        attempts++;
+        console.log(`🔄 Profile check attempt ${attempts}/${maxAttempts} for user:`, data.user.id);
+        
+        try {
+          await createProfileIfMissing(data.user.id, email.trim());
+          profileCreated = true;
+          console.log('✅ Profile verified/created for user:', data.user.id);
+        } catch (profileError) {
+          console.error(`❌ Profile attempt ${attempts} failed:`, profileError);
+          
+          if (attempts >= maxAttempts) {
+            await supabase.auth.signOut();
+            Alert.alert(
+              'Database Error', 
+              'Failed to create user profile after multiple attempts.\n\nThis is likely a temporary database issue. Please try again in a few moments.'
+            );
+            return;
+          }
+          
+          // Wait a bit before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
       const profile = await getProfile(data.user.id);
+      if (!profile) {
+        console.error('❌ Profile still not found after creation attempts');
+        await supabase.auth.signOut();
+        Alert.alert(
+          'Profile Error', 
+          'Unable to retrieve user profile after creation. Please try logging in again.'
+        );
+        return;
+      }
+
       const isActive = profile?.is_active !== false;
 
       if (!isActive) {
@@ -208,8 +286,22 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       } catch { }
 
     } catch (error: any) {
-      console.error('Login error:', error);
-      Alert.alert('Login Error', 'An unexpected error occurred. Please try again.');
+      console.error('❌ Login error:', error);
+      
+      // Check if it's a profile creation error
+      if (error.message && error.message.includes('profile')) {
+        Alert.alert(
+          'Database Error', 
+          'Failed to create user profile. Please try again.\n\nIf this continues, please contact support.'
+        );
+      } else if (error.message && error.message.includes('auth')) {
+        Alert.alert('Authentication Error', error.message);
+      } else {
+        Alert.alert(
+          'Login Error', 
+          'An unexpected error occurred during login. Please try again.\n\nError: ' + (error.message || 'Unknown error')
+        );
+      }
     } finally {
       setLoading(false);
     }

@@ -160,21 +160,6 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
             </TouchableOpacity>
           </View>
           
-          {/* Test notification button - remove this after testing */}
-          <TouchableOpacity 
-            onPress={() => DeviceNotificationService.sendTestNotification()} 
-            style={[GlobalStyles.buttonPrimary, { backgroundColor: '#FF9800', marginBottom: 10 }]}
-          >
-            <Text style={GlobalStyles.buttonPrimaryText}>🧪 Test Notification</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            onPress={() => DeviceNotificationService.requestPermissions()} 
-            style={[GlobalStyles.buttonPrimary, { backgroundColor: '#9C27B0', marginBottom: 10 }]}
-          >
-            <Text style={GlobalStyles.buttonPrimaryText}>🔔 Request Permissions</Text>
-          </TouchableOpacity>
-          
           <TouchableOpacity onPress={handleSaveEntry} disabled={saving} style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}>
             <Text style={GlobalStyles.buttonPrimaryText}>{saving ? 'Saving...' : 'Save Entry'}</Text>
           </TouchableOpacity>
