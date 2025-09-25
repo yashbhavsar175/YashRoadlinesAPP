@@ -48,6 +48,7 @@ import CashHistoryScreen from './src/screens/CashHistoryScreen';
 import UserAccessManagementScreen from './src/screens/UserAccessManagementScreen';
 import AdminPasswordChangeScreen from './src/screens/AdminPasswordChangeScreen';
 import AdminUserManagementScreen from './src/screens/AdminUserManagementScreen';
+import MajurDashboardScreen from './src/screens/MajurDashboardScreen';
 import { AlertProvider } from './src/context/AlertContext';
 import { UserAccessProvider } from './src/context/UserAccessContext';
 import AuthLogoutService from './src/services/AuthLogoutService';
@@ -92,6 +93,7 @@ type RootStackParamList = {
   UserAccessManagementScreen: undefined;
   AdminPasswordChangeScreen: undefined;
   AdminUserManagement: undefined;
+  MajurDashboard: undefined;
   DebugScreenAccess: undefined;
 };
 
@@ -799,7 +801,8 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="CashHistoryScreen" component={CashHistoryScreen} options={{ title: 'Cash History' }} />
                 <Stack.Screen name="UserAccessManagementScreen" component={UserAccessManagementScreen} options={{ title: 'User Access Management' }} />
                 <Stack.Screen name="AdminPasswordChangeScreen" component={AdminPasswordChangeScreen} options={{ title: 'Change User Password' }} />
-                <Stack.Screen name="AdminUserManagement" component={AdminUserManagementScreen} options={{ title: 'User Display Names' }} />              
+                <Stack.Screen name="AdminUserManagement" component={AdminUserManagementScreen} options={{ title: 'User Display Names' }} />
+                <Stack.Screen name="MajurDashboard" component={MajurDashboardScreen} options={{ title: 'Majur Dashboard' }} />
             </Stack.Navigator>
 
               {shouldShowCalculator && fabPos && (

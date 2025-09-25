@@ -184,8 +184,21 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         userId: user.id,
         userEmail: user.email,
         displayName: profile?.full_name || user.email,
-        userType: profile?.user_type || 'normal'
+        userType: profile?.user_type || 'normal',
+        isAdmin: profile?.is_admin || false,
+        screenAccess: profile?.screen_access || []
       });
+      
+      // Additional debug for majur users
+      if (profile?.user_type === 'majur') {
+        console.log('🎯 MAJUR USER DETECTED:', {
+          userId: user.id,
+          email: user.email,
+          fullName: profile.full_name,
+          userType: profile.user_type,
+          isActive: profile.is_active
+        });
+      }
     } catch (e) {
       console.error("Error fetching user profile:", e);
       setUserInitial('?');
@@ -642,6 +655,12 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     },
     sectionHeader: {
       marginBottom: 20,
+    },
+    sectionHeaderRow: {
+      marginBottom: 20,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
     },
     sectionTitle: {
       fontSize: 22,
@@ -1201,6 +1220,27 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         />
       }
     >
+      {/* Header with Full Dashboard Button */}
+      <View style={[styles.sectionHeaderRow, { marginBottom: 16 }]}>
+        <Text style={[styles.sectionTitle, { fontSize: 24, color: BWColors.primary }]}>मजूर डैशबोर्ड</Text>
+        <TouchableOpacity 
+          onPress={() => navigate('MajurDashboard')}
+          style={{
+            backgroundColor: BWColors.primary,
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            borderRadius: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          activeOpacity={0.8}
+        >
+          <Icon name="apps-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>पूरा डैशबोर्ड</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Date Selector */}
       <View style={styles.dateSelectorContainer}>
         <TouchableOpacity 

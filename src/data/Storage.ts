@@ -961,7 +961,7 @@ export const listProfilesExceptCurrent = async (): Promise<UserProfile[]> => {
     const emailLocal = email.split('@')[0] || '';
     let query = supabase
       .from('user_profiles')
-      .select('id, username, full_name, is_active, created_at, updated_at')
+      .select('id, username, full_name, user_type, is_active, created_at, updated_at')
       .order('created_at', { ascending: false });
     if (uid) {
       query = query.neq('id', uid);
@@ -996,6 +996,41 @@ export const setUserActive = async (userId: string, active: boolean): Promise<bo
     return true;
   } catch (error) {
     console.error('Error updating user active status:', error);
+    return false;
+  }
+};
+
+export const updateUserType = async (userId: string, userType: 'normal' | 'majur'): Promise<boolean> => {
+  try {
+    console.log(`🔄 Updating user ${userId} type to: ${userType}`);
+    
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ user_type: userType, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('❌ Database error updating user type:', error);
+      throw error;
+    }
+    
+    // Verify the update was successful
+    const { data: updatedProfile, error: fetchError } = await supabase
+      .from('user_profiles')
+      .select('user_type')
+      .eq('id', userId)
+      .single();
+      
+    if (fetchError) {
+      console.error('❌ Error verifying user type update:', fetchError);
+    } else {
+      console.log(`✅ User type verified in database: ${updatedProfile.user_type}`);
+    }
+    
+    console.log(`✅ Successfully updated user ${userId} type to: ${userType}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error updating user type:', error);
     return false;
   }
 };

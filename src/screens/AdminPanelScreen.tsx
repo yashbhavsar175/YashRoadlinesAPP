@@ -7,7 +7,7 @@ import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Icon from 'react-native-vector-icons/Ionicons';
 import ReactNativeBiometrics from 'react-native-biometrics';
-import { listAllProfiles, listProfilesExceptCurrent, setUserActive, createProfileIfMissing, getProfile, UserProfile, savePerson, getPersons, Person, saveUppadJamaEntry, syncAllDataFixed } from '../data/Storage'; // Added saveUppadJamaEntry and syncAllDataFixed
+import { listAllProfiles, listProfilesExceptCurrent, setUserActive, updateUserType, createProfileIfMissing, getProfile, UserProfile, savePerson, getPersons, Person, saveUppadJamaEntry, syncAllDataFixed } from '../data/Storage'; // Added saveUppadJamaEntry and syncAllDataFixed
 import Dropdown from '../components/Dropdown'; // Added Dropdown import
 
 type AdminPanelScreenNavigationProp = NavigationProp<RootStackParamList, 'AdminPanel'>;
@@ -46,6 +46,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
   // Sub-section expand/collapse
   const [expandAddUser, setExpandAddUser] = useState<boolean>(false);
   const [expandManageUsers, setExpandManageUsers] = useState<boolean>(false);
+  const [expandMajurDebug, setExpandMajurDebug] = useState<boolean>(false);
   const [expandManageAgencies, setExpandManageAgencies] = useState<boolean>(false);
   const [expandPersonMgmt, setExpandPersonMgmt] = useState<boolean>(false);
   const [expandUppadJamaEntry, setExpandUppadJamaEntry] = useState<boolean>(false); // New state for Uppad/Jama Entry
@@ -529,6 +530,125 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
           )}
         </View>
 
+        {/* User Type Management Section */}
+        <View style={styles.section}>
+          <TouchableOpacity onPress={() => setExpandMajurDebug(prev => !prev)} style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderLeft}>
+              <Icon name="hammer-outline" size={20} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+              <Text style={styles.sectionTitle}>User Type Management</Text>
+            </View>
+            <Icon name={expandMajurDebug ? 'chevron-up' : 'chevron-down'} size={22} color={Colors.textSecondary} />
+          </TouchableOpacity>
+
+          {expandMajurDebug && (
+            <View style={styles.subSection}>
+              <View style={GlobalStyles.card}>
+                <Text style={GlobalStyles.bodyText}>Easily switch users between Normal and Majur types using dropdowns.</Text>
+                <Text style={[GlobalStyles.bodyText, { fontWeight: 'bold', marginBottom: 12 }]}>User Type Management:</Text>
+                <Text style={GlobalStyles.bodyText}>Change user types using dropdowns below:</Text>
+                
+                {users.length === 0 ? (
+                  <Text style={GlobalStyles.bodyText}>No users found.</Text>
+                ) : (
+                  users.map((u) => {
+                    const currentType = u.user_type || 'normal';
+                    return (
+                      <View key={u.id} style={[styles.userRow, { alignItems: 'center', paddingVertical: 12 }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.userName}>{u.full_name || u.username || 'No Name'}</Text>
+                          <Text style={styles.userMeta}>ID: {u.id.substring(0, 8)}... | Status: {u.is_active ? 'Active' : 'Inactive'}</Text>
+                        </View>
+                        
+                        <View style={{ marginLeft: 12, minWidth: 120 }}>
+                          <Text style={[GlobalStyles.bodyText, { fontSize: 12, marginBottom: 4, color: Colors.textSecondary }]}>
+                            User Type:
+                          </Text>
+                          <View style={styles.dropdownContainer}>
+                            <TouchableOpacity
+                              style={[
+                                styles.dropdown,
+                                { backgroundColor: currentType === 'majur' ? '#E8F5E8' : '#F5F5F5' }
+                              ]}
+                              onPress={() => {
+                                Alert.alert(
+                                  'Change User Type',
+                                  `Current: ${currentType === 'majur' ? 'Majur' : 'Normal'}\nSelect new type for ${u.full_name || u.username}:`,
+                                  [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    {
+                                      text: 'Normal User',
+                                      onPress: async () => {
+                                        if (currentType !== 'normal') {
+                                          console.log('🔄 Converting user to Normal:', u.id);
+                                          const success = await updateUserType(u.id, 'normal');
+                                          if (success) {
+                                            console.log('✅ User converted to Normal successfully');
+                                            Alert.alert('Success', 'User type changed to Normal!');
+                                            // Force refresh the user list
+                                            await loadUsers();
+                                          } else {
+                                            console.error('❌ Failed to convert user to Normal');
+                                            Alert.alert('Error', 'Failed to update user type.');
+                                          }
+                                        }
+                                      },
+                                    },
+                                    {
+                                      text: 'Majur User',
+                                      onPress: async () => {
+                                        if (currentType !== 'majur') {
+                                          console.log('🔄 Converting user to Majur:', u.id);
+                                          const success = await updateUserType(u.id, 'majur');
+                                          if (success) {
+                                            console.log('✅ User converted to Majur successfully');
+                                            Alert.alert('Success', 'User type changed to Majur!');
+                                            // Force refresh the user list
+                                            await loadUsers();
+                                          } else {
+                                            console.error('❌ Failed to convert user to Majur');
+                                            Alert.alert('Error', 'Failed to update user type.');
+                                          }
+                                        }
+                                      },
+                                    },
+                                  ]
+                                );
+                              }}
+                            >
+                              <Text style={[
+                                styles.dropdownText,
+                                { color: currentType === 'majur' ? '#2E7D32' : '#666' }
+                              ]}>
+                                {currentType === 'majur' ? 'Majur' : 'Normal'}
+                              </Text>
+                              <Icon name="chevron-down" size={16} color={currentType === 'majur' ? '#2E7D32' : '#666'} />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+                
+                {/* Manual Refresh Button */}
+                <TouchableOpacity 
+                  onPress={async () => {
+                    console.log('🔄 Manual refresh triggered');
+                    await loadUsers();
+                    Alert.alert('Refreshed', 'User list has been refreshed!');
+                  }} 
+                  style={[GlobalStyles.buttonPrimary, { marginTop: 16, backgroundColor: Colors.accent }]}
+                  disabled={usersLoading}
+                >
+                  <Text style={GlobalStyles.buttonPrimaryText}>
+                    {usersLoading ? 'Refreshing...' : '🔄 Refresh User List'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
         {/* Masters Section */}
         <View style={styles.section}>
           <TouchableOpacity onPress={toggleMastersSection} style={styles.sectionHeader}>
@@ -939,6 +1059,23 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 12,
     marginTop: 2,
+  },
+  dropdownContainer: {
+    minWidth: 100,
+  },
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  dropdownText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
