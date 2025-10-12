@@ -173,12 +173,12 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={handlePress}
-        activeOpacity={0.9}
+        activeOpacity={0.95}
         disabled={(notification as any).deleted}
       >
         {/* Unread indicator */}
         {!notification.is_read && !(notification as any).deleted && <View style={styles.unreadIndicator} />}
-        
+
         {/* Deleted indicator */}
         {(notification as any).deleted && (
           <View style={styles.deletedBanner}>
@@ -192,8 +192,8 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.typeContainer}>
-              <View style={[styles.iconContainer, { backgroundColor: getTypeColor() }]}>
-                <Icon name={getTypeIcon()} size={16} color="#FFFFFF" />
+              <View style={[styles.iconContainer, { backgroundColor: getTypeColor(), borderWidth: 2, borderColor: '#fff' }]}> 
+                <Icon name={getTypeIcon()} size={18} color="#FFFFFF" />
               </View>
               <Text style={styles.title} numberOfLines={1}>
                 {notification.title}
@@ -206,13 +206,13 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
           </View>
 
           {/* Message */}
-          <Text style={styles.message} numberOfLines={2}>
+          <Text style={styles.message} numberOfLines={3}>
             {notification.message}
           </Text>
 
           {/* User info */}
           <View style={styles.userInfo}>
-            <Icon name="person-circle" size={16} color="#666" />
+            <Icon name="person-circle-outline" size={15} color="#888" />
             <Text style={styles.userName}>{notification.user_name || 'System'}</Text>
             <Text style={styles.separator}>•</Text>
             <Text style={styles.category}>{(notification.type || 'system').replace('_', ' ')}</Text>
@@ -223,14 +223,14 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
         <View style={styles.actions}>
           {!notification.is_read && (
             <TouchableOpacity
-              style={styles.actionButton}
+              style={[styles.actionButton, { backgroundColor: '#4CAF50' }]}
               onPress={() => onMarkAsRead && onMarkAsRead(notification.id)}
             >
-              <Icon name="checkmark" size={16} color="#4CAF50" />
+              <Icon name="checkmark" size={16} color="#fff" />
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.actionButton} onPress={handleDelete}>
-            <Icon name="trash-outline" size={16} color="#F44336" />
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#D32F2F' }]} onPress={handleDelete}>
+            <Icon name="trash-outline" size={16} color="#fff" />
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -240,7 +240,7 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 16,
+    marginHorizontal: 12,
     marginVertical: 4,
   },
   card: {

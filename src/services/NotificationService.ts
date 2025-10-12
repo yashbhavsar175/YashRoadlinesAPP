@@ -1,4 +1,4 @@
-// NotificationService.ts - Simplified Admin Notification System
+// NotificationService.ts - Complete notification management with Supabase
 import { supabase } from '../supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
@@ -10,10 +10,27 @@ export interface AdminNotification {
   type: 'add' | 'edit' | 'delete' | 'system';
   severity: 'info' | 'warning' | 'success' | 'error';
   is_read: boolean;
-  deleted?: boolean; // Optional until database column is added
+  deleted?: boolean;
   user_name: string;
   user_id: string;
   metadata: any;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserNotification {
+  id: string;
+  title: string;
+  description: string;
+  sender_id: string;
+  recipient_id: string;
+  type: string;
+  status: 'pending' | 'delivered' | 'read' | 'failed';
+  requires_password: boolean;
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  metadata: any;
+  sent_at: string;
+  read_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +40,16 @@ export interface NotificationData {
   message: string;
   type: 'add' | 'edit' | 'delete' | 'system';
   severity?: 'info' | 'warning' | 'success' | 'error';
+  metadata?: any;
+}
+
+export interface UserNotificationData {
+  title: string;
+  description: string;
+  recipient_id: string;
+  type?: string;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  requires_password?: boolean;
   metadata?: any;
 }
 
@@ -324,6 +351,165 @@ class NotificationService {
       .subscribe();
 
     return subscription;
+  }
+
+  // Get notifications for specific user
+  async getUserNotifications(userId: string, limit = 50, offset = 0): Promise<AdminNotification[]> {
+    try {
+      const { data, error } = await supabase
+        .from('admin_notifications')
+        .select('*')
+        .eq('target_user_id', userId)
+        .eq('deleted', false)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (error) {
+        console.error('❌ Error fetching user notifications:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('❌ Error in getUserNotifications:', error);
+      return [];
+    }
+  }
+
+  // Get all users who have received notifications
+  async getNotificationUsers(): Promise<{ id: string; name: string; email: string }[]> {
+    try {
+      const { data, error } = await supabase
+        .from('admin_notifications')
+        .select('target_user_id, user_name')
+        .not('target_user_id', 'is', null)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Error fetching notification users:', error);
+        return [];
+      }
+
+      // Remove duplicates and format
+      const uniqueUsers = data?.reduce((acc: any[], curr) => {
+        if (!acc.find(u => u.id === curr.target_user_id)) {
+          acc.push({
+            id: curr.target_user_id,
+            name: curr.user_name || 'Unknown User',
+            email: curr.target_user_id,
+          });
+        }
+        return acc;
+      }, []) || [];
+
+      return uniqueUsers;
+    } catch (error) {
+      console.error('❌ Error in getNotificationUsers:', error);
+      return [];
+    }
+  }
+
+  // Send notification to specific user
+  async sendUserNotification(notificationData: UserNotificationData, senderId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('user_notifications')
+        .insert([{
+          title: notificationData.title,
+          description: notificationData.description,
+          sender_id: senderId,
+          recipient_id: notificationData.recipient_id,
+          type: notificationData.type || 'general',
+          priority: notificationData.priority || 'normal',
+          requires_password: notificationData.requires_password !== false,
+          metadata: notificationData.metadata || {},
+          status: 'pending'
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Error sending user notification:', error);
+        return false;
+      }
+
+      console.log('✅ User notification sent successfully:', data);
+      return true;
+    } catch (error) {
+      console.error('❌ Error in sendUserNotification:', error);
+      return false;
+    }
+  }
+
+  // Get notifications for specific user
+  async getUserNotificationsByRecipient(recipientId: string, limit = 50): Promise<UserNotification[]> {
+    try {
+      const { data, error } = await supabase
+        .from('user_notifications')
+        .select(`
+          *,
+          sender:sender_id(name, email),
+          recipient:recipient_id(name, email)
+        `)
+        .eq('recipient_id', recipientId)
+        .order('sent_at', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error('❌ Error fetching user notifications:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('❌ Error in getUserNotificationsByRecipient:', error);
+      return [];
+    }
+  }
+
+  // Mark notification as read
+  async markNotificationAsRead(notificationId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('user_notifications')
+        .update({ 
+          status: 'read',
+          read_at: new Date().toISOString()
+        })
+        .eq('id', notificationId);
+
+      if (error) {
+        console.error('❌ Error marking notification as read:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('❌ Error in markNotificationAsRead:', error);
+      return false;
+    }
+  }
+
+  // Get all active users for notification sending
+  async getActiveUsers(): Promise<{ id: string; name: string; email: string; role: string }[]> {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name, email, role')
+        .eq('is_active', true)
+        .neq('role', 'admin')
+        .order('name');
+
+      if (error) {
+        console.error('❌ Error fetching active users:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('❌ Error in getActiveUsers:', error);
+      return [];
+    }
   }
 }
 

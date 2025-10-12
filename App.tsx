@@ -1,7 +1,7 @@
 // App.tsx
 import 'react-native-url-polyfill/auto';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions } from 'react-native';
+import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions, Platform } from 'react-native';
 import { NavigationContainer, CommonActions, NavigationContainerRef, NavigationState } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 // Create navigation reference
@@ -16,6 +16,8 @@ import { getProfile, initializeSupabaseStorage, getSyncStatus, syncAllDataFixed 
 import NotificationService from './src/services/NotificationService';
 import PushNotificationService from './src/services/PushNotificationService';
 import DeviceNotificationService from './src/services/DeviceNotificationService';
+import NotificationListener from './src/services/NotificationListener';
+import PushNotification from 'react-native-push-notification';
 import SplashScreen from './src/screens/SplashScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import BiometricAuthScreen from './src/screens/BiometricAuthScreen';
@@ -37,6 +39,11 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import TotalPaidScreen from './src/screens/TotalPaidScreen';
 import EWayBillConsolidatedScreen from './src/screens/EWayBillConsolidatedScreen';
 import AdminNotificationScreen from './src/screens/AdminNotificationScreen';
+import SendNotificationScreen from './src/screens/SendNotificationScreen';
+import NotificationPasswordScreen from './src/screens/NotificationPasswordScreen';
+import AdminPasswordResetScreen from './src/screens/AdminPasswordResetScreen';
+import PageBuilderScreen from './src/screens/PageBuilderScreen';
+import PageManagementScreen from './src/screens/PageManagementScreen';
 import UppadJamaScreen from './src/screens/UppadJamaScreen';
 import MumbaiDeliveryEntryScreen from './src/screens/MumbaiDeliveryEntryScreen';
 import BackdatedEntryScreen from './src/screens/BackdatedEntryScreen';
@@ -80,6 +87,15 @@ type RootStackParamList = {
   TotalPaid: undefined;
   EWayBillConsolidated: undefined;
   AdminNotifications: undefined;
+  SendNotification: undefined;
+  NotificationPassword: { 
+    notificationId?: string;
+    title?: string;
+    message?: string;
+  };
+  AdminPasswordReset: undefined;
+  PageBuilder: undefined;
+  PageManagement: undefined;
   UppadJama: undefined;
   CashBalance: undefined;
   MumbaiDelivery: undefined;
@@ -544,6 +560,49 @@ function App(): React.JSX.Element {
             await initializeSupabaseStorage();
             console.log('✅ Supabase storage initialized');
             
+            // Setup notification channels for local notifications
+            console.log('📱 Setting up push notifications...');
+            
+            PushNotification.configure({
+              onRegister: function (token) {
+                console.log('📱 Notification token received:', token);
+              },
+              onNotification: function (notification) {
+                console.log('🔔 Notification received in app:', notification);
+                
+                // Handle notification tap
+                if ((notification as any).userInteraction) {
+                  console.log('👆 User tapped notification');
+                }
+              },
+              permissions: {
+                alert: true,
+                badge: true,
+                sound: true,
+              },
+              popInitialNotification: true,
+              requestPermissions: Platform.OS === 'ios',
+            });
+
+            // Create notification channels
+            PushNotification.createChannel(
+              {
+                channelId: "user-notifications",
+                channelName: "User Notifications",
+                channelDescription: "Important notifications for users",
+                playSound: true,
+                soundName: "default",
+                importance: 4, // IMPORTANCE_HIGH
+                vibrate: true,
+                led: true,
+                ledColor: '#2196F3',
+                showBadge: true,
+              } as any,
+              (created) => {
+                console.log(`✅ User notification channel created: ${created}`);
+              }
+            );
+            
             // Initialize notification services properly
             console.log('📱 Initializing notification services...');
             await NotificationService.initialize();
@@ -552,6 +611,10 @@ function App(): React.JSX.Element {
             // Initialize push notification service
             await PushNotificationService.initialize();
             console.log('✅ PushNotificationService initialized');
+            
+            // Initialize notification listener for current user
+            await NotificationListener.getInstance().initialize();
+            console.log('✅ NotificationListener initialized');
             
             // Initialize auth logout service for real-time logout
             await AuthLogoutService.getInstance().initialize();
@@ -791,6 +854,11 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="TotalPaid" component={TotalPaidScreen} />
                 <Stack.Screen name="EWayBillConsolidated" component={EWayBillConsolidatedScreen} />
                 <Stack.Screen name="AdminNotifications" component={AdminNotificationScreen} options={{ title: 'Admin Notifications' }} />
+                <Stack.Screen name="SendNotification" component={SendNotificationScreen} options={{ title: 'Send Notification' }} />
+                <Stack.Screen name="NotificationPassword" component={NotificationPasswordScreen} options={{ title: 'Enter Password' }} />
+                <Stack.Screen name="AdminPasswordReset" component={AdminPasswordResetScreen} options={{ title: 'Password Management' }} />
+                <Stack.Screen name="PageBuilder" component={PageBuilderScreen} options={{ title: 'Create Custom Page' }} />
+                <Stack.Screen name="PageManagement" component={PageManagementScreen} options={{ title: 'Manage Pages' }} />
                 <Stack.Screen name="UppadJama" component={UppadJamaScreen} options={{ title: 'Uppad/Jama' }} />
                 <Stack.Screen name="MumbaiDeliveryEntry" component={MumbaiDeliveryEntryScreen} options={{ title: 'Mumbai Delivery Entry' }} />
                 <Stack.Screen name="BackdatedEntry" component={BackdatedEntryScreen} options={{ title: 'Backdated Entry' }} />

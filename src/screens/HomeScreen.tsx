@@ -1708,6 +1708,18 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                   </TouchableOpacity>
                 )}
 
+                {/* Page Management - Admin Only */}
+                {contextIsAdmin && (
+                  <TouchableOpacity onPress={() => {
+                  console.log('🔧 DEBUG: Page Management clicked');
+                  setIsProfileMenuVisible(false);
+                  navigate('PageManagement');
+                }} style={styles.menuItem}>
+                    <Icon name="layers-outline" size={20} color={BWColors.text} style={styles.menuIcon} />
+                    <Text style={styles.menuItemText}>Page Management</Text>
+                  </TouchableOpacity>
+                )}
+
                 {userType === 'normal' && (
                   <Fragment>
                     <TouchableOpacity onPress={() => {

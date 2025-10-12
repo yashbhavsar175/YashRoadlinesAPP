@@ -3452,8 +3452,15 @@ export const initializeSupabaseStorage = async (): Promise<void> => {
 
 export const getMonthlyTransactions = async (month: string, year: string): Promise<any[]> => {
   try {
+    // Start date: First day of the month at 00:00:00
     const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+    startDate.setHours(0, 0, 0, 0);
+    
+    // End date: Last day of the month at 23:59:59.999
+    // new Date(year, month, 0) gives the last day of the previous month
+    // So new Date(year, month, 0) where month is the NEXT month gives us the last day of current month
     const endDate = new Date(parseInt(year), parseInt(month), 0);
+    endDate.setHours(23, 59, 59, 999);
 
     const startISO = startDate.toISOString();
     const endISO = endDate.toISOString();

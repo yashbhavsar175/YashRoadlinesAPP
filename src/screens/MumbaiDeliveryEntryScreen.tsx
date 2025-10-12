@@ -1,13 +1,13 @@
 // src/screens/MumbaiDeliveryEntryScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StatusBar, 
-  Platform, 
+import {
+  View,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StatusBar,
+  Platform,
   Alert,
   KeyboardAvoidingView,
   ScrollView,
@@ -34,13 +34,13 @@ interface MumbaiDeliveryEntryScreenProps {
 function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProps): React.JSX.Element {
   const { goBack } = navigation;
   const { showAlert } = useAlert();
-  
+
   // Form states
   const [description, setDescription] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
   const [date, setDate] = useState<Date>(new Date());
   const [saving, setSaving] = useState<boolean>(false);
-  
+
   // List states
   const [recentEntries, setRecentEntries] = useState<AgencyEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -55,7 +55,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         .filter(entry => entry.agency_name === 'Mumbai')
         .sort((a, b) => new Date(b.entry_date).getTime() - new Date(a.entry_date).getTime())
         .slice(0, 20); // Show last 20 entries
-      
+
       setRecentEntries(mumbaiEntries);
     } catch (error) {
       console.error('Error loading Mumbai entries:', error);
@@ -69,7 +69,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   useFocusEffect(
     useCallback(() => {
       loadData();
-      return () => {};
+      return () => { };
     }, [loadData])
   );
 
@@ -103,12 +103,12 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         entry_date: date.toISOString(),
         delivery_status: 'yes' as 'yes', // Always yes for Mumbai delivery
       };
-      
+
       const success = await saveAgencyEntry(entryData);
       if (success) {
         // Send notification to admin
         await NotificationService.notifyAdd('mumbai_delivery', `New Mumbai delivery: ₹${numericAmount} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`);
-        
+
         setTimeout(() => {
           showAlert('Mumbai delivery entry saved successfully!');
         }, 100);
@@ -128,7 +128,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
 
   const handleDeleteEntry = (id: string) => {
     const entryToDelete = recentEntries.find(entry => entry.id === id);
-    
+
     Alert.alert(
       "Confirm Delete",
       "Are you sure you want to permanently delete this Mumbai delivery entry?",
@@ -145,7 +145,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
                 if (entryToDelete) {
                   await NotificationService.notifyDelete('mumbai_delivery', `Deleted Mumbai delivery: ₹${entryToDelete.amount} - ${entryToDelete.description.slice(0, 30)}${entryToDelete.description.length > 30 ? '...' : ''}`);
                 }
-                
+
                 const updatedEntries = recentEntries.filter(entry => entry.id !== id);
                 setRecentEntries(updatedEntries);
                 showAlert('Entry deleted successfully!');
@@ -164,7 +164,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
 
   const renderEntryItem = ({ item }: { item: AgencyEntry }) => {
     const deliveryText = item.delivery_status === 'yes' ? 'Delivered' : 'Not Delivered';
-    
+
     return (
       <LongPressGestureHandler
         onHandlerStateChange={({ nativeEvent }) => {
@@ -207,7 +207,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
           <Text style={styles.headerTitle}>Mumbai Delivery Entry</Text>
           <View style={styles.headerSpacer} />
         </View>
-        
+
         <FlatList
           data={recentEntries}
           renderItem={renderEntryItem}
@@ -221,7 +221,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
             <View style={GlobalStyles.card}>
               <View style={styles.cardContent}>
                 <Text style={[GlobalStyles.title, styles.cardTitle]}>Add Mumbai Delivery Entry</Text>
-                
+
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Description <Text style={styles.requiredStar}>*</Text></Text>
                   <TextInput

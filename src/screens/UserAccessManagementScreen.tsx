@@ -242,13 +242,34 @@ const UserAccessManagementScreen: React.FC = () => {
   const navigation = useNavigation();
   const { refreshPermissions } = useUserAccess();
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [customPages, setCustomPages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadUsers();
+    loadCustomPages();
   }, []);
+
+  const loadCustomPages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('custom_pages')
+        .select('*')
+        .eq('is_active', true)
+        .order('title');
+
+      if (error) {
+        console.error('Error loading custom pages:', error);
+        return;
+      }
+
+      setCustomPages(data || []);
+    } catch (error) {
+      console.error('Error in loadCustomPages:', error);
+    }
+  };
 
   const loadUsers = async () => {
     try {

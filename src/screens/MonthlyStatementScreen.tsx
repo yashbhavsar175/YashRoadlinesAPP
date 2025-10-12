@@ -15,6 +15,7 @@ import {
   Dimensions,
   PermissionsAndroid
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import {
@@ -118,7 +119,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
   const [selectedAgency, setSelectedAgency] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [selectedYear, setSelectedYear] = useState<string>('');
-  
+
   const [reportType, setReportType] = useState<'agency' | 'other'>('agency');
 
   const [includePaid, setIncludePaid] = useState(true);
@@ -126,10 +127,15 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
   const [includeGeneral, setIncludeGeneral] = useState(true);
   const [includeDrivers, setIncludeDrivers] = useState(true);
   const [includeFuel, setIncludeFuel] = useState(true);
-  
+
   const [loading, setLoading] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [generatedPdfPath, setGeneratedPdfPath] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [selectionMode, setSelectionMode] = useState<'single' | 'multiple'>('single');
+  const [selectedAgencies, setSelectedAgencies] = useState<string[]>([]);
+  const [showAgencySelector, setShowAgencySelector] = useState(false);
   const isMountedRef = useRef(true);
 
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
@@ -151,7 +157,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     isMountedRef.current = true;
     setSelectedMonth(String(new Date().getMonth() + 1).padStart(2, '0'));
     setSelectedYear(String(currentYear));
-    
+
     return () => { isMountedRef.current = false; };
   }, []);
 
@@ -171,7 +177,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       loadAgencies();
     }, [selectedAgency])
   );
-  
+
   const formatDateTime = (isoDate: string | Date): string => {
     try {
       const date = new Date(isoDate);
@@ -231,6 +237,433 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     }
   };
 
+  // Generate HTML content for a single agency
+  const generateHtmlForAgency = async (agencyName: string | null) => {
+    const transactions = await getMonthlyTransactions(selectedMonth, selectedYear);
+    
+    let paid: AgencyPayment[] = [];
+    let majuri: AgencyMajuri[] = [];
+    let agencyGeneral: AgencyEntry[] = [];
+    let generalEntries: GeneralEntry[] = [];
+    let driverTransactions: DriverTransaction[] = [];
+    let fuelEntries: TruckFuelEntry[] = [];
+
+    transactions.forEach(t => {
+      if (t.type === 'paid') paid.push(t.data as AgencyPayment);
+      if (t.type === 'majuri') majuri.push(t.data as AgencyMajuri);
+      if (t.type === 'agency_general') agencyGeneral.push(t.data as AgencyEntry);
+      if (t.type === 'general') generalEntries.push(t.data as GeneralEntry);
+      if (t.type === 'driver') driverTransactions.push(t.data as DriverTransaction);
+      if (t.type === 'fuel') fuelEntries.push(t.data as TruckFuelEntry);
+    });
+
+    // Filter based on selected report type and agency
+    if (reportType === 'agency' && agencyName) {
+      paid = paid.filter(t => t.agency_name === agencyName && includePaid);
+      majuri = majuri.filter(t => t.agency_name === agencyName && includeMajuri);
+      agencyGeneral = agencyGeneral.filter(t => t.agency_name === agencyName && includeGeneral);
+      generalEntries = [];
+      driverTransactions = [];
+      fuelEntries = [];
+    } else if (reportType === 'other') {
+      paid = [];
+      majuri = [];
+      agencyGeneral = [];
+      generalEntries = generalEntries.filter(t => includeGeneral);
+      driverTransactions = driverTransactions.filter(t => includeDrivers);
+      fuelEntries = fuelEntries.filter(t => includeFuel);
+    }
+
+    // Calculate totals
+    const totalPaid = paid.reduce((sum, item) => sum + item.amount, 0);
+    const totalMajuri = majuri.reduce((sum, item) => sum + item.amount, 0);
+    const totalGeneralCredit = generalEntries.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
+    const totalGeneralDebit = generalEntries.filter(t => t.entry_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
+    const totalAgencyGeneralCredit = agencyGeneral.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
+    const totalAgencyGeneralDebit = agencyGeneral.filter(t => t.entry_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
+    const totalDriverCredit = driverTransactions.filter(t => t.transaction_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
+    const totalDriverDebit = driverTransactions.filter(t => t.transaction_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
+    const totalFuel = fuelEntries.reduce((sum, item) => sum + item.total_price, 0);
+    
+    const netBalance = (totalPaid + totalGeneralCredit + totalDriverCredit + totalAgencyGeneralCredit) - 
+                       (totalMajuri + totalGeneralDebit + totalDriverDebit + totalFuel + totalAgencyGeneralDebit);
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>Monthly Statement</title>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; padding: 15px; background: white; color: #333; line-height: 1.3; font-size: 12px; }
+            .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #2196F3; padding-bottom: 10px; }
+            .header h1 { font-size: 20px; color: #1976D2; margin-bottom: 5px; font-weight: bold; }
+            .header h2 { font-size: 16px; color: #555; margin-bottom: 5px; }
+            .date-range { font-size: 12px; color: #666; font-style: italic; }
+            .section { margin-bottom: 25px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+            .section-title { background: linear-gradient(135deg, #2196F3, #1976D2); color: white; padding: 8px 12px; font-size: 14px; font-weight: bold; margin: 0; }
+            .table { width: 100%; border-collapse: collapse; margin: 0; }
+            .table th, .table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #eee; font-size: 11px; }
+            .table th { background-color: #f8f9fa; font-weight: bold; color: #333; }
+            .table tr:nth-child(even) { background-color: #f9f9f9; }
+            .table tr:hover { background-color: #f0f8ff; }
+            .amount { text-align: right; font-weight: bold; }
+            .credit { color: #4CAF50; }
+            .debit { color: #f44336; }
+            .summary { background: linear-gradient(135deg, #f8f9fa, #e9ecef); padding: 15px; border-radius: 8px; margin-top: 20px; }
+            .summary h3 { color: #1976D2; margin-bottom: 10px; font-size: 16px; }
+            .summary-row { display: flex; justify-content: space-between; margin-bottom: 5px; padding: 2px 0; }
+            .summary-label { font-weight: bold; }
+            .summary-value { font-weight: bold; }
+            .net-balance { border-top: 2px solid #2196F3; padding-top: 8px; margin-top: 8px; font-size: 14px; }
+            .positive { color: #4CAF50; }
+            .negative { color: #f44336; }
+            .footer { text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 10px; color: #666; }
+          </style>
+      </head>
+      <body>
+          <div class="header">
+              <h1>🚛 Yash Roadlines</h1>
+              <h2>Monthly Statement Report</h2>
+              <div class="date-range">
+                  ${getMonthName(selectedMonth)} ${selectedYear}${agencyName ? ` - ${agencyName}` : ''}
+              </div>
+          </div>
+
+          ${paid.length > 0 ? `
+          <div class="section">
+              <h3 class="section-title">💰 Agency Paid</h3>
+              <table class="table">
+                  <thead>
+                      <tr>
+                          <th>Date</th>
+                          <th>Bill No</th>
+                          <th class="amount">Amount (₹)</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${paid.map(item => `
+                          <tr>
+                              <td>${formatDateTime(item.payment_date)}</td>
+                              <td>${item.bill_no}</td>
+                              <td class="amount credit">₹${item.amount.toLocaleString()}</td>
+                          </tr>
+                      `).join('')}
+                  </tbody>
+              </table>
+          </div>
+          ` : ''}
+
+          ${majuri.length > 0 ? `
+          <div class="section">
+              <h3 class="section-title">🔧 Agency Majuri</h3>
+              <table class="table">
+                  <thead>
+                      <tr>
+                          <th>Date</th>
+                          <th>Description</th>
+                          <th class="amount">Amount (₹)</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${majuri.map(item => `
+                          <tr>
+                              <td>${formatDateTime(item.majuri_date)}</td>
+                              <td>${item.description || 'N/A'}</td>
+                              <td class="amount debit">₹${item.amount.toLocaleString()}</td>
+                          </tr>
+                      `).join('')}
+                  </tbody>
+              </table>
+          </div>
+          ` : ''}
+
+          ${agencyGeneral.length > 0 ? `
+          <div class="section">
+              <h3 class="section-title">📋 Agency General Entries</h3>
+              <table class="table">
+                  <thead>
+                      <tr>
+                          <th>Date</th>
+                          <th>Description</th>
+                          <th>Type</th>
+                          <th class="amount">Amount (₹)</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${agencyGeneral.map(item => `
+                          <tr>
+                              <td>${formatDateTime(item.entry_date)}</td>
+                              <td>${item.description}</td>
+                              <td>${item.entry_type.toUpperCase()}</td>
+                              <td class="amount ${item.entry_type === 'credit' ? 'credit' : 'debit'}">₹${item.amount.toLocaleString()}</td>
+                          </tr>
+                      `).join('')}
+                  </tbody>
+              </table>
+          </div>
+          ` : ''}
+
+          ${generalEntries.length > 0 ? `
+          <div class="section">
+              <h3 class="section-title">📝 General Entries</h3>
+              <table class="table">
+                  <thead>
+                      <tr>
+                          <th>Date</th>
+                          <th>Description</th>
+                          <th>Type</th>
+                          <th class="amount">Amount (₹)</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${generalEntries.map(item => `
+                          <tr>
+                              <td>${formatDateTime(item.entry_date)}</td>
+                              <td>${item.description}</td>
+                              <td>${item.entry_type.toUpperCase()}</td>
+                              <td class="amount ${item.entry_type === 'credit' ? 'credit' : 'debit'}">₹${item.amount.toLocaleString()}</td>
+                          </tr>
+                      `).join('')}
+                  </tbody>
+              </table>
+          </div>
+          ` : ''}
+
+          ${driverTransactions.length > 0 ? `
+          <div class="section">
+              <h3 class="section-title">🧾 Uppad/Jama Entries</h3>
+              <table class="table">
+                  <thead>
+                      <tr>
+                          <th>Date</th>
+                          <th>Type (Uppad/Jama - Name)</th>
+                          <th>Description</th>
+                          <th class="amount">Amount (₹)</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${driverTransactions.map(item => `
+                          <tr>
+                              <td>${formatDateTime(item.transaction_date)}</td>
+                              <td>${item.transaction_type === 'debit' ? 'Uppad' : 'Jama'} - ${item.driver_name}</td>
+                              <td>${item.description || 'N/A'}</td>
+                              <td class="amount ${item.transaction_type === 'credit' ? 'credit' : 'debit'}">₹${item.amount.toLocaleString()}</td>
+                          </tr>
+                      `).join('')}
+                  </tbody>
+              </table>
+          </div>
+          ` : ''}
+
+          ${fuelEntries.length > 0 ? `
+          <div class="section">
+              <h3 class="section-title">⛽ Fuel Entries</h3>
+              <table class="table">
+                  <thead>
+                      <tr>
+                          <th>Date</th>
+                          <th>Truck</th>
+                          <th>Fuel Type</th>
+                          <th>Quantity (L)</th>
+                          <th>Price/L (₹)</th>
+                          <th class="amount">Total (₹)</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${fuelEntries.map(item => `
+                          <tr>
+                              <td>${formatDateTime(item.fuel_date)}</td>
+                              <td>${item.truck_number}</td>
+                              <td>${item.fuel_type}</td>
+                              <td>${item.quantity}</td>
+                              <td>₹${item.price_per_liter}</td>
+                              <td class="amount debit">₹${item.total_price.toLocaleString()}</td>
+                          </tr>
+                      `).join('')}
+                  </tbody>
+              </table>
+          </div>
+          ` : ''}
+
+          <div class="summary">
+              <h3>📊 Financial Summary</h3>
+              ${totalPaid > 0 ? `<div class="summary-row"><span class="summary-label">Total Paid:</span><span class="summary-value credit">₹${totalPaid.toLocaleString()}</span></div>` : ''}
+              ${totalMajuri > 0 ? `<div class="summary-row"><span class="summary-label">Total Majuri:</span><span class="summary-value debit">₹${totalMajuri.toLocaleString()}</span></div>` : ''}
+              ${totalGeneralCredit > 0 ? `<div class="summary-row"><span class="summary-label">General Credit:</span><span class="summary-value credit">₹${totalGeneralCredit.toLocaleString()}</span></div>` : ''}
+              ${totalGeneralDebit > 0 ? `<div class="summary-row"><span class="summary-label">General Debit:</span><span class="summary-value debit">₹${totalGeneralDebit.toLocaleString()}</span></div>` : ''}
+              ${totalAgencyGeneralCredit > 0 ? `<div class="summary-row"><span class="summary-label">Agency General Credit:</span><span class="summary-value credit">₹${totalAgencyGeneralCredit.toLocaleString()}</span></div>` : ''}
+              ${totalAgencyGeneralDebit > 0 ? `<div class="summary-row"><span class="summary-label">Agency General Debit:</span><span class="summary-value debit">₹${totalAgencyGeneralDebit.toLocaleString()}</span></div>` : ''}
+              ${totalDriverCredit > 0 ? `<div class="summary-row"><span class="summary-label">Jama Total:</span><span class="summary-value credit">₹${totalDriverCredit.toLocaleString()}</span></div>` : ''}
+              ${totalDriverDebit > 0 ? `<div class="summary-row"><span class="summary-label">Uppad Total:</span><span class="summary-value debit">₹${totalDriverDebit.toLocaleString()}</span></div>` : ''}
+              ${totalFuel > 0 ? `<div class="summary-row"><span class="summary-label">Total Fuel:</span><span class="summary-value debit">₹${totalFuel.toLocaleString()}</span></div>` : ''}
+              
+              <div class="net-balance">
+                  <div class="summary-row">
+                      <span class="summary-label">Net Balance:</span>
+                      <span class="summary-value ${netBalance >= 0 ? 'positive' : 'negative'}">₹${netBalance.toLocaleString()}</span>
+                  </div>
+              </div>
+          </div>
+
+          <div class="footer">
+              <p>Generated on ${new Date().toLocaleString('en-IN')} | Yash Roadlines Management System</p>
+          </div>
+      </body>
+      </html>
+    `;
+  };
+
+  // Preview PDF before sharing
+  const previewPdf = async () => {
+    if (!selectedMonth || !selectedYear) {
+      Alert.alert('Selection Required', 'Please select a month and year.');
+      return;
+    }
+    if (reportType === 'agency' && !selectedAgency) {
+      Alert.alert('Selection Required', 'Please select an agency.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const html = await generateHtmlForAgency(reportType === 'agency' ? selectedAgency : null);
+      setPreviewHtml(html);
+      setShowPreview(true);
+    } catch (error) {
+      console.error('Preview error:', error);
+      Alert.alert('Error', 'Failed to generate preview.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Generate and share PDF from preview
+  const shareFromPreview = async () => {
+    if (!previewHtml) return;
+    
+    setIsGeneratingPdf(true);
+    try {
+      const agencyName = reportType === 'agency' ? selectedAgency : null;
+      const tempPdfOptions = {
+        html: previewHtml,
+        fileName: `Monthly_Statement_${selectedMonth}_${selectedYear}${agencyName ? `_${agencyName}` : ''}`,
+        directory: 'Documents',
+        base64: false,
+        width: 595,
+        height: 842,
+      };
+
+      const tempPdf = await generatePDF(tempPdfOptions);
+      
+      if (tempPdf && tempPdf.filePath) {
+        const now = new Date();
+        const fileName = `Monthly_Statement_${selectedMonth}_${selectedYear}${agencyName ? `_${agencyName}` : ''}_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}.pdf`;
+        const appFolderPath = `${RNFS.DownloadDirectoryPath}/Yash Roadlines`;
+        const monthlyFolderPath = `${appFolderPath}/Monthly Statement`;
+        const finalFilePath = `${monthlyFolderPath}/${fileName}`;
+        
+        try {
+          await RNFS.mkdir(appFolderPath);
+          await RNFS.mkdir(monthlyFolderPath);
+        } catch (dirError) {
+          console.log('Folders might already exist:', dirError);
+        }
+        
+        await RNFS.copyFile(tempPdf.filePath, finalFilePath);
+        await RNFS.unlink(tempPdf.filePath).catch(() => {});
+        
+        const shareOptions = {
+          title: 'Share Monthly Statement',
+          message: `Monthly Statement for ${getMonthName(selectedMonth)} ${selectedYear}${agencyName ? ` - ${agencyName}` : ''}`,
+          url: `file://${finalFilePath}`,
+          type: 'application/pdf',
+        };
+
+        await Share.open(shareOptions);
+        setShowPreview(false);
+      }
+    } catch (error) {
+      console.error('Share error:', error);
+      Alert.alert('Error', 'Failed to share PDF.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  // Share multiple agency PDFs
+  const shareMultipleAgencies = async () => {
+    if (!selectedMonth || !selectedYear) {
+      Alert.alert('Selection Required', 'Please select a month and year.');
+      return;
+    }
+    if (selectedAgencies.length === 0) {
+      Alert.alert('Selection Required', 'Please select at least one agency.');
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+    setLoading(true);
+
+    try {
+      const pdfPaths: string[] = [];
+      
+      for (const agencyName of selectedAgencies) {
+        const html = await generateHtmlForAgency(agencyName);
+        
+        const tempPdfOptions = {
+          html,
+          fileName: `Monthly_Statement_${selectedMonth}_${selectedYear}_${agencyName}`,
+          directory: 'Documents',
+          base64: false,
+          width: 595,
+          height: 842,
+        };
+
+        const tempPdf = await generatePDF(tempPdfOptions);
+        
+        if (tempPdf && tempPdf.filePath) {
+          const now = new Date();
+          const fileName = `Monthly_Statement_${selectedMonth}_${selectedYear}_${agencyName}_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}.pdf`;
+          const appFolderPath = `${RNFS.DownloadDirectoryPath}/Yash Roadlines`;
+          const monthlyFolderPath = `${appFolderPath}/Monthly Statement`;
+          const finalFilePath = `${monthlyFolderPath}/${fileName}`;
+          
+          try {
+            await RNFS.mkdir(appFolderPath);
+            await RNFS.mkdir(monthlyFolderPath);
+          } catch (dirError) {}
+          
+          await RNFS.copyFile(tempPdf.filePath, finalFilePath);
+          await RNFS.unlink(tempPdf.filePath).catch(() => {});
+          
+          pdfPaths.push(finalFilePath);
+        }
+      }
+
+      if (pdfPaths.length > 0) {
+        const shareOptions = {
+          title: 'Share Monthly Statements',
+          message: `Monthly Statements for ${getMonthName(selectedMonth)} ${selectedYear} - ${selectedAgencies.length} agencies`,
+          urls: pdfPaths.map(path => `file://${path}`),
+          type: 'application/pdf',
+        };
+
+        await Share.open(shareOptions);
+        setShowAgencySelector(false);
+        setSelectedAgencies([]);
+      }
+    } catch (error) {
+      console.error('Multiple share error:', error);
+      Alert.alert('Error', 'Failed to generate or share PDFs.');
+    } finally {
+      setIsGeneratingPdf(false);
+      setLoading(false);
+    }
+  };
+
   const sharePdf = async () => {
     // Validation checks
     if (!selectedMonth || !selectedYear) {
@@ -242,7 +675,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       return;
     }
     const isAnySelected = (reportType === 'agency' && (includePaid || includeMajuri || includeGeneral)) ||
-                          (reportType === 'other' && (includeGeneral || includeDrivers || includeFuel));
+      (reportType === 'other' && (includeGeneral || includeDrivers || includeFuel));
 
     if (!isAnySelected) {
       Alert.alert('Selection Required', 'Please select at least one transaction type.');
@@ -260,7 +693,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     try {
       // Generate PDF data (same logic as generateMonthlyStatementPdf)
       const transactions = await getMonthlyTransactions(selectedMonth, selectedYear);
-      
+
       let paid: AgencyPayment[] = [];
       let majuri: AgencyMajuri[] = [];
       let agencyGeneral: AgencyEntry[] = [];
@@ -269,29 +702,29 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       let fuelEntries: TruckFuelEntry[] = [];
 
       transactions.forEach(t => {
-          if (t.type === 'paid') paid.push(t.data as AgencyPayment);
-          if (t.type === 'majuri') majuri.push(t.data as AgencyMajuri);
-          if (t.type === 'agency_general') agencyGeneral.push(t.data as AgencyEntry);
-          if (t.type === 'general') generalEntries.push(t.data as GeneralEntry);
-          if (t.type === 'driver') driverTransactions.push(t.data as DriverTransaction);
-          if (t.type === 'fuel') fuelEntries.push(t.data as TruckFuelEntry);
+        if (t.type === 'paid') paid.push(t.data as AgencyPayment);
+        if (t.type === 'majuri') majuri.push(t.data as AgencyMajuri);
+        if (t.type === 'agency_general') agencyGeneral.push(t.data as AgencyEntry);
+        if (t.type === 'general') generalEntries.push(t.data as GeneralEntry);
+        if (t.type === 'driver') driverTransactions.push(t.data as DriverTransaction);
+        if (t.type === 'fuel') fuelEntries.push(t.data as TruckFuelEntry);
       });
 
       // Filter based on selected report type and agency
       if (reportType === 'agency' && selectedAgency) {
-          paid = paid.filter(t => t.agency_name === selectedAgency && includePaid);
-          majuri = majuri.filter(t => t.agency_name === selectedAgency && includeMajuri);
-          agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
-          generalEntries = [];
-          driverTransactions = [];
-          fuelEntries = [];
+        paid = paid.filter(t => t.agency_name === selectedAgency && includePaid);
+        majuri = majuri.filter(t => t.agency_name === selectedAgency && includeMajuri);
+        agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
+        generalEntries = [];
+        driverTransactions = [];
+        fuelEntries = [];
       } else if (reportType === 'other') {
-          paid = [];
-          majuri = [];
-          agencyGeneral = [];
-          generalEntries = generalEntries.filter(t => includeGeneral);
-          driverTransactions = driverTransactions.filter(t => includeDrivers);
-          fuelEntries = fuelEntries.filter(t => includeFuel);
+        paid = [];
+        majuri = [];
+        agencyGeneral = [];
+        generalEntries = generalEntries.filter(t => includeGeneral);
+        driverTransactions = driverTransactions.filter(t => includeDrivers);
+        fuelEntries = fuelEntries.filter(t => includeFuel);
       }
 
       // Calculate totals (same logic as original function)
@@ -304,11 +737,11 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       const totalDriverCredit = driverTransactions.filter(t => t.transaction_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
       const totalDriverDebit = driverTransactions.filter(t => t.transaction_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
       const totalFuel = fuelEntries.reduce((sum, item) => sum + item.total_price, 0);
-      
+
       const netGeneralTotal = totalGeneralCredit - totalGeneralDebit;
       const netDriverTotal = totalDriverCredit - totalDriverDebit;
       const netAgencyGeneralTotal = totalAgencyGeneralCredit - totalAgencyGeneralDebit;
-      
+
       const totalCredit = totalPaid + totalGeneralCredit + totalDriverCredit + totalAgencyGeneralCredit;
       const totalDebit = totalMajuri + totalGeneralDebit + totalDriverDebit + totalFuel + totalAgencyGeneralDebit;
       const netBalance = totalCredit - totalDebit;
@@ -644,7 +1077,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
 
       // Generate PDF using HTML to PDF for better sharing support
       console.log('Starting PDF generation...');
-      
+
       // Create PDF in temp directory first
       const tempPdfOptions = {
         html: htmlContent,
@@ -658,17 +1091,17 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       console.log('PDF Options:', tempPdfOptions);
       const tempPdf = await generatePDF(tempPdfOptions);
       console.log('Temp PDF conversion result:', tempPdf);
-      
+
       if (tempPdf && tempPdf.filePath) {
         console.log('Temp PDF generated successfully at:', tempPdf.filePath);
-        
+
         // Create organized folder structure inside Downloads
         const now = new Date();
         const fileName = `Monthly_Statement_${selectedMonth}_${selectedYear}${selectedAgency ? `_${selectedAgency}` : ''}_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}.pdf`;
         const appFolderPath = `${RNFS.DownloadDirectoryPath}/Yash Roadlines`;
         const monthlyFolderPath = `${appFolderPath}/Monthly Statement`;
         const finalFilePath = `${monthlyFolderPath}/${fileName}`;
-        
+
         // Create directories if they don't exist
         try {
           await RNFS.mkdir(appFolderPath);
@@ -677,23 +1110,23 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         } catch (dirError) {
           console.log('Folders might already exist:', dirError);
         }
-        
+
         try {
           // Copy file to organized folder in Downloads
           await RNFS.copyFile(tempPdf.filePath, finalFilePath);
           console.log('PDF copied to organized Downloads folder:', finalFilePath);
-          
+
           // Clean up temp file
           await RNFS.unlink(tempPdf.filePath).catch(() => {
             console.log('Could not delete temp file');
           });
-          
+
           setGeneratedPdfPath(finalFilePath);
-          
+
           // Try sharing the PDF file from organized Downloads folder
           try {
             console.log('Attempting to share PDF from organized Downloads folder:', finalFilePath);
-            
+
             const shareOptions = {
               title: 'Share Monthly Statement',
               message: `Monthly Statement for ${getMonthName(selectedMonth)} ${selectedYear}${selectedAgency ? ` - ${selectedAgency}` : ''}`,
@@ -703,10 +1136,10 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
 
             await Share.open(shareOptions);
             console.log('PDF shared successfully from organized Downloads folder');
-            
+
           } catch (shareError) {
             console.log('Sharing failed, showing organized Downloads location:', shareError);
-            
+
             // Show success message with organized Downloads location
             Alert.alert(
               'PDF Saved Successfully! 📄',
@@ -714,10 +1147,10 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
               [{ text: 'OK', style: 'default' }]
             );
           }
-          
+
         } catch (copyError) {
           console.log('Failed to copy to Downloads folder:', copyError);
-          
+
           // Fallback to temp file sharing
           try {
             const shareOptions = {
@@ -729,7 +1162,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
 
             await Share.open(shareOptions);
             console.log('PDF shared successfully from temp location');
-            
+
           } catch (shareError) {
             Alert.alert(
               'PDF Generated! 📄',
@@ -738,19 +1171,19 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
             );
           }
         }
-        
+
       } else {
         console.log('PDF generation failed - no file path');
         Alert.alert(
-          'Error', 
+          'Error',
           'Failed to generate PDF for sharing. Please try again.'
         );
       }
-      
+
     } catch (error) {
       console.error('PDF generation error:', error);
       Alert.alert(
-        'Error', 
+        'Error',
         'Failed to generate PDF. Please try again.'
       );
     } finally {
@@ -758,22 +1191,22 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       setLoading(false);
     }
   };
-  
+
   const generateMonthlyStatementPdf = async () => {
     if (!selectedMonth || !selectedYear) {
-        Alert.alert('Selection Required', 'Please select a month and year.');
-        return;
+      Alert.alert('Selection Required', 'Please select a month and year.');
+      return;
     }
     if (reportType === 'agency' && !selectedAgency) {
-        Alert.alert('Selection Required', 'Please select an agency.');
-        return;
+      Alert.alert('Selection Required', 'Please select an agency.');
+      return;
     }
     const isAnySelected = (reportType === 'agency' && (includePaid || includeMajuri || includeGeneral)) ||
-                          (reportType === 'other' && (includeGeneral || includeDrivers || includeFuel));
+      (reportType === 'other' && (includeGeneral || includeDrivers || includeFuel));
 
     if (!isAnySelected) {
-        Alert.alert('Selection Required', 'Please select at least one transaction type.');
-        return;
+      Alert.alert('Selection Required', 'Please select at least one transaction type.');
+      return;
     }
 
     if (isGeneratingPdf) {
@@ -785,61 +1218,61 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     setLoading(true);
 
     try {
-        const transactions = await getMonthlyTransactions(selectedMonth, selectedYear);
-        
-        let paid: AgencyPayment[] = [];
-        let majuri: AgencyMajuri[] = [];
-        let agencyGeneral: AgencyEntry[] = [];
-        let generalEntries: GeneralEntry[] = [];
-        let driverTransactions: DriverTransaction[] = [];
-        let fuelEntries: TruckFuelEntry[] = [];
+      const transactions = await getMonthlyTransactions(selectedMonth, selectedYear);
 
-        transactions.forEach(t => {
-            if (t.type === 'paid') paid.push(t.data as AgencyPayment);
-            if (t.type === 'majuri') majuri.push(t.data as AgencyMajuri);
-            if (t.type === 'agency_general') agencyGeneral.push(t.data as AgencyEntry);
-            if (t.type === 'general') generalEntries.push(t.data as GeneralEntry);
-            if (t.type === 'driver') driverTransactions.push(t.data as DriverTransaction);
-            if (t.type === 'fuel') fuelEntries.push(t.data as TruckFuelEntry);
-        });
+      let paid: AgencyPayment[] = [];
+      let majuri: AgencyMajuri[] = [];
+      let agencyGeneral: AgencyEntry[] = [];
+      let generalEntries: GeneralEntry[] = [];
+      let driverTransactions: DriverTransaction[] = [];
+      let fuelEntries: TruckFuelEntry[] = [];
 
-        // Filter based on selected report type and agency
-        if (reportType === 'agency' && selectedAgency) {
-            paid = paid.filter(t => t.agency_name === selectedAgency && includePaid);
-            majuri = majuri.filter(t => t.agency_name === selectedAgency && includeMajuri);
-            agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
-            generalEntries = [];
-            driverTransactions = [];
-            fuelEntries = [];
-        } else if (reportType === 'other') {
-            paid = [];
-            majuri = [];
-            agencyGeneral = [];
-            generalEntries = generalEntries.filter(t => includeGeneral);
-            driverTransactions = driverTransactions.filter(t => includeDrivers);
-            fuelEntries = fuelEntries.filter(t => includeFuel);
-        }
+      transactions.forEach(t => {
+        if (t.type === 'paid') paid.push(t.data as AgencyPayment);
+        if (t.type === 'majuri') majuri.push(t.data as AgencyMajuri);
+        if (t.type === 'agency_general') agencyGeneral.push(t.data as AgencyEntry);
+        if (t.type === 'general') generalEntries.push(t.data as GeneralEntry);
+        if (t.type === 'driver') driverTransactions.push(t.data as DriverTransaction);
+        if (t.type === 'fuel') fuelEntries.push(t.data as TruckFuelEntry);
+      });
 
-        // Calculate totals
-        const totalPaid = paid.reduce((sum, item) => sum + item.amount, 0);
-        const totalMajuri = majuri.reduce((sum, item) => sum + item.amount, 0);
-        const totalGeneralCredit = generalEntries.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
-        const totalGeneralDebit = generalEntries.filter(t => t.entry_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
-        const totalAgencyGeneralCredit = agencyGeneral.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
-        const totalAgencyGeneralDebit = agencyGeneral.filter(t => t.entry_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
-        const totalDriverCredit = driverTransactions.filter(t => t.transaction_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
-        const totalDriverDebit = driverTransactions.filter(t => t.transaction_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
-        const totalFuel = fuelEntries.reduce((sum, item) => sum + item.total_price, 0);
-        
-        const netGeneralTotal = totalGeneralCredit - totalGeneralDebit;
-        const netDriverTotal = totalDriverCredit - totalDriverDebit;
-        const netAgencyGeneralTotal = totalAgencyGeneralCredit - totalAgencyGeneralDebit;
-        
-        const totalCredit = totalPaid + totalGeneralCredit + totalDriverCredit + totalAgencyGeneralCredit;
-        const totalDebit = totalMajuri + totalGeneralDebit + totalDriverDebit + totalFuel + totalAgencyGeneralDebit;
-        const netBalance = totalCredit - totalDebit;
+      // Filter based on selected report type and agency
+      if (reportType === 'agency' && selectedAgency) {
+        paid = paid.filter(t => t.agency_name === selectedAgency && includePaid);
+        majuri = majuri.filter(t => t.agency_name === selectedAgency && includeMajuri);
+        agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
+        generalEntries = [];
+        driverTransactions = [];
+        fuelEntries = [];
+      } else if (reportType === 'other') {
+        paid = [];
+        majuri = [];
+        agencyGeneral = [];
+        generalEntries = generalEntries.filter(t => includeGeneral);
+        driverTransactions = driverTransactions.filter(t => includeDrivers);
+        fuelEntries = fuelEntries.filter(t => includeFuel);
+      }
 
-        const htmlContent = `
+      // Calculate totals
+      const totalPaid = paid.reduce((sum, item) => sum + item.amount, 0);
+      const totalMajuri = majuri.reduce((sum, item) => sum + item.amount, 0);
+      const totalGeneralCredit = generalEntries.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
+      const totalGeneralDebit = generalEntries.filter(t => t.entry_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
+      const totalAgencyGeneralCredit = agencyGeneral.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
+      const totalAgencyGeneralDebit = agencyGeneral.filter(t => t.entry_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
+      const totalDriverCredit = driverTransactions.filter(t => t.transaction_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
+      const totalDriverDebit = driverTransactions.filter(t => t.transaction_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
+      const totalFuel = fuelEntries.reduce((sum, item) => sum + item.total_price, 0);
+
+      const netGeneralTotal = totalGeneralCredit - totalGeneralDebit;
+      const netDriverTotal = totalDriverCredit - totalDriverDebit;
+      const netAgencyGeneralTotal = totalAgencyGeneralCredit - totalAgencyGeneralDebit;
+
+      const totalCredit = totalPaid + totalGeneralCredit + totalDriverCredit + totalAgencyGeneralCredit;
+      const totalDebit = totalMajuri + totalGeneralDebit + totalDriverDebit + totalFuel + totalAgencyGeneralDebit;
+      const netBalance = totalCredit - totalDebit;
+
+      const htmlContent = `
             <!DOCTYPE html>
             <html>
             <head>
@@ -1017,12 +1450,12 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                                     <td>${index + 1}</td>
                                     <td>${formatDateTime(item.payment_date)}</td>
                                     <td>${item.bill_no || 'N/A'}</td>
-                                    <td class="credit-amount">₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                    <td class="credit-amount">₹${item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                                 </tr>
                             `).join('')}
                             <tr style="background-color: #f8f9fa; font-weight: bold;">
                                 <td colspan="3" style="text-align: right; padding-right: 10px;">Total Paid:</td>
-                                <td class="credit-amount">₹${totalPaid.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                <td class="credit-amount">₹${totalPaid.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1047,12 +1480,12 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                                     <td>${index + 1}</td>
                                     <td>${formatDateTime(item.majuri_date)}</td>
                                     <td>${item.description || 'N/A'}</td>
-                                    <td class="debit-amount">₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                    <td class="debit-amount">₹${item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                                 </tr>
                             `).join('')}
                             <tr style="background-color: #f8f9fa; font-weight: bold;">
                                 <td colspan="3" style="text-align: right; padding-right: 10px;">Total Majuri:</td>
-                                <td class="debit-amount">₹${totalMajuri.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                <td class="debit-amount">₹${totalMajuri.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1078,12 +1511,12 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                                     <td>${item.entry_type}</td>
                                     <td>${item.description || 'N/A'}</td>
                                     <td class="${item.entry_type === 'credit' ? 'credit-amount' : 'debit-amount'}">
-                                      ${item.entry_type === 'debit' ? '-' : ''} ₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                      ${item.entry_type === 'debit' ? '-' : ''} ₹${item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                                 </tr>
                             `).join('')}
                             <tr style="background-color: #f8f9fa; font-weight: bold;">
                                 <td colspan="3" style="text-align: right; padding-right: 10px;">Total General:</td>
-                                <td class="${netAgencyGeneralTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netAgencyGeneralTotal < 0 ? '-' : ''}₹${Math.abs(netAgencyGeneralTotal).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                <td class="${netAgencyGeneralTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netAgencyGeneralTotal < 0 ? '-' : ''}₹${Math.abs(netAgencyGeneralTotal).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1109,12 +1542,12 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                                     <td>${item.entry_type}</td>
                                     <td>${item.description || 'N/A'}</td>
                                     <td class="${item.entry_type === 'credit' ? 'credit-amount' : 'debit-amount'}">
-                                      ${item.entry_type === 'debit' ? '-' : ''} ₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                      ${item.entry_type === 'debit' ? '-' : ''} ₹${item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                                 </tr>
                             `).join('')}
                             <tr style="background-color: #f8f9fa; font-weight: bold;">
                                 <td colspan="3" style="text-align: right; padding-right: 10px;">Total General:</td>
-                                <td class="${netGeneralTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netGeneralTotal < 0 ? '-' : ''}₹${Math.abs(netGeneralTotal).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                <td class="${netGeneralTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netGeneralTotal < 0 ? '-' : ''}₹${Math.abs(netGeneralTotal).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1140,12 +1573,12 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                                     <td>${item.transaction_type === 'debit' ? 'Uppad' : 'Jama'} - ${item.driver_name}</td>
                                     <td>${item.description || 'N/A'}</td>
                                     <td class="${item.transaction_type === 'credit' ? 'credit-amount' : 'debit-amount'}">
-                                      ${item.transaction_type === 'debit' ? '-' : ''} ₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                      ${item.transaction_type === 'debit' ? '-' : ''} ₹${item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                                 </tr>
                             `).join('')}
                             <tr style="background-color: #f8f9fa; font-weight: bold;">
                                 <td colspan="3" style="text-align: right; padding-right: 10px;">Driver (Jama - Uppad) Net:</td>
-                                <td class="${netDriverTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netDriverTotal < 0 ? '-' : ''}₹${Math.abs(netDriverTotal).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                <td class="${netDriverTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netDriverTotal < 0 ? '-' : ''}₹${Math.abs(netDriverTotal).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1173,13 +1606,13 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                                     <td>${item.truck_number}</td>
                                     <td>${item.fuel_type}</td>
                                     <td>${item.quantity} L</td>
-                                    <td>₹${item.price_per_liter.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
-                                    <td class="debit-amount">₹${item.total_price.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                    <td>₹${item.price_per_liter.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
+                                    <td class="debit-amount">₹${item.total_price.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                                 </tr>
                             `).join('')}
                             <tr style="background-color: #f8f9fa; font-weight: bold;">
                                 <td colspan="5" style="text-align: right; padding-right: 10px;">Total Fuel:</td>
-                                <td class="debit-amount">₹${totalFuel.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</td>
+                                <td class="debit-amount">₹${totalFuel.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1189,73 +1622,73 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                 <div class="summary">
                     <h3>📊 Financial Summary</h3>
                     ${reportType === 'agency' ? `
-                    <div class="summary-row"><span>Total Payments:</span><span class="credit-amount">₹${totalPaid.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</span></div>
-                    <div class="summary-row"><span>Total Majuri:</span><span class="debit-amount">₹${totalMajuri.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</span></div>
-                    <div class="summary-row"><span>Total General (Agency):</span><span class="${netAgencyGeneralTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netAgencyGeneralTotal < 0 ? '-' : ''}₹${Math.abs(netAgencyGeneralTotal).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</span></div>
+                    <div class="summary-row"><span>Total Payments:</span><span class="credit-amount">₹${totalPaid.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span></div>
+                    <div class="summary-row"><span>Total Majuri:</span><span class="debit-amount">₹${totalMajuri.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span></div>
+                    <div class="summary-row"><span>Total General (Agency):</span><span class="${netAgencyGeneralTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netAgencyGeneralTotal < 0 ? '-' : ''}₹${Math.abs(netAgencyGeneralTotal).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span></div>
                     ` : ''}
 
                     ${reportType === 'other' ? `
-                    <div class="summary-row"><span>Total General:</span><span class="${netGeneralTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netGeneralTotal < 0 ? '-' : ''}₹${Math.abs(netGeneralTotal).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</span></div>
-                    <div class="summary-row"><span>Driver (Jama - Uppad) Net:</span><span class="${netDriverTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netDriverTotal < 0 ? '-' : ''}₹${Math.abs(netDriverTotal).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</span></div>
-                    <div class="summary-row"><span>Total Fuel:</span><span class="debit-amount">₹${totalFuel.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</span></div>
+                    <div class="summary-row"><span>Total General:</span><span class="${netGeneralTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netGeneralTotal < 0 ? '-' : ''}₹${Math.abs(netGeneralTotal).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span></div>
+                    <div class="summary-row"><span>Driver (Jama - Uppad) Net:</span><span class="${netDriverTotal >= 0 ? 'credit-amount' : 'debit-amount'}">${netDriverTotal < 0 ? '-' : ''}₹${Math.abs(netDriverTotal).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span></div>
+                    <div class="summary-row"><span>Total Fuel:</span><span class="debit-amount">₹${totalFuel.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span></div>
                     ` : ''}
 
                     <div class="summary-row" style="border-top: 1px solid #333; padding-top: 8px; margin-top: 8px;">
                         <span style="font-weight: bold;">Total Credit:</span>
-                        <span class="credit-amount">₹${totalCredit.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</span>
+                        <span class="credit-amount">₹${totalCredit.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span>
                     </div>
                     <div class="summary-row">
                         <span style="font-weight: bold;">Total Debit:</span>
-                        <span class="debit-amount">₹${totalDebit.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}</span>
+                        <span class="debit-amount">₹${totalDebit.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span>
                     </div>
 
                     <div class="summary-row net-balance">
                         <span>Total Net Balance:</span>
-                        <span>₹${Math.abs(netBalance).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}${netBalance < 0 ? ' (Due)' : ' (Credit)'}</span>
+                        <span>₹${Math.abs(netBalance).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}${netBalance < 0 ? ' (Due)' : ' (Credit)'}</span>
                     </div>
                 </div>
                 
                 <div class="footer">
                     <div><strong>YASH ROADLINES</strong></div>
                     <div>Report Generated on: ${new Date().toLocaleString('en-IN', {
-                        year: 'numeric',
-                        month: 'long', 
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true
-                    })}</div>
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })}</div>
                 </div>
             </body>
             </html>
         `;
 
-        const fileName = `Monthly_Statement_${selectedYear}-${selectedMonth}`;
-        // Generate PDF and store file path
-        const results = await RNPrint.print({ 
-          html: htmlContent
-        });
-        
-        // Store PDF path for sharing later
-        if (results && results.filePath) {
-          setGeneratedPdfPath(results.filePath);
-          Alert.alert(
-            'PDF Generated! 📄', 
-            `Monthly statement generated successfully! You can now share it using the Share button.`,
-            [{ text: 'OK', style: 'default' }]
-          );
-        } else {
-          Alert.alert(
-            'Success! 📄', 
-            `Monthly statement report generated successfully!`,
-            [{ text: 'OK', style: 'default' }]
-          );
-        }
+      const fileName = `Monthly_Statement_${selectedYear}-${selectedMonth}`;
+      // Generate PDF and store file path
+      const results = await RNPrint.print({
+        html: htmlContent
+      });
+
+      // Store PDF path for sharing later
+      if (results && results.filePath) {
+        setGeneratedPdfPath(results.filePath);
+        Alert.alert(
+          'PDF Generated! 📄',
+          `Monthly statement generated successfully! You can now share it using the Share button.`,
+          [{ text: 'OK', style: 'default' }]
+        );
+      } else {
+        Alert.alert(
+          'Success! 📄',
+          `Monthly statement report generated successfully!`,
+          [{ text: 'OK', style: 'default' }]
+        );
+      }
 
     } catch (error) {
       console.error('PDF generation error:', error);
       Alert.alert(
-        'PDF Generation Error', 
+        'PDF Generation Error',
         'Failed to generate the statement report. Please try again.',
         [
           { text: 'Cancel', style: 'cancel' },
@@ -1280,7 +1713,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         <Text style={styles.headerTitle}>Monthly Statement</Text>
         <View style={styles.headerSpacer} />
       </View>
-      
+
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
         <View style={GlobalStyles.card}>
           <Text style={[GlobalStyles.title, styles.cardTitle]}>Generate Monthly Report</Text>
@@ -1288,23 +1721,23 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
 
           <View style={styles.tabContainer}>
             <TouchableOpacity
-                onPress={() => setReportType('agency')}
-                style={[styles.tabButton, reportType === 'agency' ? styles.activeTab : styles.inactiveTab]}
+              onPress={() => setReportType('agency')}
+              style={[styles.tabButton, reportType === 'agency' ? styles.activeTab : styles.inactiveTab]}
             >
-                <Text style={[styles.tabText, reportType === 'agency' ? styles.activeTabText : null]}>
-                    Agency Monthly
-                </Text>
+              <Text style={[styles.tabText, reportType === 'agency' ? styles.activeTabText : null]}>
+                Agency Monthly
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-                onPress={() => setReportType('other')}
-                style={[styles.tabButton, reportType === 'other' ? styles.activeTab : styles.inactiveTab]}
+              onPress={() => setReportType('other')}
+              style={[styles.tabButton, reportType === 'other' ? styles.activeTab : styles.inactiveTab]}
             >
-                <Text style={[styles.tabText, reportType === 'other' ? styles.activeTabText : null]}>
-                    Other Monthly
-                </Text>
+              <Text style={[styles.tabText, reportType === 'other' ? styles.activeTabText : null]}>
+                Other Monthly
+              </Text>
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.datePickerContainer}>
             <View style={styles.datePickerWrapper}>
               <CustomDropdown
@@ -1327,46 +1760,46 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
               />
             </View>
           </View>
-          
+
           {reportType === 'agency' ? (
-              <View style={styles.checkboxGroup}>
-                <Text style={styles.checkboxTitle}>Agency Transactions:</Text>
-                <CustomDropdown
-                    label="Select Agency"
-                    options={agencyOptions}
-                    selectedValue={selectedAgency}
-                    onValueChange={setSelectedAgency}
-                    placeholder={agencyOptions.length > 0 ? "Choose Agency" : "No Agencies Available"}
-                    enabled={!loading}
+            <View style={styles.checkboxGroup}>
+              <Text style={styles.checkboxTitle}>Agency Transactions:</Text>
+              <CustomDropdown
+                label="Select Agency"
+                options={agencyOptions}
+                selectedValue={selectedAgency}
+                onValueChange={setSelectedAgency}
+                placeholder={agencyOptions.length > 0 ? "Choose Agency" : "No Agencies Available"}
+                enabled={!loading}
+              />
+              <View style={styles.checkboxWrapper}>
+                <CheckBox
+                  value={includePaid}
+                  onValueChange={setIncludePaid}
+                  tintColors={{ true: Colors.primary, false: Colors.textSecondary }}
+                  disabled={loading}
                 />
-                <View style={styles.checkboxWrapper}>
-                  <CheckBox
-                    value={includePaid}
-                    onValueChange={setIncludePaid}
-                    tintColors={{ true: Colors.primary, false: Colors.textSecondary }}
-                    disabled={loading}
-                  />
-                  <Text style={styles.checkBoxText}>Paid (Credit)</Text>
-                </View>
-                <View style={styles.checkboxWrapper}>
-                  <CheckBox
-                    value={includeMajuri}
-                    onValueChange={setIncludeMajuri}
-                    tintColors={{ true: Colors.primary, false: Colors.textSecondary }}
-                    disabled={loading}
-                  />
-                  <Text style={styles.checkBoxText}>Majuri (Debit)</Text>
-                </View>
-                <View style={styles.checkboxWrapper}>
-                  <CheckBox
-                    value={includeGeneral}
-                    onValueChange={setIncludeGeneral}
-                    tintColors={{ true: Colors.primary, false: Colors.textSecondary }}
-                    disabled={loading}
-                  />
-                  <Text style={styles.checkBoxText}>General Entries (Agency)</Text>
-                </View>
+                <Text style={styles.checkBoxText}>Paid (Credit)</Text>
               </View>
+              <View style={styles.checkboxWrapper}>
+                <CheckBox
+                  value={includeMajuri}
+                  onValueChange={setIncludeMajuri}
+                  tintColors={{ true: Colors.primary, false: Colors.textSecondary }}
+                  disabled={loading}
+                />
+                <Text style={styles.checkBoxText}>Majuri (Debit)</Text>
+              </View>
+              <View style={styles.checkboxWrapper}>
+                <CheckBox
+                  value={includeGeneral}
+                  onValueChange={setIncludeGeneral}
+                  tintColors={{ true: Colors.primary, false: Colors.textSecondary }}
+                  disabled={loading}
+                />
+                <Text style={styles.checkBoxText}>General Entries (Agency)</Text>
+              </View>
+            </View>
           ) : (
             <View style={styles.checkboxGroup}>
               <Text style={styles.checkboxTitle}>Other Transactions:</Text>
@@ -1399,26 +1832,148 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
               </View>
             </View>
           )}
-          
-          {/* Share PDF Button */}
+
+          {/* Preview PDF Button */}
           <TouchableOpacity
-            onPress={sharePdf}
-            disabled={isGeneratingPdf || loading || (reportType === 'agency' && !selectedAgency) ||
-                      (reportType === 'agency' && (!includePaid && !includeMajuri && !includeGeneral)) ||
-                      (reportType === 'other' && (!includeGeneral && !includeDrivers && !includeFuel))}
+            onPress={previewPdf}
+            disabled={loading || (reportType === 'agency' && !selectedAgency) ||
+              (reportType === 'agency' && (!includePaid && !includeMajuri && !includeGeneral)) ||
+              (reportType === 'other' && (!includeGeneral && !includeDrivers && !includeFuel))}
             style={[
-                GlobalStyles.buttonPrimary,
-                styles.shareButton,
-                (isGeneratingPdf || loading) && styles.disabledButton,
+              GlobalStyles.buttonPrimary,
+              styles.shareButton,
+              loading && styles.disabledButton,
             ]}
           >
-            <Icon name="share-outline" size={20} color={Colors.surface} style={styles.shareIcon} />
+            <Icon name="eye-outline" size={20} color={Colors.surface} style={styles.shareIcon} />
             <Text style={GlobalStyles.buttonPrimaryText}>
-              {isGeneratingPdf ? 'Preparing to Share...' : 'Share PDF'}
+              {loading ? 'Loading Preview...' : 'Preview PDF'}
             </Text>
           </TouchableOpacity>
+
+          {/* Multiple Agency Selection Button (Agency mode only) */}
+          {reportType === 'agency' && (
+            <TouchableOpacity
+              onPress={() => setShowAgencySelector(true)}
+              disabled={loading || agencyOptions.length === 0}
+              style={[
+                GlobalStyles.buttonPrimary,
+                styles.shareButton,
+                { backgroundColor: '#FF9800' },
+                loading && styles.disabledButton,
+              ]}
+            >
+              <Icon name="people-outline" size={20} color={Colors.surface} style={styles.shareIcon} />
+              <Text style={GlobalStyles.buttonPrimaryText}>
+                Share Multiple Agencies
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
+
+      {/* PDF Preview Modal */}
+      <Modal
+        visible={showPreview}
+        animationType="slide"
+        onRequestClose={() => setShowPreview(false)}
+      >
+        <View style={{ flex: 1 }}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => setShowPreview(false)} style={styles.backButton}>
+              <Text style={styles.backButtonText}>{'<'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>PDF Preview</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+          
+          {previewHtml && (
+            <WebView
+              source={{ html: previewHtml }}
+              style={{ flex: 1 }}
+            />
+          )}
+          
+          <View style={{ padding: 16, backgroundColor: Colors.surface }}>
+            <TouchableOpacity
+              onPress={shareFromPreview}
+              disabled={isGeneratingPdf}
+              style={[GlobalStyles.buttonPrimary, isGeneratingPdf && styles.disabledButton]}
+            >
+              <Icon name="share-outline" size={20} color={Colors.surface} style={styles.shareIcon} />
+              <Text style={GlobalStyles.buttonPrimaryText}>
+                {isGeneratingPdf ? 'Generating PDF...' : 'Share PDF'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Multiple Agency Selector Modal */}
+      <Modal
+        visible={showAgencySelector}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAgencySelector(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Agencies</Text>
+            <Text style={styles.modalSubtitle}>Choose multiple agencies to generate PDFs</Text>
+            
+            <ScrollView style={styles.agencyList}>
+              {agencyOptions.map((agency) => (
+                <TouchableOpacity
+                  key={agency.value}
+                  style={styles.agencyItem}
+                  onPress={() => {
+                    setSelectedAgencies(prev =>
+                      prev.includes(agency.value)
+                        ? prev.filter(a => a !== agency.value)
+                        : [...prev, agency.value]
+                    );
+                  }}
+                >
+                  <CheckBox
+                    value={selectedAgencies.includes(agency.value)}
+                    onValueChange={() => {
+                      setSelectedAgencies(prev =>
+                        prev.includes(agency.value)
+                          ? prev.filter(a => a !== agency.value)
+                          : [...prev, agency.value]
+                      );
+                    }}
+                    tintColors={{ true: Colors.primary, false: Colors.textSecondary }}
+                  />
+                  <Text style={styles.agencyItemText}>{agency.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAgencySelector(false);
+                  setSelectedAgencies([]);
+                }}
+                style={[GlobalStyles.buttonPrimary, { backgroundColor: Colors.textSecondary, flex: 1, marginRight: 8 }]}
+              >
+                <Text style={GlobalStyles.buttonPrimaryText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                onPress={shareMultipleAgencies}
+                disabled={selectedAgencies.length === 0 || isGeneratingPdf}
+                style={[GlobalStyles.buttonPrimary, { flex: 1, marginLeft: 8 }, (selectedAgencies.length === 0 || isGeneratingPdf) && styles.disabledButton]}
+              >
+                <Text style={GlobalStyles.buttonPrimaryText}>
+                  {isGeneratingPdf ? 'Generating...' : `Share ${selectedAgencies.length} PDFs`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <TouchableOpacity
         onPress={goBack}
@@ -1605,6 +2160,50 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: Colors.surface,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 16,
+  },
+  agencyList: {
+    maxHeight: 400,
+    marginBottom: 16,
+  },
+  agencyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  agencyItemText: {
+    fontSize: 16,
+    color: Colors.textPrimary,
+    marginLeft: 12,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
 });
 
