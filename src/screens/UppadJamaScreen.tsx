@@ -8,7 +8,7 @@ import { NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import Dropdown from '../components/Dropdown';
+import { CommonHeader, CommonInput, Dropdown } from '../components';
 import { 
   getPersons, 
   Person, 
@@ -364,15 +364,9 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
 
   return (
     <View style={GlobalStyles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.surface} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'<'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Uppad/Jama {activeTab === 'entry' ? 'Entry' : 'Statement'}</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <CommonHeader title={`Uppad/Jama ${activeTab === 'entry' ? 'Entry' : 'Statement'}`} onBackPress={goBack} />
 
       {/* Tabs: Entry | Statement */}
       <View style={styles.tabsRow}>
@@ -427,23 +421,21 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
               placeholder="Select type (Uppad / Jama)"
             />
 
-            <Text style={styles.inputLabel}>Amount <Text style={styles.requiredStar}>*</Text></Text>
-            <TextInput
+            <CommonInput
+              label="Amount"
+              required
               placeholder="e.g., 5000"
-              placeholderTextColor={Colors.placeholder}
               value={amount}
               onChangeText={setAmount}
               keyboardType="numeric"
-              style={GlobalStyles.input}
             />
 
-            <Text style={styles.inputLabel}>Description (optional)</Text>
-            <TextInput
+            <CommonInput
+              label="Description (optional)"
               placeholder="Details (optional)"
-              placeholderTextColor={Colors.placeholder}
               value={description}
               onChangeText={setDescription}
-              style={[GlobalStyles.input, { height: 80, textAlignVertical: 'top' }]}
+              style={{ height: 80, textAlignVertical: 'top' }}
               multiline
             />
 
@@ -491,7 +483,7 @@ const styles = StyleSheet.create({
   scrollViewContent: {
     paddingVertical: 20,
     flexGrow: 1,
-    paddingBottom: 140, // space for sticky footer
+    paddingBottom: 140,
   },
   tabsRow: {
     flexDirection: 'row',
@@ -517,36 +509,6 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: Colors.surface,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    height: 56 + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0),
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  headerTitle: {
-    color: Colors.surface,
-    fontWeight: 'bold',
-    fontSize: 20,
-    flex: 1,
-    textAlign: 'center',
-    marginRight: 32,
-  },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerSpacer: {
-    width: 32,
   },
   inputLabel: {
     fontSize: 15,

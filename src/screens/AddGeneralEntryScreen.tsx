@@ -1,6 +1,6 @@
 // AddGeneralEntryScreen.tsx
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Alert, TextInput, TouchableOpacity, Text, StatusBar, Platform, ScrollView, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Alert, TouchableOpacity, Text, StatusBar, Platform, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
@@ -11,6 +11,7 @@ import { useAlert } from '../context/AlertContext';
 import NotificationService from '../services/NotificationService';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
+import { CommonHeader, CommonInput } from '../components';
 type AddGeneralEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'AddGeneralEntry'>;
 
 interface AddGeneralEntryScreenProps {
@@ -108,36 +109,29 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
     >
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'<'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Debit/Credit Entry</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <CommonHeader title="New Debit/Credit Entry" onBackPress={goBack} />
 
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
         <View style={GlobalStyles.card}>
           <Text style={GlobalStyles.title}>Add General Entry</Text>
           
-          <Text style={styles.inputLabel}>Description <Text style={styles.requiredStar}>*</Text></Text>
-          <TextInput
+          <CommonInput
+            label="Description"
+            required
             placeholder="e.g., Office Rent, Salary"
-            placeholderTextColor={Colors.placeholder}
             value={description}
             onChangeText={setDescription}
-            style={[GlobalStyles.input, { height: 80, textAlignVertical: 'top' }]}
+            style={{ height: 80, textAlignVertical: 'top' }}
             multiline
           />
           
-          <Text style={styles.inputLabel}>Amount <Text style={styles.requiredStar}>*</Text></Text>
-          <TextInput
+          <CommonInput
+            label="Amount"
+            required
             placeholder="e.g., 5000"
-            placeholderTextColor={Colors.placeholder}
             value={amount}
             onChangeText={setAmount}
             keyboardType="numeric"
-            style={GlobalStyles.input}
           />
 
           
@@ -177,36 +171,6 @@ const styles = StyleSheet.create({
   scrollViewContent: {
     paddingVertical: 20,
     flexGrow: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    height: 56 + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0),
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  headerTitle: {
-    color: Colors.surface,
-    fontWeight: 'bold',
-    fontSize: 20,
-    flex: 1,
-    textAlign: 'center',
-    marginRight: 32,
-  },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerSpacer: {
-    width: 32,
   },
   inputLabel: {
     fontSize: 15,

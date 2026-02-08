@@ -9,13 +9,14 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getPendingCashRecord, verifyCashAmount, CashRecord, deleteCashRecord, checkCashVerificationAccess } from '../data/Storage';
 import NotificationService from '../services/NotificationService';
 import Icon from 'react-native-vector-icons/Ionicons';
+// ✨ Optimized: Using common components
+import { CommonHeader, CommonInput, LoadingSpinner } from '../components';
 
 const CashVerificationScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -207,12 +208,11 @@ const CashVerificationScreen: React.FC = () => {
 
   // Access control check
   if (hasAccess === null) {
-    // Still checking access
+    // Still checking access - ✨ Optimized: Using LoadingSpinner
     return (
       <View style={styles.container}>
         <View style={styles.noRecordContainer}>
-          <ActivityIndicator size="large" color="#3498db" />
-          <Text style={styles.noRecordTitle}>🔐 Checking Access...</Text>
+          <LoadingSpinner message="🔐 Checking Access..." color="#3498db" />
           <Text style={styles.noRecordText}>
             Verifying your permissions to access cash verification.
           </Text>
@@ -266,17 +266,8 @@ const CashVerificationScreen: React.FC = () => {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       
-      {/* Header */}
-      <View style={styles.navigationHeader}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Cash Verification</Text>
-        <View style={styles.headerRight} />
-      </View>
+      {/* ✨ Optimized: Using CommonHeader component */}
+      <CommonHeader title="Cash Verification" onBackPress={() => navigation.goBack()} />
 
       <KeyboardAvoidingView 
         style={styles.keyboardContainer} 
@@ -313,20 +304,15 @@ const CashVerificationScreen: React.FC = () => {
         </View>
 
         <View style={styles.formContainer}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Actual Cash Amount Received *</Text>
-            <View style={styles.amountInputContainer}>
-              <Text style={styles.currencySymbol}>₹</Text>
-              <TextInput
-                style={styles.amountInput}
-                value={actualAmount}
-                onChangeText={setActualAmount}
-                placeholder="0.00"
-                keyboardType="numeric"
-                placeholderTextColor="#999"
-              />
-            </View>
-          </View>
+          {/* ✨ Optimized: Using CommonInput component */}
+          <CommonInput
+            label="Actual Cash Amount Received"
+            required
+            value={actualAmount}
+            onChangeText={setActualAmount}
+            placeholder="0.00"
+            keyboardType="numeric"
+          />
 
           <View style={styles.warningCard}>
             <Text style={styles.warningTitle}>⚠️ Important:</Text>
@@ -361,34 +347,11 @@ const CashVerificationScreen: React.FC = () => {
   );
 };
 
+// ✨ Optimized: Removed 60+ lines of duplicate styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-  },
-  navigationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 50,
-    paddingBottom: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
-    textAlign: 'center',
-    marginRight: 40,
-  },
-  headerRight: {
-    width: 40,
   },
   keyboardContainer: {
     flex: 1,
@@ -398,10 +361,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   contentHeader: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  header: {
     alignItems: 'center',
     marginBottom: 20,
   },
@@ -464,41 +423,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-    marginBottom: 8,
-  },
-  amountInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#3498db',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-  },
-  currencySymbol: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#3498db',
-    paddingHorizontal: 12,
-  },
-  amountInput: {
-    flex: 1,
-    height: 50,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
   warningCard: {
     backgroundColor: '#fff3cd',
     borderRadius: 8,
     padding: 15,
     marginBottom: 25,
+    marginTop: 15,
     borderWidth: 1,
     borderColor: '#ffeaa7',
   },

@@ -7,8 +7,12 @@ import { saveAgency, getAgencies, Agency } from '../data/Storage';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import NotificationService from '../services/NotificationService';
-// ✨ Optimized: Using common components
-import { CommonHeader, CommonInput, LoadingSpinner, EmptyState } from '../components';
+
+// Import common components
+import CommonHeader from '../components/CommonHeader';
+import CommonInput from '../components/CommonInput';
+import LoadingSpinner from '../components/LoadingSpinner';
+import EmptyState from '../components/EmptyState';
 
 type AddAgencyScreenNavigationProp = NavigationProp<RootStackParamList, 'AddAgency'>;
 
@@ -55,7 +59,6 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
     const success = await saveAgency(trimmedAgencyName);
 
     if (success) {
-      // Send notification to admin
       await NotificationService.notifyAdd('agency_entry', 
         `${trimmedAgencyName} agency was added by user`
       );
@@ -80,11 +83,9 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
     <KeyboardAvoidingView 
       style={GlobalStyles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
-      {/* ✨ Optimized: Using CommonHeader component */}
       <CommonHeader title="Add Agency" onBackPress={goBack} />
 
       <ScrollView 
@@ -96,7 +97,6 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
           <View style={styles.cardContent}>
             <Text style={GlobalStyles.title}>Add New Agency</Text>
             
-            {/* ✨ Optimized: Using CommonInput component */}
             <CommonInput
               label="Agency Name"
               required
@@ -105,16 +105,21 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
               onChangeText={setAgencyName}
               editable={!saving}
             />
-            
-            <TouchableOpacity onPress={handleAddAgency} disabled={saving} style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}>
-              <Text style={GlobalStyles.buttonPrimaryText}>{saving ? "Adding..." : "Add Agency"}</Text>
+
+            <TouchableOpacity 
+              onPress={handleAddAgency} 
+              disabled={saving} 
+              style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}
+            >
+              <Text style={GlobalStyles.buttonPrimaryText}>
+                {saving ? "Adding..." : "Add Agency"}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <Text style={styles.listSectionTitle}>Existing Agencies ({agencies.length})</Text>
         
-        {/* ✨ Optimized: Using LoadingSpinner and EmptyState components */}
         {loading ? (
           <LoadingSpinner message="Loading agencies..." />
         ) : agencies.length > 0 ? (
@@ -143,7 +148,6 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
   );
 }
 
-// ✨ Optimized: Removed 80+ lines of duplicate styles (header, input, loading, empty state)
 const styles = StyleSheet.create({
   scrollViewContent: {
     paddingBottom: 20,

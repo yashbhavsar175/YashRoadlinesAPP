@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
-import { TextInput, Text } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, FlatList, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, StatusBar, ActivityIndicator, ScrollView, RefreshControl, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
@@ -10,6 +9,7 @@ import { GlobalStyles } from '../theme/styles';
 import { useAlert } from '../context/AlertContext';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { CommonHeader, CommonInput, EmptyState } from '../components';
 
 type DriverDetailsScreenNavigationProp = NavigationProp<RootStackParamList, 'DriverDetails'>;
 
@@ -42,7 +42,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
       await loadSuggestions();
       const storedTransactions = await getDriverTransactions();
       setRecentEntries(storedTransactions);
-      
+
       const debits = storedTransactions.filter(t => t.transaction_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
       const credits = storedTransactions.filter(t => t.transaction_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
       setTotalDebit(debits);
@@ -59,7 +59,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
   useFocusEffect(
     useCallback(() => {
       loadData();
-      return () => {};
+      return () => { };
     }, [loadData])
   );
 
@@ -86,7 +86,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
       setSuggestionsLoading(false);
     }
   };
-  
+
   const saveSuggestion = async (text: string) => {
     try {
       const trimmedText = text.trim();
@@ -123,7 +123,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
       ]
     );
   };
-  
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -161,7 +161,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
     setIsSaving(true); // Use the new state for saving
     try {
       await saveSuggestion(description.trim());
-      
+
       const numAmount = parseFloat(amount);
       const newTransaction: Omit<DriverTransaction, 'id' | 'created_at' | 'updated_at' | 'editedAt' | 'date' | 'type' | 'transaction_date' | 'recorded_by'> = {
         driver_name: driverName.trim(),
@@ -207,13 +207,13 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
                 setRecentEntries(updatedEntries);
                 const amount = recentEntries.find(e => e.id === id)?.amount || 0;
                 const type = recentEntries.find(e => e.id === id)?.transaction_type || 'debit';
-                
+
                 if (type === 'debit') {
                   setTotalDebit(prev => Math.max(0, prev - amount));
                 } else {
                   setTotalCredit(prev => Math.max(0, prev - amount));
                 }
-                
+
                 showAlert('Transaction deleted successfully!');
               } else {
                 Alert.alert('Error', 'Failed to delete entry. Please try again.');
@@ -230,7 +230,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
 
   const renderSuggestionItem = ({ item }: { item: string }) => (
     <View style={styles.suggestionItem}>
-      <TouchableOpacity 
+      <TouchableOpacity
         onPress={() => setDescription(item)}
         style={styles.suggestionContent}
       >
@@ -272,43 +272,40 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
       </LongPressGestureHandler>
     );
   };
-  
+
   const renderEmptyState = () => (
-    <View style={[GlobalStyles.card, styles.emptyStateCard]}>
-      <Icon name="person-outline" size={60} color={Colors.textSecondary} style={styles.emptyIcon} />
-      <Text style={[GlobalStyles.title, styles.emptyStateTitle]}>No Transactions Yet!</Text>
-      <Text style={[GlobalStyles.bodyText, styles.emptyStateText]}>
-        Start by adding your first driver transaction above.
-      </Text>
-    </View>
+    <EmptyState
+      icon="person-outline"
+      title="No Transactions Yet!"
+      message="Start by adding your first driver transaction above."
+    />
   );
-  
+
   const renderForm = () => (
     <View style={GlobalStyles.card}>
       <View style={styles.cardContent}>
         <Text style={GlobalStyles.title}>Add Driver Transaction</Text>
 
-        <Text style={styles.inputLabel}>Driver Name <Text style={styles.requiredStar}>*</Text></Text>
-        <TextInput
+        <CommonInput
+          label="Driver Name"
+          required
           placeholder="e.g., Ramesh Kumar"
-          placeholderTextColor={Colors.placeholder}
           value={driverName}
           onChangeText={setDriverName}
-          style={GlobalStyles.input}
           autoCapitalize="words"
         />
 
-        <Text style={styles.inputLabel}>Description <Text style={styles.requiredStar}>*</Text></Text>
-        <TextInput
+        <CommonInput
+          label="Description"
+          required
           placeholder="e.g., Fuel, Advance, Salary"
-          placeholderTextColor={Colors.placeholder}
           value={description}
           onChangeText={setDescription}
-          style={[GlobalStyles.input, styles.descriptionInput]}
+          style={styles.descriptionInput}
           multiline
           numberOfLines={2}
         />
-        
+
         {suggestionsLoading ? (
           <ActivityIndicator size="small" color={Colors.primary} style={styles.suggestionsLoading} />
         ) : filteredSuggestions.length > 0 && description.trim() ? (
@@ -325,39 +322,40 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
           </View>
         ) : null}
 
-        <Text style={styles.inputLabel}>Transaction Type <Text style={styles.requiredStar}>*</Text></Text>
-        <View style={styles.radioContainer}>
-          <View style={styles.radioButtons}>
-            <TouchableOpacity
-              style={[styles.radioOption, transactionType === 'debit' && styles.radioOptionSelected]}
-              onPress={() => setTransactionType('debit')}
-            >
-              <Icon name="arrow-up-circle-outline" size={24} color={transactionType === 'debit' ? Colors.surface : Colors.textPrimary} style={{ marginRight: 8 }} />
-              <Text style={[styles.radioLabel, transactionType === 'debit' && styles.radioLabelSelected]}>
+        <View style={styles.transactionTypeSection}>
+          <Text style={styles.transactionTypeLabel}>Transaction Type <Text style={styles.requiredStar}>*</Text></Text>
+          <View style={styles.radioContainer}>
+            <View style={styles.radioButtons}>
+              <TouchableOpacity
+                style={[styles.radioOption, transactionType === 'debit' && styles.radioOptionSelected]}
+                onPress={() => setTransactionType('debit')}
+              >
+                <Icon name="arrow-up-circle-outline" size={24} color={transactionType === 'debit' ? Colors.surface : Colors.textPrimary} style={{ marginRight: 8 }} />
+                <Text style={[styles.radioLabel, transactionType === 'debit' && styles.radioLabelSelected]}>
                   Debit
-              </Text>
-            </TouchableOpacity>
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.radioOption, transactionType === 'credit' && styles.radioOptionSelected]}
-              onPress={() => setTransactionType('credit')}
-            >
-              <Icon name="arrow-down-circle-outline" size={24} color={transactionType === 'credit' ? Colors.surface : Colors.textPrimary} style={{ marginRight: 8 }} />
-              <Text style={[styles.radioLabel, transactionType === 'credit' && styles.radioLabelSelected]}>
+              <TouchableOpacity
+                style={[styles.radioOption, transactionType === 'credit' && styles.radioOptionSelected]}
+                onPress={() => setTransactionType('credit')}
+              >
+                <Icon name="arrow-down-circle-outline" size={24} color={transactionType === 'credit' ? Colors.surface : Colors.textPrimary} style={{ marginRight: 8 }} />
+                <Text style={[styles.radioLabel, transactionType === 'credit' && styles.radioLabelSelected]}>
                   Credit
-              </Text>
-            </TouchableOpacity>
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
-        <Text style={styles.inputLabel}>Amount <Text style={styles.requiredStar}>*</Text></Text>
-        <TextInput
+        <CommonInput
+          label="Amount"
+          required
           placeholder="e.g., 500.00"
-          placeholderTextColor={Colors.placeholder}
           value={amount}
           onChangeText={setAmount}
           keyboardType="numeric"
-          style={GlobalStyles.input}
         />
 
         {amount.trim() && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0 && (
@@ -392,13 +390,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
       >
         <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
-        <View style={styles.header}>
-          <TouchableOpacity onPress={goBack} style={styles.backButton}>
-            <Text style={styles.backButtonText}>{'<'}</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Driver Transaction</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <CommonHeader title="Driver Transaction" onBackPress={goBack} />
         <ScrollView
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />}
@@ -427,57 +419,26 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
 }
 
 const styles = StyleSheet.create({
-  scrollViewContent: {
-    paddingBottom: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    height: 56 + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0),
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  headerTitle: {
-    color: Colors.surface,
-    fontWeight: 'bold',
-    fontSize: 20,
-    flex: 1,
-    textAlign: 'center',
-    marginRight: 32,
-  },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerSpacer: {
-    width: 32,
-  },
   cardContent: {
     padding: 0,
-  },
-  inputLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    marginBottom: 8,
-    marginTop: 15,
-  },
-  requiredStar: {
-    color: Colors.error,
-    fontSize: 14,
   },
   descriptionInput: {
     height: 80,
     textAlignVertical: 'top',
     paddingVertical: 12,
+  },
+  transactionTypeSection: {
+    marginTop: 15,
+  },
+  transactionTypeLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    marginBottom: 8,
+  },
+  requiredStar: {
+    color: Colors.error,
+    fontSize: 14,
   },
   suggestionsContainer: {
     marginBottom: 16,
@@ -699,34 +660,6 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 20,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: Colors.textSecondary,
-  },
-  emptyStateCard: {
-    marginHorizontal: 12,
-    alignItems: 'center',
-    paddingVertical: 30,
-    marginTop: 10,
-  },
-  emptyIcon: {
-    fontSize: 60,
-    marginBottom: 16,
-  },
-  emptyStateTitle: {
-    marginBottom: 10,
-  },
-  emptyStateText: {
-    textAlign: 'center',
-    marginBottom: 20,
-  }
 });
 
 export default DriverDetailsScreen;

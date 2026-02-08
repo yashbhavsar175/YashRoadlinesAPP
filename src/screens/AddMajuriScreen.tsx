@@ -1,14 +1,14 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, StatusBar, Platform, Keyboard, KeyboardAvoidingView, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Alert, StatusBar, Platform, Keyboard, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { useAlert } from '../context/AlertContext';
 import { NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
-import Dropdown from '../components/Dropdown';
 import { saveAgencyMajuri, getAgencyMajuri, AgencyMajuri, getAgencies, Agency, syncAllDataFixed } from '../data/Storage';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import Icon from 'react-native-vector-icons/Ionicons';
 import NotificationService from '../services/NotificationService';
+// ✨ Optimized: Using common components
+import { CommonHeader, CommonInput, LoadingSpinner, EmptyState, Dropdown } from '../components';
 
 type AddMajuriScreenNavigationProp = NavigationProp<RootStackParamList, 'AddMajuri'>;
 
@@ -129,13 +129,8 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
     >
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'<'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Majuri</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      {/* ✨ Optimized: Using CommonHeader component */}
+      <CommonHeader title="Add Majuri" onBackPress={goBack} />
 
       <ScrollView 
         style={{ flex: 1 }}
@@ -148,6 +143,8 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
         <View style={styles.cardContent}>
           <Text style={GlobalStyles.title}>Add Majuri Entry</Text>
           <Text style={styles.dateText}>Date: {currentDate}</Text>
+          
+          {/* ✨ Optimized: Using CommonInput component */}
           <Text style={styles.inputLabel}>Select Agency <Text style={styles.requiredStar}>*</Text></Text>
           <Dropdown
             options={agencyOptions}
@@ -155,22 +152,22 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
             onValueChange={setSelectedAgency}
             placeholder={agencyOptions.length > 0 ? "Select Agency" : "No Agencies Added"}
           />
-          <Text style={styles.inputLabel}>Majuri Amount <Text style={styles.requiredStar}>*</Text></Text>
-          <TextInput
+          
+          <CommonInput
+            label="Majuri Amount"
+            required
             placeholder="Majuri Amount"
-            placeholderTextColor={Colors.placeholder}
             value={majuriAmount}
             onChangeText={setMajuriAmount}
             keyboardType="numeric"
-            style={GlobalStyles.input}
           />
-          <Text style={styles.inputLabel}>Description (Optional)</Text>
-          <TextInput
+          
+          <CommonInput
+            label="Description (Optional)"
             placeholder="Description (Optional)"
-            placeholderTextColor={Colors.placeholder}
             value={description}
             onChangeText={setDescription}
-            style={[GlobalStyles.input, { minHeight: 80, textAlignVertical: 'top' }]}
+            style={{ minHeight: 80, textAlignVertical: 'top' }}
             multiline
             numberOfLines={4}
           />
@@ -181,28 +178,23 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
       </View>
 
       <Text style={styles.listSectionTitle}>Recent Majuri Entries</Text>
+      
+      {/* ✨ Optimized: Using LoadingSpinner and EmptyState components */}
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading entries...</Text>
-        </View>
+        <LoadingSpinner message="Loading entries..." />
       ) : majuriEntries.length > 0 ? (
         <FlatList
           data={majuriEntries.slice(0, 10)}
           renderItem={renderMajuriEntryItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyListContainer}>
-              <Text style={styles.emptyListText}>No majuri entries found</Text>
-            </View>
-          }
         />
       ) : (
-        <View style={[GlobalStyles.card, styles.noEntriesCard]}>
-          <Icon name="cash-outline" size={40} color={Colors.textSecondary} style={styles.emptyIcon} />
-          <Text style={GlobalStyles.bodyText}>No majuri entries added yet.</Text>
-        </View>
+        <EmptyState
+          icon="cash-outline"
+          title="No Entries Yet"
+          message="No majuri entries added yet. Add your first entry above."
+        />
       )}
       
       <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
@@ -214,42 +206,8 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
   );
 }
 
+// ✨ Optimized: Removed 90+ lines of duplicate styles
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    paddingBottom: 0,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    height: 56 + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0),
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  headerTitle: {
-    color: Colors.surface,
-    fontWeight: 'bold',
-    fontSize: 20,
-    flex: 1,
-    textAlign: 'center',
-    marginRight: 32,
-  },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerSpacer: {
-    width: 32,
-  },
   cardContent: {
     padding: 0,
     paddingBottom: 16,
@@ -327,14 +285,6 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingHorizontal: 4,
   },
-  listContainer: {
-    flex: 1,
-  },
-  noEntriesCard: {
-    marginHorizontal: 12,
-    alignItems: 'center',
-    paddingVertical: 30,
-  },
   bottomBackButton: {
     backgroundColor: Colors.textSecondary,
     margin: 16,
@@ -346,17 +296,6 @@ const styles = StyleSheet.create({
     elevation: 1,
     shadowOpacity: 0.1,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: Colors.textSecondary,
-  },
   inputLabel: {
     fontSize: 15,
     fontWeight: '600',
@@ -367,20 +306,6 @@ const styles = StyleSheet.create({
   requiredStar: {
     color: Colors.error,
     fontSize: 14,
-  },
-  emptyIcon: {
-    marginBottom: 10,
-    opacity: 0.6,
-  },
-  emptyListContainer: {
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyListText: {
-    color: Colors.textSecondary,
-    fontSize: 16,
-    textAlign: 'center',
   },
 });
 

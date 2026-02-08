@@ -1,14 +1,13 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Text, TextInput, TouchableOpacity, StatusBar, Platform, ActivityIndicator, Alert, Keyboard } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, FlatList, Text, TextInput, TouchableOpacity, StatusBar, Platform, Alert, Keyboard } from 'react-native';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { saveAgencyPayment, getAgencies, Agency, AgencyPayment, getAgencyPaymentsLocal } from '../data/Storage';
 import { useAlert } from '../context/AlertContext';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import Dropdown from '../components/Dropdown';
-import Icon from 'react-native-vector-icons/Ionicons';
 import NotificationService from '../services/NotificationService';
+import { CommonHeader, CommonInput, LoadingSpinner, EmptyState, Dropdown } from '../components';
 
 type PaidSectionScreenNavigationProp = NavigationProp<RootStackParamList, 'PaidSection'>;
 
@@ -158,13 +157,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
     <View style={GlobalStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'<'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Paid Section</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <CommonHeader title="Paid Section" onBackPress={goBack} />
 
       <View style={GlobalStyles.card}>
         <View style={styles.cardContent}>
@@ -177,22 +170,20 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
             onValueChange={setSelectedAgency}
             placeholder={agencyOptions.length > 0 ? "Select Agency" : "No Agencies Available"}
           />
-          <Text style={styles.inputLabel}>Bill No. <Text style={styles.requiredStar}>*</Text></Text>
-          <TextInput
+          <CommonInput
+            label="Bill No."
+            required
             placeholder="Bill No."
-            placeholderTextColor={Colors.placeholder}
             value={billNo}
             onChangeText={setBillNo}
-            style={GlobalStyles.input}
           />
-          <Text style={styles.inputLabel}>Paid Amount <Text style={styles.requiredStar}>*</Text></Text>
-          <TextInput
+          <CommonInput
+            label="Paid Amount"
+            required
             placeholder="Paid Amount"
-            placeholderTextColor={Colors.placeholder}
             value={paidAmount}
             onChangeText={setPaidAmount}
             keyboardType="numeric"
-            style={GlobalStyles.input}
           />
           <TouchableOpacity onPress={handleSavePayment} disabled={saving} style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}>
             <Text style={GlobalStyles.buttonPrimaryText}>{saving ? "Saving..." : "Save Paid Entry"}</Text>
@@ -202,10 +193,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
 
       <Text style={styles.listSectionTitle}>Recent Paid Entries</Text>
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading entries...</Text>
-        </View>
+        <LoadingSpinner message="Loading entries..." />
       ) : displayedEntries.length > 0 ? (
         <FlatList
           data={displayedEntries}
@@ -216,10 +204,11 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
           showsVerticalScrollIndicator={false}
         />
       ) : (
-        <View style={[GlobalStyles.card, styles.noEntriesCard]}>
-          <Icon name="cash-outline" size={40} color={Colors.textSecondary} style={styles.emptyIcon} />
-          <Text style={GlobalStyles.bodyText}>No paid entries added yet.</Text>
-        </View>
+        <EmptyState
+          icon="cash-outline"
+          title="No Entries Yet"
+          message="No paid entries added yet. Add your first payment above."
+        />
       )}
       
       <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
@@ -231,36 +220,6 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    height: 56 + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0),
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  headerTitle: {
-    color: Colors.surface,
-    fontWeight: 'bold',
-    fontSize: 20,
-    flex: 1,
-    textAlign: 'center',
-    marginRight: 32,
-  },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerSpacer: {
-    width: 32,
-  },
   cardContent: {
     padding: 0,
   },
@@ -341,11 +300,6 @@ const styles = StyleSheet.create({
   listContainer: {
     flex: 1,
   },
-  noEntriesCard: {
-    marginHorizontal: 12,
-    alignItems: 'center',
-    paddingVertical: 30,
-  },
   bottomBackButton: {
     backgroundColor: Colors.primary,
     margin: 16,
@@ -358,17 +312,6 @@ const styles = StyleSheet.create({
     elevation: 1,
     shadowOpacity: 0.1,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: Colors.textSecondary,
-  },
   inputLabel: {
     fontSize: 15,
     fontWeight: '600',
@@ -379,10 +322,6 @@ const styles = StyleSheet.create({
   requiredStar: {
     color: Colors.error,
     fontSize: 14,
-  },
-  emptyIcon: {
-    marginBottom: 10,
-    opacity: 0.5,
   },
 });
 

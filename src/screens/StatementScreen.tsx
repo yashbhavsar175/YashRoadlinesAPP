@@ -1149,7 +1149,7 @@ const renderListHeaderComponent = useMemo(() => {
 return (
   <GestureHandlerRootView style={{ flex: 1 }}>
   <View style={styles.container}>
-    <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+    <StatusBar barStyle="dark-content" backgroundColor={Colors.surface} />
 
     {/* Header - Fixed at top */}
     <View style={styles.header}>

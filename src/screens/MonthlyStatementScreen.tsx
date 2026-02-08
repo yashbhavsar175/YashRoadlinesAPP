@@ -1703,7 +1703,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
 
   return (
     <View style={GlobalStyles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.surface} />
 
       {/* Header */}
       <View style={styles.header}>
