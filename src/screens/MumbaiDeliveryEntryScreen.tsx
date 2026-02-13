@@ -24,6 +24,7 @@ import { useAlert } from '../context/AlertContext';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import NotificationService from '../services/NotificationService';
+import { useOffice } from '../context/OfficeContext';
 
 type MumbaiDeliveryEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'MumbaiDeliveryEntry'>;
 
@@ -34,6 +35,7 @@ interface MumbaiDeliveryEntryScreenProps {
 function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProps): React.JSX.Element {
   const { goBack } = navigation;
   const { showAlert } = useAlert();
+  const { getCurrentOfficeId } = useOffice();
 
   // Form states
   const [description, setDescription] = useState<string>('');
@@ -49,7 +51,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   const loadData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const allEntries = await getAgencyEntry();
+      const currentOfficeId = getCurrentOfficeId();
+      const allEntries = await getAgencyEntry(currentOfficeId || undefined);
       // Filter only Mumbai entries
       const mumbaiEntries = allEntries
         .filter(entry => entry.agency_name === 'Mumbai')
@@ -64,7 +67,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       setLoading(false);
       setRefreshing(false);
     }
-  }, [showAlert]);
+  }, [showAlert, getCurrentOfficeId]);
 
   useFocusEffect(
     useCallback(() => {

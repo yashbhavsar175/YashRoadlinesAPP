@@ -9,6 +9,8 @@ import Dropdown from '../components/Dropdown';
 import Icon from 'react-native-vector-icons/Ionicons';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
+import { useOffice } from '../context/OfficeContext';
+import CommonHeader from '../components/CommonHeader';
 
 type AgencyPaymentsScreenNavigationProp = NavigationProp<RootStackParamList, 'PaidSection'>;
 
@@ -18,6 +20,7 @@ interface AgencyPaymentsScreenProps {
 
 function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.JSX.Element {
   const { goBack } = navigation;
+  const { currentOffice, getCurrentOfficeId } = useOffice();
   const [selectedAgency, setSelectedAgency] = useState<string>('');
   const [billNo, setBillNo] = useState<string>('');
   const [paidAmount, setPaidAmount] = useState<string>('');
@@ -61,7 +64,12 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
         }
       }
 
-      const storedEntries: AgencyPayment[] = await getAgencyPaymentsLocal();
+      // Get current office ID for filtering
+      const officeId = getCurrentOfficeId();
+      console.log('🏢 AgencyPaymentsScreen: Loading data for office:', officeId);
+
+      // Load agency payments filtered by current office
+      const storedEntries: AgencyPayment[] = await getAgencyPaymentsLocal(officeId || undefined);
       setPaidEntries(storedEntries.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()));
 
       const storedAgencies: Agency[] = await getAgencies();
@@ -79,7 +87,7 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
     } finally {
       setLoading(false);
     }
-  }, [selectedAgency]);
+  }, [selectedAgency, getCurrentOfficeId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -87,6 +95,14 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
       return () => {};
     }, [loadData])
   );
+
+  // Reload data when office changes
+  useEffect(() => {
+    if (currentOffice) {
+      console.log('🔄 AgencyPaymentsScreen: Office changed, reloading data...');
+      loadData();
+    }
+  }, [currentOffice]);
 
   const handleSavePayment = useCallback(async () => {
     if (!selectedAgency.trim()) {
@@ -103,6 +119,13 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
       return;
     }
 
+    // Get current office ID
+    const officeId = getCurrentOfficeId();
+    if (!officeId) {
+      Alert.alert('Error', 'No office selected. Please contact administrator.');
+      return;
+    }
+
     setSaving(true);
     try {
       const newPaymentEntry: Omit<AgencyPayment, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'agency_id'> = {
@@ -110,7 +133,9 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
         amount: amount,
         bill_no: billNo.trim(),
         payment_date: new Date().toISOString(),
-        date: new Date().toISOString()
+        date: new Date().toISOString(),
+        office_id: officeId,
+        office_name: currentOffice?.name
       };
 
       const success = await saveAgencyPayment(newPaymentEntry);
@@ -152,7 +177,7 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
     } finally {
       setSaving(false);
     }
-  }, [selectedAgency, billNo, paidAmount, loadData, isAdmin, profile]);
+  }, [selectedAgency, billNo, paidAmount, loadData, isAdmin, profile, getCurrentOfficeId, currentOffice]);
 
   const PaidEntryItem = memo(({ item }: { item: AgencyPayment }) => {
     const formattedDate = useMemo(
@@ -203,17 +228,14 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
     <View style={GlobalStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'<'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Paid Section</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <CommonHeader title="Paid Section" onBackPress={goBack} />
 
       <View style={GlobalStyles.card}>
         <View style={styles.cardContent}>
           <Text style={GlobalStyles.title}>Record Agency Payment</Text>
+          {currentOffice && (
+            <Text style={styles.officeText}>Office: {currentOffice.name}</Text>
+          )}
           <Text style={styles.dateText}>Date: {currentDate}</Text>
           <Text style={styles.inputLabel}>Select Agency <Text style={styles.requiredStar}>*</Text></Text>
           <Dropdown
@@ -292,38 +314,15 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    height: 56 + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0),
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  headerTitle: {
-    color: Colors.surface,
-    fontWeight: 'bold',
-    fontSize: 20,
-    flex: 1,
-    textAlign: 'center',
-    marginRight: 32,
-  },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  backButtonText: {
-    color: Colors.surface,
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerSpacer: {
-    width: 32,
-  },
   cardContent: {
     padding: 0,
+  },
+  officeText: {
+    textAlign: 'center',
+    marginBottom: 8,
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   dateText: {
     textAlign: 'center',

@@ -7,6 +7,7 @@ import { saveDriverTransaction, DriverTransaction, getDriverTransactions, delete
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import { useAlert } from '../context/AlertContext';
+import { useOffice } from '../context/OfficeContext';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { CommonHeader, CommonInput, EmptyState } from '../components';
@@ -22,6 +23,7 @@ const DRIVER_SUGGESTIONS_KEY = 'driver_description_suggestions';
 function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JSX.Element {
   const { goBack } = navigation;
   const { showAlert } = useAlert();
+  const { currentOffice } = useOffice();
   const [driverName, setDriverName] = useState('');
   const [description, setDescription] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -40,7 +42,9 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
     setIsInitialLoading(true); // Use the new state for initial loading
     try {
       await loadSuggestions();
-      const storedTransactions = await getDriverTransactions();
+      // Filter transactions by current office
+      const officeId = currentOffice?.id;
+      const storedTransactions = await getDriverTransactions(officeId);
       setRecentEntries(storedTransactions);
 
       const debits = storedTransactions.filter(t => t.transaction_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
@@ -54,7 +58,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
       setIsInitialLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [currentOffice]);
 
   useFocusEffect(
     useCallback(() => {
@@ -158,6 +162,12 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
   const handleSave = async () => {
     if (!validateInputs()) return;
 
+    // Validate that office is selected
+    if (!currentOffice?.id) {
+      Alert.alert('Error', 'No office selected. Please select an office first.');
+      return;
+    }
+
     setIsSaving(true); // Use the new state for saving
     try {
       await saveSuggestion(description.trim());
@@ -168,6 +178,7 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
         description: description.trim(),
         amount: numAmount,
         transaction_type: transactionType as 'credit' | 'debit',
+        office_id: currentOffice.id, // Include current office_id
       };
 
       const success = await saveDriverTransaction(newTransaction as any);
@@ -285,6 +296,15 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
     <View style={GlobalStyles.card}>
       <View style={styles.cardContent}>
         <Text style={GlobalStyles.title}>Add Driver Transaction</Text>
+
+        {currentOffice && (
+          <View style={styles.officeIndicatorContainer}>
+            <Icon name="business-outline" size={16} color={Colors.textSecondary} />
+            <Text style={styles.officeIndicatorText}>
+              Office: {currentOffice.name}
+            </Text>
+          </View>
+        )}
 
         <CommonInput
           label="Driver Name"
@@ -421,6 +441,23 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
 const styles = StyleSheet.create({
   cardContent: {
     padding: 0,
+  },
+  officeIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  officeIndicatorText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginLeft: 6,
+    fontWeight: '500',
   },
   descriptionInput: {
     height: 80,

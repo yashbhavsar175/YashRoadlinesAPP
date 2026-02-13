@@ -56,8 +56,10 @@ import UserAccessManagementScreen from './src/screens/UserAccessManagementScreen
 import AdminPasswordChangeScreen from './src/screens/AdminPasswordChangeScreen';
 import AdminUserManagementScreen from './src/screens/AdminUserManagementScreen';
 import MajurDashboardScreen from './src/screens/MajurDashboardScreen';
+import OfficeManagementScreen from './src/screens/OfficeManagementScreen';
 import { AlertProvider } from './src/context/AlertContext';
 import { UserAccessProvider } from './src/context/UserAccessContext';
+import { OfficeProvider } from './src/context/OfficeContext';
 import AuthLogoutService from './src/services/AuthLogoutService';
 
 // Define the root navigator's param list and export it for usage across screens
@@ -111,6 +113,7 @@ type RootStackParamList = {
   AdminUserManagement: undefined;
   MajurDashboard: undefined;
   DebugScreenAccess: undefined;
+  OfficeManagement: undefined;
 };
 
 export type { RootStackParamList };
@@ -801,9 +804,10 @@ function App(): React.JSX.Element {
   
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <UserAccessProvider>
-          <AlertProvider>
-            <NavigationContainer
+        <OfficeProvider>
+          <UserAccessProvider>
+            <AlertProvider>
+              <NavigationContainer
               ref={navigationRef as React.Ref<NavigationContainerRef<RootStackParamList>>}
               onStateChange={(state: NavigationState | undefined) => {
                 if (state) {
@@ -871,6 +875,7 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="AdminPasswordChangeScreen" component={AdminPasswordChangeScreen} options={{ title: 'Change User Password' }} />
                 <Stack.Screen name="AdminUserManagement" component={AdminUserManagementScreen} options={{ title: 'User Display Names' }} />
                 <Stack.Screen name="MajurDashboard" component={MajurDashboardScreen} options={{ title: 'Majur Dashboard' }} />
+                <Stack.Screen name="OfficeManagement" component={OfficeManagementScreen} options={{ title: 'Office Management' }} />
             </Stack.Navigator>
 
               {shouldShowCalculator && fabPos && (
@@ -891,9 +896,10 @@ function App(): React.JSX.Element {
                 </>
               )}
             </View>
-          </NavigationContainer>
-        </AlertProvider>
-      </UserAccessProvider>
+            </NavigationContainer>
+          </AlertProvider>
+        </UserAccessProvider>
+      </OfficeProvider>
       </GestureHandlerRootView>
     );
   }

@@ -10,11 +10,13 @@ import {
   TextInput,
   StatusBar,
   Platform,
+  Modal,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../supabase';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useUserAccess } from '../context/UserAccessContext';
+import { getOffices, setUserOfficeAssignment, Office } from '../data/Storage';
 
 interface UserProfile {
   id: string;
@@ -25,6 +27,8 @@ interface UserProfile {
   is_admin?: boolean;
   is_active?: boolean;
   screen_access?: string[]; // Array of screen names user can access
+  office_id?: string;
+  office_name?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -246,10 +250,14 @@ const UserAccessManagementScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [offices, setOffices] = useState<Office[]>([]);
+  const [showOfficeModal, setShowOfficeModal] = useState(false);
+  const [selectedUserForOffice, setSelectedUserForOffice] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     loadUsers();
     loadCustomPages();
+    loadOffices();
   }, []);
 
   const loadCustomPages = async () => {
@@ -271,6 +279,16 @@ const UserAccessManagementScreen: React.FC = () => {
     }
   };
 
+  const loadOffices = async () => {
+    try {
+      const officeList = await getOffices();
+      setOffices(officeList);
+      console.log('📋 Loaded offices:', officeList.length);
+    } catch (error) {
+      console.error('Error loading offices:', error);
+    }
+  };
+
   const loadUsers = async () => {
     try {
       setLoading(true);
@@ -286,9 +304,10 @@ const UserAccessManagementScreen: React.FC = () => {
       }
 
       setUsers(data || []);
-      console.log('🔍 Debug: Users loaded with screen access:', data?.map(u => ({
+      console.log('🔍 Debug: Users loaded with office assignments:', data?.map(u => ({
         name: u.full_name,
         id: u.id,
+        office_name: u.office_name,
         screen_access: u.screen_access,
         access_count: u.screen_access?.length || 0
       })));
@@ -363,6 +382,50 @@ const UserAccessManagementScreen: React.FC = () => {
     }
   };
 
+  const handleChangeOffice = (user: UserProfile) => {
+    setSelectedUserForOffice(user);
+    setShowOfficeModal(true);
+  };
+
+  const handleOfficeSelection = async (officeId: string) => {
+    if (!selectedUserForOffice) return;
+
+    try {
+      const success = await setUserOfficeAssignment(selectedUserForOffice.id, officeId);
+      
+      if (success) {
+        const selectedOffice = offices.find(o => o.id === officeId);
+        
+        // Update local state
+        setUsers(prev => prev.map(u => 
+          u.id === selectedUserForOffice.id 
+            ? { ...u, office_id: officeId, office_name: selectedOffice?.name }
+            : u
+        ));
+
+        Alert.alert(
+          'Success',
+          `${selectedUserForOffice.full_name} has been assigned to ${selectedOffice?.name}`
+        );
+
+        console.log('✅ Office assignment updated:', {
+          userId: selectedUserForOffice.id,
+          userName: selectedUserForOffice.full_name,
+          officeId,
+          officeName: selectedOffice?.name
+        });
+      } else {
+        Alert.alert('Error', 'Failed to update office assignment');
+      }
+    } catch (error) {
+      console.error('Error updating office assignment:', error);
+      Alert.alert('Error', 'Failed to update office assignment');
+    } finally {
+      setShowOfficeModal(false);
+      setSelectedUserForOffice(null);
+    }
+  };
+
   const filteredUsers = users.filter(user =>
     user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -394,7 +457,30 @@ const UserAccessManagementScreen: React.FC = () => {
               ]}>
                 {user.is_active ? 'Active' : 'Inactive'}
               </Text>
+              {user.office_name && (
+                <Text style={styles.officeBadge}>
+                  🏢 {user.office_name}
+                </Text>
+              )}
             </View>
+            {user.office_name && (
+              <TouchableOpacity 
+                style={styles.changeOfficeButton}
+                onPress={() => handleChangeOffice(user)}
+              >
+                <Icon name="business-outline" size={14} color="#3498db" />
+                <Text style={styles.changeOfficeText}>Change Office</Text>
+              </TouchableOpacity>
+            )}
+            {!user.office_name && (
+              <TouchableOpacity 
+                style={styles.assignOfficeButton}
+                onPress={() => handleChangeOffice(user)}
+              >
+                <Icon name="add-circle-outline" size={14} color="#e74c3c" />
+                <Text style={styles.assignOfficeText}>Assign Office</Text>
+              </TouchableOpacity>
+            )}
           </View>
           <TouchableOpacity
             style={styles.editButton}
@@ -522,6 +608,73 @@ const UserAccessManagementScreen: React.FC = () => {
           filteredUsers.map(renderUserCard)
         )}
       </ScrollView>
+
+      {/* Office Selection Modal */}
+      <Modal
+        visible={showOfficeModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowOfficeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Office</Text>
+              <TouchableOpacity onPress={() => setShowOfficeModal(false)}>
+                <Icon name="close" size={24} color="#2c3e50" />
+              </TouchableOpacity>
+            </View>
+            
+            {selectedUserForOffice && (
+              <Text style={styles.modalSubtitle}>
+                Assign office for {selectedUserForOffice.full_name}
+              </Text>
+            )}
+
+            <ScrollView style={styles.officeList}>
+              {offices.map(office => (
+                <TouchableOpacity
+                  key={office.id}
+                  style={[
+                    styles.officeItem,
+                    selectedUserForOffice?.office_id === office.id && styles.officeItemSelected
+                  ]}
+                  onPress={() => handleOfficeSelection(office.id)}
+                >
+                  <View style={styles.officeItemContent}>
+                    <Icon 
+                      name="business" 
+                      size={20} 
+                      color={selectedUserForOffice?.office_id === office.id ? "#3498db" : "#7f8c8d"} 
+                    />
+                    <View style={styles.officeItemText}>
+                      <Text style={[
+                        styles.officeItemName,
+                        selectedUserForOffice?.office_id === office.id && styles.officeItemNameSelected
+                      ]}>
+                        {office.name}
+                      </Text>
+                      {office.address && (
+                        <Text style={styles.officeItemAddress}>{office.address}</Text>
+                      )}
+                    </View>
+                  </View>
+                  {selectedUserForOffice?.office_id === office.id && (
+                    <Icon name="checkmark-circle" size={24} color="#3498db" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modalCancelButton}
+              onPress={() => setShowOfficeModal(false)}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -799,6 +952,130 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#95a5a6',
     textAlign: 'center',
+  },
+  officeBadge: {
+    backgroundColor: '#9b59b6',
+    color: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 3,
+  },
+  changeOfficeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingVertical: 4,
+  },
+  changeOfficeText: {
+    fontSize: 13,
+    color: '#3498db',
+    marginLeft: 4,
+    fontWeight: '600',
+  },
+  assignOfficeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingVertical: 4,
+  },
+  assignOfficeText: {
+    fontSize: 13,
+    color: '#e74c3c',
+    marginLeft: 4,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 5,
+  },
+  officeList: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    maxHeight: 400,
+  },
+  officeItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  officeItemSelected: {
+    backgroundColor: '#e3f2fd',
+    borderColor: '#3498db',
+  },
+  officeItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  officeItemText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  officeItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+  },
+  officeItemNameSelected: {
+    color: '#3498db',
+  },
+  officeItemAddress: {
+    fontSize: 13,
+    color: '#7f8c8d',
+    marginTop: 2,
+  },
+  modalCancelButton: {
+    marginHorizontal: 20,
+    marginTop: 15,
+    paddingVertical: 15,
+    backgroundColor: '#e9ecef',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#7f8c8d',
   },
 });
 

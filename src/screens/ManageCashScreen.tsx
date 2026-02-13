@@ -13,6 +13,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { supabase } from '../supabase';
 import { useAlert } from '../context/AlertContext';
+import { useOffice } from '../context/OfficeContext';
 import { CommonHeader, CommonInput } from '../components';
 
 interface ManageCashParams {
@@ -29,21 +30,30 @@ const ManageCashScreen: React.FC = () => {
   const [adjustment, setAdjustment] = useState<number>(initialAdjustment || 0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const alert = useAlert();
+  const { getCurrentOfficeId } = useOffice();
 
   const dateKey = selectedDateKey;
 
   const saveAdjustment = async (newAdjustment: number) => {
     try {
       setIsLoading(true);
+      
+      const officeId = getCurrentOfficeId();
+      if (!officeId) {
+        alert.showAlert('No office selected. Please select an office first.');
+        return false;
+      }
+
       const { error } = await supabase
         .from('daily_cash_adjustments')
         .upsert(
           {
             date_key: dateKey,
+            office_id: officeId,
             adjustment: newAdjustment,
             updated_at: new Date().toISOString()
           },
-          { onConflict: 'date_key' }
+          { onConflict: 'date_key,office_id' }
         );
 
       if (error) throw error;

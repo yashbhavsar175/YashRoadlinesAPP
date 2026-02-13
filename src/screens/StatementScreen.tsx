@@ -25,6 +25,7 @@ import { generatePDF } from 'react-native-html-to-pdf';
 import RNFS from 'react-native-fs';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useOffice } from '../context/OfficeContext';
 
 // Debounce utility function
 const useDebounce = <T,>(value: T, delay: number): T => {
@@ -122,6 +123,7 @@ const CustomDropdown = ({ options, selectedValue, onValueChange, placeholder, la
 
 function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Element {
   const { goBack } = navigation;
+  const { getCurrentOfficeId, currentOffice } = useOffice();
   const [selectedAgency, setSelectedAgency] = useState<string>('');
   const [agencyOptions, setAgencyOptions] = useState<{ label: string; value: string }[]>([]);
   const [filteredEntries, setFilteredEntries] = useState<CombinedEntryWithDate[]>([]);
@@ -151,6 +153,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
     setError('');
 
     try {
+      const currentOfficeId = getCurrentOfficeId();
       let allData: CombinedEntryWithDate[] = [];
       let options: { label: string; value: string }[] = [];
       let currentSelectedEntity = '';
@@ -168,9 +171,9 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
 
         if (currentSelectedEntity) {
           const [allPaid, allMajuri, allAgencyEntries] = await Promise.all([
-            getAgencyPaymentsLocal(),
-            getAgencyMajuri(),
-            getAgencyEntry()
+            getAgencyPaymentsLocal(currentOfficeId || undefined),
+            getAgencyMajuri(currentOfficeId || undefined),
+            getAgencyEntry(currentOfficeId || undefined)
           ]);
 
           const agencyPaid: CombinedEntryWithDate[] = allPaid
@@ -189,7 +192,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
         }
 
       } else if (statementType === 'driver') {
-        const allTransactions = await getDriverTransactions();
+        const allTransactions = await getDriverTransactions(currentOfficeId || undefined);
         allData = allTransactions.map(t => ({
           ...t,
           type: 'driver_transaction' as const,
@@ -236,7 +239,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
       if (showLoading) setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedAgency, filterType, statementType, debouncedSearchTerm]);
+  }, [selectedAgency, filterType, statementType, debouncedSearchTerm, getCurrentOfficeId]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -621,6 +624,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
             <div class="header">
                 <h1>YASH ROADLINES</h1>
                 <h2>${selectedAgency} - Statement Report</h2>
+                ${currentOffice ? `<div class="office-info" style="font-size: 13px; color: #1976D2; font-weight: bold; margin-top: 5px;">Office: ${currentOffice.name}</div>` : ''}
             </div>
             
             ${showPayments ? `
@@ -739,6 +743,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
             
             <div class="footer">
                 <div><strong>YASH ROADLINES</strong></div>
+                ${currentOffice ? `<div>Office: ${currentOffice.name}</div>` : ''}
                 <div>Statement Report Generated on: ${new Date().toLocaleString('en-IN', {
                     year: 'numeric',
                     month: 'long', 

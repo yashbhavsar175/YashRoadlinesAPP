@@ -10,6 +10,7 @@ import { useAlert } from '../context/AlertContext';
 import { supabase } from '../supabase';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
+import { useOffice } from '../context/OfficeContext';
 
 type TotalPaidScreenNavigationProp = NavigationProp<RootStackParamList, 'TotalPaid'>;
 
@@ -30,6 +31,7 @@ interface DailyPaidSummary {
 function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Element {
   const { goBack } = navigation;
   const { showAlert } = useAlert();
+  const { getCurrentOfficeId } = useOffice();
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [dailySummaries, setDailySummaries] = useState<DailyPaidSummary[]>([]);
@@ -64,14 +66,16 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
   const loadPaidData = useCallback(async (forceClearCache = false) => {
     setLoading(true);
     try {
+      const currentOfficeId = getCurrentOfficeId();
+      
       // Clear cache if requested to get fresh data
       if (forceClearCache) {
         console.log('🔄 Force clearing cache for fresh data...');
         await clearPaymentCache();
       }
       
-      const allPayments = await getAgencyPaymentsLocal();
-      const allAgencyEntries = await getAgencyEntry();
+      const allPayments = await getAgencyPaymentsLocal(currentOfficeId || undefined);
+      const allAgencyEntries = await getAgencyEntry(currentOfficeId || undefined);
       
       console.log('📊 Total Paid Data:', {
         paymentsCount: allPayments.length,
@@ -156,7 +160,7 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [getCurrentOfficeId, showAlert]);
 
   useFocusEffect(
     useCallback(() => {

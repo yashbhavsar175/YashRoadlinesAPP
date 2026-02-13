@@ -18,12 +18,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getProfile,
   createProfileIfMissing,
-  generateAndStoreOtp,
-  verifyOtpCode,
-  deliverOtpAlternative,
-  debugEdgeFunctionStatus,
-  comprehensiveEdgeFunctionDebug,
-  deliverOtpWithDetailedDebug
+  createLoginRequest,
+  checkLoginRequestStatus,
+  verifyAdminOtp,
 } from '../data/Storage';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
@@ -54,9 +51,20 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
   const [isPasswordVisible, setIsPasswordVisible] = useState<boolean>(false);
   const [otpPhase, setOtpPhase] = useState<boolean>(false);
   const [otpInput, setOtpInput] = useState<string>('');
-  const [otpSending, setOtpSending] = useState<boolean>(false);
+  const [loginRequestId, setLoginRequestId] = useState<string | null>(null);
+  const [waitingForAdmin, setWaitingForAdmin] = useState<boolean>(false);
   const [signedInUserId, setSignedInUserId] = useState<string | null>(null);
   const [debugMode, setDebugMode] = useState<boolean>(__DEV__); // Enable debug mode in development
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
 
   // OTP security & UX controls
   const OTP_MAX_ATTEMPTS = 5;
@@ -136,19 +144,8 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       });
 
       if (error) {
-        // Log full error object for debugging
-        try { console.error('🔴 signInWithPassword error (full):', error); } catch (e) { console.error('Error logging sign-in error', e); }
-
-        // Show detailed alert to capture Supabase error fields during debugging
-        const errMsg = (() => {
-          try {
-            return JSON.stringify(error, Object.getOwnPropertyNames(error));
-          } catch (e) {
-            return String(error);
-          }
-        })();
-
-        Alert.alert('Login Failed', `Detailed error: ${errMsg}`);
+        console.error('🔴 signInWithPassword error:', error);
+        Alert.alert('Login Failed', error.message || 'Invalid credentials');
         return;
       }
 
@@ -157,197 +154,201 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
         return;
       }
 
-      console.log('🔍 Starting login process for user:', data.user.id, 'email:', data.user.email);
+      console.log('🔍 Starting login process for user:', data.user.id);
       
-      // First, let's test direct database access
-      try {
-        console.log('🔍 Testing direct database access...');
-        const { data: testData, error: testError } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', data.user.id)
-          .single();
-        
-        if (testError && testError.code !== 'PGRST116') {
-          console.error('❌ Direct database test failed:', testError);
-          Alert.alert('Database Error', `Database access failed: ${testError.message}`);
-          return;
-        }
-        
-        if (testData) {
-          console.log('✅ Direct database test: Profile already exists:', testData);
-        } else {
-          console.log('ℹ️ Direct database test: No profile found, will create one');
-        }
-      } catch (dbTestError) {
-        console.error('❌ Database connection test failed:', dbTestError);
-        Alert.alert('Database Error', 'Cannot connect to database. Please check your internet connection.');
-        return;
-      }
-
-      // Ensure profile exists - with multiple fallback attempts
+      // Ensure profile exists
       let profileCreated = false;
       let attempts = 0;
       const maxAttempts = 3;
       
       while (!profileCreated && attempts < maxAttempts) {
         attempts++;
-        console.log(`🔄 Profile check attempt ${attempts}/${maxAttempts} for user:`, data.user.id);
-        
         try {
           await createProfileIfMissing(data.user.id, email.trim());
           profileCreated = true;
-          console.log('✅ Profile verified/created for user:', data.user.id);
         } catch (profileError) {
           console.error(`❌ Profile attempt ${attempts} failed:`, profileError);
-          
           if (attempts >= maxAttempts) {
             await supabase.auth.signOut();
-            Alert.alert(
-              'Database Error', 
-              'Failed to create user profile after multiple attempts.\n\nThis is likely a temporary database issue. Please try again in a few moments.'
-            );
+            Alert.alert('Database Error', 'Failed to create user profile. Please try again.');
             return;
           }
-          
-          // Wait a bit before retrying
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
 
       const profile = await getProfile(data.user.id);
       if (!profile) {
-        console.error('❌ Profile still not found after creation attempts');
         await supabase.auth.signOut();
-        Alert.alert(
-          'Profile Error', 
-          'Unable to retrieve user profile after creation. Please try logging in again.'
-        );
+        Alert.alert('Profile Error', 'Unable to retrieve user profile.');
         return;
       }
 
       const isActive = profile?.is_active !== false;
-
       if (!isActive) {
         await supabase.auth.signOut();
         Alert.alert('Access Blocked', 'Your account is deactivated. Contact admin.');
         return;
       }
 
-      // Diagnostics disabled to reduce noise during normal login
+      // Check if user is admin
+      const isAdmin = profile?.is_admin === true;
 
-      // Generate OTP
-      setOtpSending(true);
-      const otpResult = await generateAndStoreOtp(data.user.id);
-
-      if (!otpResult) {
-        setOtpSending(false);
-        await supabase.auth.signOut();
-        Alert.alert('OTP Error', 'Could not generate OTP. Please try again.');
+      if (isAdmin) {
+        // Admin: Direct login without OTP
+        console.log('✅ Admin login - bypassing OTP');
+        
+        // Save user profile to AsyncStorage
+        try {
+          const userName = profile.full_name?.trim() || 
+                          profile.username?.trim() || 
+                          data.user.email?.split('@')[0] || 
+                          'Admin';
+          
+          const userProfile = {
+            id: data.user.id,
+            email: data.user.email,
+            name: userName,
+            user_type: profile.user_type || 'normal'
+          };
+          await AsyncStorage.setItem('user_profile', JSON.stringify(userProfile));
+          
+          // Initialize NotificationService
+          const NotificationService = require('../services/NotificationService').default;
+          const NotificationSetup = require('../services/NotificationSetup').default;
+          await NotificationService.initialize();
+          await NotificationSetup.reinitialize();
+          console.log('✅ Notification services initialized');
+        } catch (error) {
+          console.error('❌ Error saving user profile:', error);
+        }
+        
+        // Navigate to home
+        navigation.replace('Home');
         return;
       }
 
-      console.log('🔄 Attempting to send OTP to:', email.trim());
+      // Normal user: Require admin approval
+      const userName = profile.full_name || profile.username || email.split('@')[0];
+      const requestId = await createLoginRequest(data.user.id, email.trim(), userName);
 
-      // Try to deliver OTP using enhanced method
-      const deliverySuccess = await deliverOtpAlternative({
-        email: email.trim(),
-        code: otpResult.code
-      });
-
-      setOtpSending(false);
-
-      if (deliverySuccess) {
-        Alert.alert(
-          'OTP Sent Successfully! 📧',
-          `A 6-digit verification code has been sent to ${email.trim()}. Please check your inbox and enter the code below.\n\nIf you don't see it, also check your Spam/Junk folder.`
-        );
-        console.log('✅ OTP sent successfully');
-      } else {
-        Alert.alert(
-          'Email Service Issue ⚠️',
-          `Could not send OTP to ${email.trim()}. Please check:\n\n1. Your email address is correct\n2. Check spam/junk folder\n3. Email service may be temporarily unavailable\n\nContact support if this continues.`
-        );
-        console.log('⚠️ OTP email delivery failed');
+      if (!requestId) {
+        await supabase.auth.signOut();
+        Alert.alert('Error', 'Could not create login request. Please try again.');
+        return;
       }
 
-      // Set OTP phase regardless of email success (for testing)
-      try { await AsyncStorage.setItem('otp_pending', '1'); } catch { }
+      setLoginRequestId(requestId);
       setSignedInUserId(data.user.id);
+      setWaitingForAdmin(true);
       setOtpPhase(true);
-      // Initialize OTP attempt counters and cooldowns
-      try {
-        await AsyncStorage.setItem(keyAttempts(data.user.id), `${OTP_MAX_ATTEMPTS}`);
-        await AsyncStorage.removeItem(keyLockUntil(data.user.id));
-        await AsyncStorage.removeItem(keyResendAt(data.user.id));
-        setAttemptsLeft(OTP_MAX_ATTEMPTS);
-        setLockUntil(0);
-        startResendTimer(0);
-      } catch { }
+
+      Alert.alert(
+        'Waiting for Admin Approval 🔔',
+        'Your login request has been sent to the admin. Please wait for approval and enter the OTP code provided by the admin.',
+        [{ text: 'OK' }]
+      );
+
+      // Start polling for admin approval
+      startPollingForApproval(requestId);
 
     } catch (error: any) {
       console.error('❌ Login error:', error);
-      
-      // Check if it's a profile creation error
-      if (error.message && error.message.includes('profile')) {
-        Alert.alert(
-          'Database Error', 
-          'Failed to create user profile. Please try again.\n\nIf this continues, please contact support.'
-        );
-      } else if (error.message && error.message.includes('auth')) {
-        Alert.alert('Authentication Error', error.message);
-      } else {
-        Alert.alert(
-          'Login Error', 
-          'An unexpected error occurred during login. Please try again.\n\nError: ' + (error.message || 'Unknown error')
-        );
-      }
+      Alert.alert('Login Error', error.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
   };
 
+  const startPollingForApproval = (requestId: string) => {
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    // Poll every 3 seconds
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const status = await checkLoginRequestStatus(requestId);
+        
+        if (!status) return;
+
+        if (status.status === 'approved' && status.otp) {
+          // Stop polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          
+          setWaitingForAdmin(false);
+          Alert.alert(
+            'Login Approved! ✅',
+            'Admin has approved your login request. Please enter the OTP code provided by the admin.'
+          );
+        } else if (status.status === 'rejected') {
+          // Stop polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          
+          Alert.alert(
+            'Login Rejected ❌',
+            'Your login request was rejected by the admin. Please contact your administrator.',
+            [
+              {
+                text: 'OK',
+                onPress: () => handleCancelOtp(),
+              },
+            ]
+          );
+        } else if (status.status === 'expired') {
+          // Stop polling
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          
+          Alert.alert(
+            'Request Expired ⏰',
+            'Your login request has expired. Please try logging in again.',
+            [
+              {
+                text: 'OK',
+                onPress: () => handleCancelOtp(),
+              },
+            ]
+          );
+        }
+      } catch (error) {
+        console.error('Error polling for approval:', error);
+      }
+    }, 3000);
+  };
+
   const handleVerifyOtp = async () => {
-    if (!signedInUserId) return;
-    if (!otpInput.trim()) {
-      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP.');
+    if (!loginRequestId) return;
+    if (!otpInput.trim() || otpInput.length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP provided by admin.');
       return;
     }
-    // Lockout check
-    const now = Date.now();
-    if (lockUntil && now < lockUntil) {
-      const remainingMs = lockUntil - now;
-      const remMin = Math.floor(remainingMs / 60000);
-      const remSec = Math.ceil((remainingMs % 60000) / 1000);
-      Alert.alert('Temporarily Locked', `Too many incorrect attempts. Try again in ${remMin}m ${remSec}s.`);
-      return;
-    }
+
     setLoading(true);
     try {
-      const ok = await verifyOtpCode(signedInUserId, otpInput.trim());
-      if (!ok) {
-        const nextAttempts = Math.max(0, attemptsLeft - 1);
-        setAttemptsLeft(nextAttempts);
-        try { await AsyncStorage.setItem(keyAttempts(signedInUserId), `${nextAttempts}`); } catch { }
-        if (nextAttempts <= 0) {
-          const lockMs = Date.now() + OTP_LOCK_MINUTES * 60 * 1000;
-          setLockUntil(lockMs);
-          try { await AsyncStorage.setItem(keyLockUntil(signedInUserId), `${lockMs}`); } catch { }
-          Alert.alert('Too Many Attempts', `You are locked for ${OTP_LOCK_MINUTES} minutes.`);
-        } else {
-          Alert.alert('Incorrect OTP', `The OTP is invalid or expired. Attempts left: ${nextAttempts}`);
-        }
+      const isValid = await verifyAdminOtp(loginRequestId, otpInput.trim());
+      
+      if (!isValid) {
+        Alert.alert('Incorrect OTP', 'The OTP code is invalid or the request has expired.');
         return;
       }
+
+      // Stop polling
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+
       try { await AsyncStorage.removeItem('otp_pending'); } catch { }
-      // Clear security state on success
-      try {
-        await AsyncStorage.multiRemove([
-          keyAttempts(signedInUserId),
-          keyLockUntil(signedInUserId),
-          keyResendAt(signedInUserId),
-        ]);
-      } catch { }
       
       // Save user profile to AsyncStorage for NotificationService
       try {
@@ -381,6 +382,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       
       setOtpPhase(false);
       setOtpInput('');
+      setWaitingForAdmin(false);
       navigation.replace('Home');
     } catch (e) {
       console.error('Verify OTP error:', e);
@@ -476,12 +478,12 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
         console.log('OTP generation request processed');
       }
 
-      const deliverySuccess = await deliverOtpAlternative({
+      const deliveryResult = await deliverOtpAlternative({
         email: email.trim(),
         code: otpResult.code
       });
 
-      if (deliverySuccess) {
+      if (deliveryResult.success) {
         Alert.alert(
           'OTP Resent! 📧',
           'New verification code sent to your email.\n\nIf not found, check your Spam/Junk folder.'
@@ -492,11 +494,37 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
         try { await AsyncStorage.setItem(keyResendAt(signedInUserId), `${nextAt}`); } catch { }
         startResendTimer(RESEND_COOLDOWN_SEC);
       } else {
-        Alert.alert(
-          'Resend Failed ❌',
-          'Could not resend OTP. Please try again or contact support.'
-        );
-        console.log('⚠️ OTP resend failed');
+        // Handle specific error types
+        const errorType = deliveryResult.error || 'UNKNOWN_ERROR';
+        
+        if (errorType.startsWith('RATE_LIMIT:')) {
+          const waitSeconds = parseInt(errorType.split(':')[1] || '60', 10);
+          Alert.alert(
+            'Too Many Requests ⏳',
+            `Please wait ${waitSeconds} seconds before requesting another OTP.\n\nThis is a security measure to prevent abuse.`
+          );
+          // Start a longer cooldown
+          const nextAt = Date.now() + waitSeconds * 1000;
+          try { await AsyncStorage.setItem(keyResendAt(signedInUserId), `${nextAt}`); } catch { }
+          startResendTimer(waitSeconds);
+        } else if (errorType.startsWith('HTTP_ERROR:')) {
+          const statusCode = errorType.split(':')[1];
+          Alert.alert(
+            'Service Error ⚠️',
+            `Email service returned error code ${statusCode}.\n\nPlease try again in a few moments or contact support if this continues.`
+          );
+        } else if (errorType === 'NETWORK_ERROR') {
+          Alert.alert(
+            'Network Error 📡',
+            'Could not connect to email service.\n\nPlease check your internet connection and try again.'
+          );
+        } else {
+          Alert.alert(
+            'Resend Failed ❌',
+            'Could not resend OTP. Please try again or contact support.\n\nIf you already received an OTP, you can enter it below.'
+          );
+        }
+        console.log('⚠️ OTP resend failed:', errorType);
       }
 
     } catch (error) {

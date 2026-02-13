@@ -69,6 +69,7 @@ import { supabase } from '../supabase';
 import { launchCamera, launchImageLibrary, CameraOptions, ImageLibraryOptions, Asset } from 'react-native-image-picker';
 import { useAlert } from '../context/AlertContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useOffice } from '../context/OfficeContext';
 
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import NotificationService from '../services/NotificationService';
@@ -293,6 +294,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   const isFocused = useIsFocused();
   const isMountedRef = useRef(true);
   
+  // Office Context
+  const { currentOffice, getCurrentOfficeId } = useOffice();
+  
   // UI State
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -504,7 +508,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         // Then load transactions with the correct cash adjustment
         console.log('📊 Loading transactions for date:', selectedDate.toISOString().split('T')[0]);
         setLoading(true);
-        const allTransactions = await getAllTransactionsForDate(selectedDate);
+        const currentOfficeId = getCurrentOfficeId();
+        console.log('🏢 Loading transactions for office:', currentOfficeId, currentOffice?.name);
+        const allTransactions = await getAllTransactionsForDate(selectedDate, currentOfficeId || undefined);
         console.log('📊 AUTO REFRESH: Raw transactions loaded:', allTransactions.length, 'items');
         console.log('📊 AUTO REFRESH: Raw transactions details:', allTransactions);
         
@@ -720,7 +726,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     };
     
     loadData();
-  }, [selectedDate, showAlert]);
+  }, [selectedDate, currentOffice, showAlert]);
 
 
   // Refresh cash adjustment when screen gains focus (e.g., returning from ManageCash)
@@ -1202,7 +1208,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       setSelectedGallery(new Set());
       
       console.log('📊 MANUAL REFRESH: Loading raw transactions...');
-      const allTransactions = await getAllTransactionsForDate(dateToLoad); // This now includes majuri
+      const currentOfficeId = getCurrentOfficeId();
+      console.log('🏢 MANUAL REFRESH: Loading transactions for office:', currentOfficeId, currentOffice?.name);
+      const allTransactions = await getAllTransactionsForDate(dateToLoad, currentOfficeId || undefined); // This now includes majuri
       console.log('📊 MANUAL REFRESH: Raw transactions loaded:', allTransactions.length, 'items');
       console.log('📊 MANUAL REFRESH: Raw transactions details:', allTransactions);
 
@@ -1420,7 +1428,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         setRefreshing(false);
       }
     }
-  }, [selectedDate, manageCashAdjustment, refreshProofCounts, showAlert]);
+  }, [selectedDate, manageCashAdjustment, currentOffice, refreshProofCounts, showAlert]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1470,16 +1478,24 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   const loadManageCashAdjustment = useCallback(async (date: Date): Promise<number> => {
     try {
       const dateKey = formatDateKey(date);
+      const officeId = getCurrentOfficeId();
+      
+      if (!officeId) {
+        console.warn('No office selected, cannot load cash adjustment');
+        return 0;
+      }
+
       const { data, error } = await supabase
         .from('daily_cash_adjustments')
         .select('adjustment')
         .eq('date_key', dateKey)
+        .eq('office_id', officeId)
         .single();
       return data?.adjustment || 0;
     } catch (e) {
       return 0;
     }
-  }, []);
+  }, [getCurrentOfficeId]);
   // Handle item edit
   const handleEditItemInternal = useCallback(async (item: TransactionItem) => {
     // Vibration feedback for edit action
@@ -1530,9 +1546,16 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   const saveManageCashAdjustment = async (date: Date, value: number) => {
     try {
       const dateKey = formatDateKey(date);
+      const officeId = getCurrentOfficeId();
+      
+      if (!officeId) {
+        console.warn('No office selected, cannot save cash adjustment');
+        return;
+      }
+
       const { error } = await supabase
         .from('daily_cash_adjustments')
-        .upsert({ date_key: dateKey, adjustment: value }, { onConflict: 'date_key' });
+        .upsert({ date_key: dateKey, office_id: officeId, adjustment: value }, { onConflict: 'date_key,office_id' });
       if (error) console.warn('Failed saving manage cash:', error.message);
     } catch (e) {
       console.warn('Failed saving manage cash');
@@ -2274,6 +2297,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #1976D2; padding-bottom: 15px; }
         .header h1 { font-size: 24px; color: #1976D2; margin-bottom: 8px; font-weight: bold; }
         .header h2 { font-size: 18px; color: #555; margin-bottom: 10px; }
+        .header .office-info { font-size: 14px; color: #666; margin-top: 8px; font-style: italic; }
         .summary { padding: 15px; border: 2px solid #1976D2; border-radius: 8px; background-color: #f5f5f5; page-break-inside: avoid; }
         .summary h3 { margin-top: 0; margin-bottom: 15px; text-align: center; color: #1976D2; border-bottom: none; }
         .summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
@@ -2290,6 +2314,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       <div class="header">
         <h1>YASH ROADLINES</h1>
         <h2>Daily Report - ${selectedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</h2>
+        ${currentOffice ? `<div class="office-info">Office: ${currentOffice.name}</div>` : ''}
       </div>
       <div class="section">
         <h3>Transaction Breakdown (${transactions.length})</h3>
@@ -2329,6 +2354,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       </div>
       <div class="footer">
         <div><strong>YASH ROADLINES</strong></div>
+        ${currentOffice ? `<div>Office: ${currentOffice.name}</div>` : ''}
         <div>Report Generated on: ${new Date().toLocaleString('en-IN', {
           year: 'numeric',
           month: 'long',

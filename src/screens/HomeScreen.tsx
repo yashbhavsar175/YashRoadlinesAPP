@@ -19,6 +19,8 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useUserAccess } from '../context/UserAccessContext';
+import { useOffice } from '../context/OfficeContext';
+import OfficeSelector from '../components/OfficeSelector';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { supabase } from '../supabase';
@@ -64,6 +66,7 @@ const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenProps): React.JSX.Element {
   const { navigate, replace } = navigation;
   const { isAdmin: contextIsAdmin, screenAccess, hasScreenAccess: contextHasScreenAccess, refreshPermissions, isLoading: contextLoading, lastUpdated } = useUserAccess();
+  const { currentOffice, getCurrentOfficeId, isLoading: officeLoading, availableOffices, switchOffice } = useOffice();
   const [userInitial, setUserInitial] = useState<string>('');
   const [userName, setUserName] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('User');
@@ -243,16 +246,21 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       // Clear previous data to force refresh
       setFilteredData([]);
       
+      // Get current office ID for filtering
+      const officeId = getCurrentOfficeId();
+      console.log('HomeScreen - loadMajurData - Current office ID:', officeId);
+      
       // पहले sync करें - Solution 1
       console.log('HomeScreen - loadMajurData - Starting data sync...');
       await syncAllDataFixed();
       console.log('HomeScreen - loadMajurData - Data sync completed');
       
-      // Load both majuri and uppad/jama entries
-      const allMajuri: AgencyMajuri[] = await getAgencyMajuri();
-      const allUppadJama: UppadJamaEntry[] = await getUppadJamaEntries();
+      // Load both majuri and uppad/jama entries with office filter
+      const allMajuri: AgencyMajuri[] = await getAgencyMajuri(officeId || undefined);
+      const allUppadJama: UppadJamaEntry[] = await getUppadJamaEntries(officeId || undefined);
       
-      console.log('HomeScreen - loadMajurData - Total uppad/jama entries:', allUppadJama.length);
+      console.log('HomeScreen - loadMajurData - Total majuri entries for office:', allMajuri.length);
+      console.log('HomeScreen - loadMajurData - Total uppad/jama entries for office:', allUppadJama.length);
       console.log('HomeScreen - loadMajurData - Recent uppad/jama sample:', allUppadJama.slice(0, 3));
       
       // Get current date and set time to start of day
@@ -420,7 +428,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       setMajurLoading(false);
       setRefreshing(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, getCurrentOfficeId, currentOffice]);
 
 
   const handleDateChange = (date: Date) => {
@@ -476,6 +484,17 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       screenAccessCount: Object.keys(screenAccess).length
     });
   }, [lastUpdated, contextIsAdmin, screenAccess]);
+
+  // Reload data when office changes (for majur users)
+  useEffect(() => {
+    if (userType === 'majur' && currentOffice) {
+      console.log('🏢 HomeScreen: Office changed, reloading majur data...', {
+        officeId: currentOffice.id,
+        officeName: currentOffice.name
+      });
+      loadMajurData();
+    }
+  }, [currentOffice, userType, loadMajurData]);
 
   // Real-time subscription for majur dashboard auto-refresh
   useEffect(() => {
@@ -597,6 +616,23 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       fontSize: 14,
       marginTop: 4,
       fontWeight: '400',
+    },
+    adminOfficeSelector: {
+      backgroundColor: BWColors.surface,
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: BWColors.borderLight,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    officeSelectorLabel: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: BWColors.textPrimary,
+    },
+    officeSelectorDropdown: {
+      flex: 1,
     },
     avatar: {
       width: 48,
@@ -1180,6 +1216,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={styles.appBarSubtitle}>
               {userName ? `${userName} • ${userRole}` : userRole}
+              {currentOffice && ` • ${currentOffice.name}`}
             </Text>
           </View>
         </View>
@@ -1205,6 +1242,22 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         </TouchableOpacity>
         </View>
       </View>
+
+      {/* Admin Office Selector - Only for Admin users */}
+      {contextIsAdmin && (
+        <View style={styles.adminOfficeSelector}>
+          <Text style={styles.officeSelectorLabel}>Select Office:</Text>
+          <View style={styles.officeSelectorDropdown}>
+            <OfficeSelector
+              currentOffice={currentOffice}
+              availableOffices={availableOffices}
+              onOfficeChange={switchOffice}
+              showAllOfficesOption={true}
+              disabled={false}
+            />
+          </View>
+        </View>
+      )}
 
       {userType === 'majur' ? (
   // MAJUR DASHBOARD - Black & White Theme

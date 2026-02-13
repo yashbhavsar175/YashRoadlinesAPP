@@ -282,6 +282,8 @@ class UserAccessHelper {
     isAdmin: boolean;
     screenAccess: ScreenAccess;
     userEmail?: string;
+    assignedOfficeId?: string;
+    assignedOfficeName?: string;
   }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -289,10 +291,24 @@ class UserAccessHelper {
       const isAdmin = await this.isUserAdmin();
       const screenAccess = await this.getUserScreenAccess();
 
+      // Get office assignment from user profile
+      let assignedOfficeId: string | undefined;
+      let assignedOfficeName: string | undefined;
+
+      if (user) {
+        const profile = await getProfile(user.id);
+        if (profile) {
+          assignedOfficeId = profile.office_id;
+          assignedOfficeName = profile.office_name;
+        }
+      }
+
       return {
         isAdmin,
         screenAccess,
-        userEmail: user?.email
+        userEmail: user?.email,
+        assignedOfficeId,
+        assignedOfficeName
       };
     } catch (error) {
       console.error('🔐 UserAccessHelper: Error refreshing user access:', error);

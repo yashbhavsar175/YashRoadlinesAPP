@@ -7,7 +7,7 @@ import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Icon from 'react-native-vector-icons/Ionicons';
 import ReactNativeBiometrics from 'react-native-biometrics';
-import { listAllProfiles, listProfilesExceptCurrent, setUserActive, updateUserType, createProfileIfMissing, getProfile, UserProfile, savePerson, getPersons, Person, saveUppadJamaEntry, syncAllDataFixed } from '../data/Storage'; // Added saveUppadJamaEntry and syncAllDataFixed
+import { listAllProfiles, listProfilesExceptCurrent, setUserActive, updateUserType, createProfileIfMissing, getProfile, UserProfile, savePerson, getPersons, Person, saveUppadJamaEntry, syncAllDataFixed, getOffices } from '../data/Storage'; // Added getOffices
 import Dropdown from '../components/Dropdown'; // Added Dropdown import
 
 type AdminPanelScreenNavigationProp = NavigationProp<RootStackParamList, 'AdminPanel'>;
@@ -21,6 +21,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
   const [newUsername, setNewUsername] = useState<string>('');
   const [newUserPassword, setNewUserPassword] = useState<string>('');
   const [newUserType, setNewUserType] = useState<'normal' | 'majur'>('normal');
+  const [newUserOfficeId, setNewUserOfficeId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState<boolean>(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -50,6 +51,10 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
   const [expandManageAgencies, setExpandManageAgencies] = useState<boolean>(false);
   const [expandPersonMgmt, setExpandPersonMgmt] = useState<boolean>(false);
   const [expandUppadJamaEntry, setExpandUppadJamaEntry] = useState<boolean>(false); // New state for Uppad/Jama Entry
+  
+  // Offices state
+  const [offices, setOffices] = useState<any[]>([]);
+  const [officesLoading, setOfficesLoading] = useState<boolean>(false);
 
   const toggleUserSection = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -93,9 +98,32 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
         setNewUsername('');
         setNewUserPassword('');
         setNewUserType('normal');
+        setNewUserOfficeId('');
+        
         if (data.user?.id) {
           // Ensure profile exists for manage users list
           await createProfileIfMissing(data.user.id, email, newUserType);
+          
+          // Assign office if selected
+          if (newUserOfficeId) {
+            try {
+              const { error: officeError } = await supabase
+                .from('user_profiles')
+                .update({ office_id: newUserOfficeId })
+                .eq('id', data.user.id);
+              
+              if (officeError) {
+                console.error('Error assigning office:', officeError);
+                Alert.alert('Warning', 'User created but office assignment failed.');
+              } else {
+                const selectedOffice = offices.find(o => o.id === newUserOfficeId);
+                console.log(`✅ User assigned to office: ${selectedOffice?.name}`);
+              }
+            } catch (err) {
+              console.error('Error in office assignment:', err);
+            }
+          }
+          
           await loadUsers();
         }
       }
@@ -123,7 +151,21 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
 
   useEffect(() => {
     loadUsers();
+    loadOffices();
   }, [loadUsers]);
+
+  const loadOffices = useCallback(async () => {
+    setOfficesLoading(true);
+    try {
+      const officeList = await getOffices();
+      setOffices(officeList);
+      console.log('📋 Loaded offices for user creation:', officeList.length);
+    } catch (error) {
+      console.error('Error loading offices:', error);
+    } finally {
+      setOfficesLoading(false);
+    }
+  }, []);
 
   const loadPersons = useCallback(async () => {
     setPersonsLoading(true);
@@ -398,6 +440,29 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                       onValueChange={(value: string) => setNewUserType(value as 'normal' | 'majur')}
                       placeholder="Select user type"
                     />
+                    
+                    <Text style={styles.inputLabel}>Office Assignment</Text>
+                    {officesLoading ? (
+                      <Text style={GlobalStyles.bodyText}>Loading offices...</Text>
+                    ) : offices.length === 0 ? (
+                      <Text style={[GlobalStyles.bodyText, { color: Colors.error }]}>
+                        No offices available. Please create an office first.
+                      </Text>
+                    ) : (
+                      <Dropdown
+                        options={[
+                          { label: 'No Office (Optional)', value: '' },
+                          ...offices.map(office => ({
+                            label: office.name,
+                            value: office.id
+                          }))
+                        ]}
+                        selectedValue={newUserOfficeId}
+                        onValueChange={(value: string) => setNewUserOfficeId(value)}
+                        placeholder="Select office (optional)"
+                      />
+                    )}
+                    
                     <TouchableOpacity onPress={handleCreateUser} disabled={loading} style={[GlobalStyles.buttonPrimary, loading && styles.disabledButton]}>
                       <Text style={GlobalStyles.buttonPrimaryText}>{loading ? "Creating User..." : "Create User"}</Text>
                     </TouchableOpacity>
@@ -696,6 +761,20 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                   <View style={styles.subSectionHeaderLeft}>
                     <Icon name="person-outline" size={20} color={Colors.textPrimary} style={{ marginRight: 8 }} />
                     <Text style={styles.subSectionTitle}>User Display Names</Text>
+                  </View>
+                  <Icon name="chevron-forward" size={22} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Office Management */}
+              <View style={styles.subSection}>
+                <TouchableOpacity
+                  onPress={() => navigate('OfficeManagement')}
+                  style={styles.subSectionHeader}
+                >
+                  <View style={styles.subSectionHeaderLeft}>
+                    <Icon name="business-outline" size={20} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+                    <Text style={styles.subSectionTitle}>Office Management</Text>
                   </View>
                   <Icon name="chevron-forward" size={22} color={Colors.textSecondary} />
                 </TouchableOpacity>

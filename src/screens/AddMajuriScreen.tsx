@@ -9,6 +9,7 @@ import { GlobalStyles } from '../theme/styles';
 import NotificationService from '../services/NotificationService';
 // ✨ Optimized: Using common components
 import { CommonHeader, CommonInput, LoadingSpinner, EmptyState, Dropdown } from '../components';
+import { useOffice } from '../context/OfficeContext';
 
 type AddMajuriScreenNavigationProp = NavigationProp<RootStackParamList, 'AddMajuri'>;
 
@@ -19,6 +20,7 @@ interface AddMajuriScreenProps {
 function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Element {
   const { showAlert } = useAlert();
   const { goBack } = navigation;
+  const { getCurrentOfficeId } = useOffice();
   const [selectedAgency, setSelectedAgency] = useState<string>('');
   const [majuriAmount, setMajuriAmount] = useState<string>('');
   const [description, setDescription] = useState<string>('');
@@ -36,7 +38,8 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const storedEntries: AgencyMajuri[] = await getAgencyMajuri();
+      const currentOfficeId = getCurrentOfficeId();
+      const storedEntries: AgencyMajuri[] = await getAgencyMajuri(currentOfficeId || undefined);
       setMajuriEntries(storedEntries.sort((a, b) => new Date(b.majuri_date).getTime() - new Date(a.majuri_date).getTime()));
 
       const storedAgencies: Agency[] = await getAgencies();
@@ -54,7 +57,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
     } finally {
       setLoading(false);
     }
-  }, [selectedAgency]);
+  }, [selectedAgency, getCurrentOfficeId]);
 
   useEffect(() => {
     loadData();

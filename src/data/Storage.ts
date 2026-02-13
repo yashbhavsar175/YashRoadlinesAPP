@@ -4,6 +4,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, SUPABASE_URL } from '../supabase';
 import * as Keychain from 'react-native-keychain';
 import * as CryptoJS from 'crypto-js';
+import { queryPerformanceAnalyzer } from '../utils/performanceMonitor';
+
+export interface Office {
+  id: string;
+  name: string;
+  address?: string;
+  is_active: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface Agency {
   id: string;
@@ -29,6 +40,8 @@ export interface AgencyPayment {
   amount: number;
   bill_no: string;
   payment_date: string;
+  office_id?: string;
+  office_name?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -42,6 +55,8 @@ export interface AgencyMajuri {
   amount: number;
   description?: string;
   majuri_date: string;
+  office_id?: string;
+  office_name?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -58,6 +73,8 @@ export interface DriverTransaction {
   transaction_type: 'credit' | 'debit';
   recorded_by: string;
   transaction_date: string;
+  office_id?: string;
+  office_name?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -72,6 +89,8 @@ export interface TruckFuelEntry {
   price_per_liter: number;
   total_price: number;
   fuel_date: string;
+  office_id?: string;
+  office_name?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -84,6 +103,8 @@ export interface GeneralEntry {
   entry_type: 'debit' | 'credit';
   entry_date: string;
   agency_name?: string;
+  office_id?: string;
+  office_name?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -109,6 +130,8 @@ export interface UserProfile {
   is_admin?: boolean;
   is_active?: boolean;
   screen_access?: string[];
+  office_id?: string;
+  office_name?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -121,6 +144,8 @@ export interface AgencyEntry {
   amount: number;
   entry_type: 'credit' | 'debit';
   entry_date: string;
+  office_id?: string;
+  office_name?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -135,6 +160,8 @@ export interface UppadJamaEntry {
   entry_type: 'credit' | 'debit';
   entry_date: string;
   recorded_by?: string;
+  office_id?: string;
+  office_name?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -151,6 +178,8 @@ export interface CashRecord {
   status: 'pending_verification' | 'verified_correct' | 'verified_incorrect';
   admin_id: string;
   difference?: number;
+  office_id?: string;
+  office_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -218,11 +247,40 @@ const formatDateForComparison = (date: Date): string => {
 };
 
 // =====================================================
-// 4. SYNC MANAGER CLASS
+// 4. SYNC MANAGER CLASS (Enhanced with Office Support)
 // =====================================================
+
+/**
+ * Interface for pending sync operations
+ */
+interface PendingOperation {
+  id: string;
+  table: string;
+  action: 'INSERT' | 'UPDATE' | 'DELETE';
+  data: any;
+  office_id?: string;
+  timestamp: string;
+  retryCount?: number;
+}
+
+/**
+ * Interface for sync conflict
+ */
+interface SyncConflict {
+  operationId: string;
+  table: string;
+  recordId: string;
+  reason: string;
+  localOfficeId?: string;
+  serverOfficeId?: string;
+  timestamp: string;
+}
+
 class SyncManager {
   private static instance: SyncManager;
   private syncInProgress = false;
+  private readonly MAX_RETRY_COUNT = 3;
+  private readonly CONFLICT_LOG_KEY = 'sync_conflicts';
 
   static getInstance(): SyncManager {
     if (!SyncManager.instance) {
@@ -231,87 +289,407 @@ class SyncManager {
     return SyncManager.instance;
   }
 
-  async addPendingOperation(operation: any): Promise<void> {
+  /**
+   * Add a pending operation to the sync queue with office_id
+   * @param operation - The operation to queue
+   */
+  async addPendingOperation(operation: Omit<PendingOperation, 'id' | 'timestamp' | 'retryCount'>): Promise<void> {
     try {
+      console.log('📝 SyncManager: Adding pending operation', { 
+        table: operation.table, 
+        action: operation.action,
+        office_id: operation.office_id 
+      });
+
       const existing = await AsyncStorage.getItem(OFFLINE_KEYS.PENDING_SYNC);
-      const pending = existing ? JSON.parse(existing) : [];
-      pending.push({
+      const pending: PendingOperation[] = existing ? JSON.parse(existing) : [];
+      
+      const newOperation: PendingOperation = {
         ...operation,
         timestamp: new Date().toISOString(),
-        id: Date.now().toString()
-      });
+        id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        retryCount: 0
+      };
+
+      pending.push(newOperation);
       await AsyncStorage.setItem(OFFLINE_KEYS.PENDING_SYNC, JSON.stringify(pending));
+      
+      console.log('✅ SyncManager: Operation queued successfully', { id: newOperation.id });
     } catch (error) {
-      console.error('Error adding pending operation:', error);
+      console.error('❌ SyncManager: Error adding pending operation:', error);
+      throw error;
     }
   }
 
+  /**
+   * Sync all pending operations to the backend
+   * @returns true if all operations synced successfully
+   */
   async syncPendingOperations(): Promise<boolean> {
-    if (this.syncInProgress) return false;
+    if (this.syncInProgress) {
+      console.log('⚠️ SyncManager: Sync already in progress');
+      return false;
+    }
     
     this.syncInProgress = true;
+    console.log('🔄 SyncManager: Starting sync of pending operations...');
+    
     try {
       const pendingStr = await AsyncStorage.getItem(OFFLINE_KEYS.PENDING_SYNC);
-      if (!pendingStr) return true;
+      if (!pendingStr) {
+        console.log('✅ SyncManager: No pending operations to sync');
+        return true;
+      }
 
-      const pending = JSON.parse(pendingStr);
+      const pending: PendingOperation[] = JSON.parse(pendingStr);
+      console.log(`📊 SyncManager: Found ${pending.length} pending operations`);
+
       const successful: string[] = [];
+      const failed: PendingOperation[] = [];
 
       for (const operation of pending) {
         try {
+          // Validate office_id before syncing
+          const validationResult = await this.validateOfficeId(operation);
+          
+          if (!validationResult.isValid) {
+            console.warn('⚠️ SyncManager: Office validation failed', {
+              operationId: operation.id,
+              reason: validationResult.reason
+            });
+            
+            // Log conflict
+            await this.logSyncConflict({
+              operationId: operation.id,
+              table: operation.table,
+              recordId: operation.data.id,
+              reason: validationResult.reason || 'Unknown validation error',
+              localOfficeId: operation.office_id,
+              serverOfficeId: validationResult.serverOfficeId,
+              timestamp: new Date().toISOString()
+            });
+
+            // Handle conflict resolution
+            const resolved = await this.resolveOfficeConflict(operation, validationResult);
+            
+            if (resolved) {
+              successful.push(operation.id);
+              console.log('✅ SyncManager: Conflict resolved', { operationId: operation.id });
+            } else {
+              // Increment retry count
+              operation.retryCount = (operation.retryCount || 0) + 1;
+              
+              if (operation.retryCount >= this.MAX_RETRY_COUNT) {
+                console.error('❌ SyncManager: Max retries reached', { operationId: operation.id });
+                // Keep in failed list but don't retry
+              } else {
+                failed.push(operation);
+              }
+            }
+            continue;
+          }
+
+          // Execute the operation
           const result = await this.executePendingOperation(operation);
+          
           if (result) {
             successful.push(operation.id);
+            console.log('✅ SyncManager: Operation synced', { 
+              operationId: operation.id,
+              table: operation.table 
+            });
+          } else {
+            operation.retryCount = (operation.retryCount || 0) + 1;
+            if (operation.retryCount < this.MAX_RETRY_COUNT) {
+              failed.push(operation);
+            }
+            console.warn('⚠️ SyncManager: Operation failed', { 
+              operationId: operation.id,
+              retryCount: operation.retryCount 
+            });
           }
         } catch (error) {
-          console.error('Failed to sync operation:', operation, error);
+          console.error('❌ SyncManager: Error syncing operation:', operation.id, error);
+          operation.retryCount = (operation.retryCount || 0) + 1;
+          if (operation.retryCount < this.MAX_RETRY_COUNT) {
+            failed.push(operation);
+          }
         }
       }
 
-      const remaining = pending.filter((op: any) => !successful.includes(op.id));
-      await AsyncStorage.setItem(OFFLINE_KEYS.PENDING_SYNC, JSON.stringify(remaining));
+      // Update pending operations list with only failed operations
+      await AsyncStorage.setItem(OFFLINE_KEYS.PENDING_SYNC, JSON.stringify(failed));
       
+      // Update last sync timestamp
       await AsyncStorage.setItem(OFFLINE_KEYS.LAST_SYNC, new Date().toISOString());
+      
+      console.log(`📊 SyncManager: Sync complete - ${successful.length} successful, ${failed.length} failed`);
       
       return successful.length === pending.length;
     } catch (error) {
-      console.error('Sync error:', error);
+      console.error('❌ SyncManager: Sync error:', error);
       return false;
     } finally {
       this.syncInProgress = false;
     }
   }
 
-  private async executePendingOperation(operation: any): Promise<boolean> {
+  /**
+   * Validate that the office_id in the operation is still valid
+   * @param operation - The operation to validate
+   * @returns Validation result with reason if invalid
+   */
+  private async validateOfficeId(operation: PendingOperation): Promise<{
+    isValid: boolean;
+    reason?: string;
+    serverOfficeId?: string;
+  }> {
+    try {
+      // If operation doesn't have office_id, it's valid (legacy data or non-office tables)
+      if (!operation.office_id) {
+        return { isValid: true };
+      }
+
+      // Check if the office still exists and is active
+      const { data: office, error } = await supabase
+        .from('offices')
+        .select('id, is_active')
+        .eq('id', operation.office_id)
+        .single();
+
+      if (error || !office) {
+        return { 
+          isValid: false, 
+          reason: 'Office no longer exists' 
+        };
+      }
+
+      if (!office.is_active) {
+        return { 
+          isValid: false, 
+          reason: 'Office is inactive' 
+        };
+      }
+
+      // For UPDATE operations, check if the record's office_id matches
+      if (operation.action === 'UPDATE' && operation.data.id) {
+        const { data: existingRecord } = await supabase
+          .from(operation.table)
+          .select('office_id')
+          .eq('id', operation.data.id)
+          .single();
+
+        if (existingRecord && existingRecord.office_id !== operation.office_id) {
+          return {
+            isValid: false,
+            reason: 'Office mismatch with server record',
+            serverOfficeId: existingRecord.office_id
+          };
+        }
+      }
+
+      return { isValid: true };
+    } catch (error) {
+      console.error('❌ SyncManager: Error validating office_id:', error);
+      // On validation error, assume valid to allow sync attempt
+      return { isValid: true };
+    }
+  }
+
+  /**
+   * Resolve office_id conflicts
+   * @param operation - The operation with conflict
+   * @param validationResult - The validation result
+   * @returns true if conflict was resolved
+   */
+  private async resolveOfficeConflict(
+    operation: PendingOperation,
+    validationResult: { reason?: string; serverOfficeId?: string }
+  ): Promise<boolean> {
+    try {
+      console.log('🔧 SyncManager: Attempting to resolve office conflict', {
+        operationId: operation.id,
+        reason: validationResult.reason
+      });
+
+      // Strategy 1: If office no longer exists, try to find default office
+      if (validationResult.reason === 'Office no longer exists' || 
+          validationResult.reason === 'Office is inactive') {
+        
+        // Get the default office (first active office)
+        const { data: defaultOffice } = await supabase
+          .from('offices')
+          .select('id, name')
+          .eq('is_active', true)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .single();
+
+        if (defaultOffice) {
+          console.log('🔧 SyncManager: Reassigning to default office', { 
+            officeId: defaultOffice.id,
+            officeName: defaultOffice.name 
+          });
+          
+          // Update operation with default office
+          operation.office_id = defaultOffice.id;
+          operation.data.office_id = defaultOffice.id;
+          
+          // Try to execute with new office_id
+          return await this.executePendingOperation(operation);
+        }
+      }
+
+      // Strategy 2: For office mismatch, prioritize server data
+      if (validationResult.reason === 'Office mismatch with server record' && 
+          validationResult.serverOfficeId) {
+        
+        console.log('🔧 SyncManager: Using server office_id', { 
+          serverOfficeId: validationResult.serverOfficeId 
+        });
+        
+        // Update operation to match server
+        operation.office_id = validationResult.serverOfficeId;
+        operation.data.office_id = validationResult.serverOfficeId;
+        
+        // Try to execute with server's office_id
+        return await this.executePendingOperation(operation);
+      }
+
+      console.warn('⚠️ SyncManager: Could not resolve conflict');
+      return false;
+    } catch (error) {
+      console.error('❌ SyncManager: Error resolving conflict:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Execute a pending operation
+   * @param operation - The operation to execute
+   * @returns true if successful
+   */
+  private async executePendingOperation(operation: PendingOperation): Promise<boolean> {
     const { table, action, data } = operation;
     
     try {
+      console.log('⚡ SyncManager: Executing operation', { 
+        table, 
+        action, 
+        id: data.id,
+        office_id: operation.office_id 
+      });
+
       switch (action) {
         case 'INSERT':
           const { error: insertError } = await supabase
             .from(table)
             .insert([data]);
-          return !insertError;
+          
+          if (insertError) {
+            console.error('❌ SyncManager: Insert error:', insertError);
+            return false;
+          }
+          return true;
           
         case 'UPDATE':
           const { error: updateError } = await supabase
             .from(table)
             .update(data)
             .eq('id', data.id);
-          return !updateError;
+          
+          if (updateError) {
+            console.error('❌ SyncManager: Update error:', updateError);
+            return false;
+          }
+          return true;
           
         case 'DELETE':
           const { error: deleteError } = await supabase
             .from(table)
             .delete()
             .eq('id', data.id);
-          return !deleteError;
+          
+          if (deleteError) {
+            console.error('❌ SyncManager: Delete error:', deleteError);
+            return false;
+          }
+          return true;
           
         default:
+          console.error('❌ SyncManager: Unknown action:', action);
           return false;
       }
-    } catch {
+    } catch (error) {
+      console.error('❌ SyncManager: Execution error:', error);
       return false;
+    }
+  }
+
+  /**
+   * Log a sync conflict for admin review
+   * @param conflict - The conflict details
+   */
+  private async logSyncConflict(conflict: SyncConflict): Promise<void> {
+    try {
+      const existing = await AsyncStorage.getItem(this.CONFLICT_LOG_KEY);
+      const conflicts: SyncConflict[] = existing ? JSON.parse(existing) : [];
+      
+      conflicts.push(conflict);
+      
+      // Keep only last 100 conflicts
+      if (conflicts.length > 100) {
+        conflicts.splice(0, conflicts.length - 100);
+      }
+      
+      await AsyncStorage.setItem(this.CONFLICT_LOG_KEY, JSON.stringify(conflicts));
+      
+      console.log('📝 SyncManager: Conflict logged', { operationId: conflict.operationId });
+    } catch (error) {
+      console.error('❌ SyncManager: Error logging conflict:', error);
+    }
+  }
+
+  /**
+   * Get all logged sync conflicts
+   * @returns Array of sync conflicts
+   */
+  async getSyncConflicts(): Promise<SyncConflict[]> {
+    try {
+      const existing = await AsyncStorage.getItem(this.CONFLICT_LOG_KEY);
+      return existing ? JSON.parse(existing) : [];
+    } catch (error) {
+      console.error('❌ SyncManager: Error getting conflicts:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Clear all logged sync conflicts
+   */
+  async clearSyncConflicts(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(this.CONFLICT_LOG_KEY);
+      console.log('✅ SyncManager: Conflicts cleared');
+    } catch (error) {
+      console.error('❌ SyncManager: Error clearing conflicts:', error);
+    }
+  }
+
+  /**
+   * Get pending operations count
+   * @returns Number of pending operations
+   */
+  async getPendingOperationsCount(): Promise<number> {
+    try {
+      const pendingStr = await AsyncStorage.getItem(OFFLINE_KEYS.PENDING_SYNC);
+      if (!pendingStr) return 0;
+      
+      const pending: PendingOperation[] = JSON.parse(pendingStr);
+      return pending.length;
+    } catch (error) {
+      console.error('❌ SyncManager: Error getting pending count:', error);
+      return 0;
     }
   }
 };
@@ -325,6 +703,7 @@ export const saveUppadJamaEntry = async (entry: Partial<UppadJamaEntry> & {
   entry_type: 'credit' | 'debit';
   description?: string;
   entry_date?: string;
+  office_id?: string;
   // source?: 'home_screen' | 'admin_panel'; // Removed - not in DB
 }): Promise<boolean> => {
   try {
@@ -346,6 +725,7 @@ export const saveUppadJamaEntry = async (entry: Partial<UppadJamaEntry> & {
       entry_type: entry.entry_type,
       recorded_by: recordedBy,
       entry_date: entry.entry_date || new Date().toISOString(),
+      office_id: entry.office_id || null,
       updated_at: new Date().toISOString(),
       // source: entry.source || 'home_screen', // Removed - column doesn't exist in DB
       ...(!isUpdate && user && { 
@@ -419,6 +799,7 @@ export const saveUppadJamaEntry = async (entry: Partial<UppadJamaEntry> & {
         table: 'uppad_jama_entries',
         action: isUpdate ? 'UPDATE' : 'INSERT',
         data: entryData,
+        office_id: entry.office_id || undefined
       });
       return true;
     }
@@ -447,7 +828,10 @@ export const saveUppadJamaEntry = async (entry: Partial<UppadJamaEntry> & {
   }
 };
 
-export const getUppadJamaEntries = async (): Promise<UppadJamaEntry[]> => {
+export const getUppadJamaEntries = async (officeId?: string): Promise<UppadJamaEntry[]> => {
+  const startTime = performance.now();
+  const queryName = officeId ? 'getUppadJamaEntries:filtered' : 'getUppadJamaEntries:all';
+  
   console.log('Storage - getUppadJamaEntries - Function called');
   try {
     const online = await isOnline();
@@ -455,10 +839,16 @@ export const getUppadJamaEntries = async (): Promise<UppadJamaEntry[]> => {
     
     if (online) {
       console.log('Storage - getUppadJamaEntries - Making Supabase query...');
-      const { data, error } = await supabase
+      let query = supabase
         .from('uppad_jama_entries')
-        .select('*')
-        .order('entry_date', { ascending: false });
+        .select('*');
+      
+      // Apply office filter if provided
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      const { data, error } = await query.order('entry_date', { ascending: false });
       
       console.log('Storage - getUppadJamaEntries - Supabase response:', { 
         dataLength: data?.length || 0, 
@@ -470,6 +860,10 @@ export const getUppadJamaEntries = async (): Promise<UppadJamaEntry[]> => {
         console.log('Storage - getUppadJamaEntries - Fetched from Supabase:', data.length, 'entries');
         console.log('Storage - getUppadJamaEntries - Sample data:', data.slice(0, 2));
         await AsyncStorage.setItem(OFFLINE_KEYS.UPPAD_JAMA_ENTRIES, JSON.stringify(data));
+        
+        const duration = performance.now() - startTime;
+        queryPerformanceAnalyzer.recordQuery(queryName, duration, officeId);
+        
         return data as any;
       } else if (error) {
         console.error('Storage - getUppadJamaEntries - Supabase error:', error);
@@ -477,14 +871,32 @@ export const getUppadJamaEntries = async (): Promise<UppadJamaEntry[]> => {
     }
     console.log('Storage - getUppadJamaEntries - Falling back to offline data');
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.UPPAD_JAMA_ENTRIES);
-    const offlineData = offline ? JSON.parse(offline) : [];
+    let offlineData = offline ? JSON.parse(offline) : [];
     console.log('Storage - getUppadJamaEntries - Offline data length:', offlineData.length);
+    
+    // Apply office filter to offline data if provided
+    if (officeId) {
+      offlineData = offlineData.filter((item: any) => item.office_id === officeId);
+    }
+    
+    const duration = performance.now() - startTime;
+    queryPerformanceAnalyzer.recordQuery(`${queryName}:offline`, duration, officeId);
+    
     return offlineData;
   } catch (error) {
     console.error('Storage - getUppadJamaEntries - Catch block error:', error);
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.UPPAD_JAMA_ENTRIES);
-    const fallbackData = offline ? JSON.parse(offline) : [];
+    let fallbackData = offline ? JSON.parse(offline) : [];
     console.log('Storage - getUppadJamaEntries - Fallback data length:', fallbackData.length);
+    
+    // Apply office filter to fallback data if provided
+    if (officeId) {
+      fallbackData = fallbackData.filter((item: any) => item.office_id === officeId);
+    }
+    
+    const duration = performance.now() - startTime;
+    queryPerformanceAnalyzer.recordQuery(`${queryName}:error`, duration, officeId);
+    
     return fallbackData;
   }
 };
@@ -1393,7 +1805,8 @@ export const saveAgency = async (agencyName: string): Promise<boolean> => {
       await SyncManager.getInstance().addPendingOperation({
         table: 'agencies',
         action: 'INSERT',
-        data: agencyData
+        data: agencyData,
+        office_id: undefined // Agencies are not office-specific
       });
       return true;
     }
@@ -1475,7 +1888,8 @@ export const savePerson = async (personName: string): Promise<SavePersonResult> 
       await SyncManager.getInstance().addPendingOperation({
         table: 'persons',
         action: 'INSERT',
-        data: personData
+        data: personData,
+        office_id: undefined // Persons are not office-specific
       });
       return { ok: true, reason: 'offline' };
     }
@@ -1714,7 +2128,7 @@ export const testEdgeFunctionConnection = async (): Promise<{
   }
 };
 
-export const deliverOtpAlternative = async (opts: { email: string; code: string }): Promise<boolean> => {
+export const deliverOtpAlternative = async (opts: { email: string; code: string }): Promise<{ success: boolean; error?: string }> => {
   try {
     const { data: sessionData } = await supabase.auth.getSession();
     const accessToken = sessionData?.session?.access_token;
@@ -1753,18 +2167,29 @@ export const deliverOtpAlternative = async (opts: { email: string; code: string 
         
         // Handle rate limiting
         if (res.status === 429) {
-          console.warn('⚠️ Rate limit hit, waiting 30 seconds...');
+          console.warn('⚠️ Rate limit hit');
           const retryAfter = json?.error?.includes('29s') ? 30 : 60;
-          console.log(`⏳ Waiting ${retryAfter} seconds before retry...`);
-          return false; // Don't retry automatically, let user try again
+          return { 
+            success: false, 
+            error: `RATE_LIMIT:${retryAfter}` 
+          };
         }
         
-        if (!res.ok) return false;
+        if (!res.ok) {
+          return { 
+            success: false, 
+            error: `HTTP_ERROR:${res.status}` 
+          };
+        }
+        
         const ok = (json?.success === true) || (json?.sent === true) || (json?.ok === true) || (json?.status === 'success') || (json?.status === 'sent');
-        return !!ok;
+        return { success: !!ok };
       } catch (fe) {
         console.error('Direct fetch fallback failed:', fe);
-        return false;
+        return { 
+          success: false, 
+          error: 'NETWORK_ERROR' 
+        };
       }
     }
 
@@ -1772,15 +2197,21 @@ export const deliverOtpAlternative = async (opts: { email: string; code: string 
 
     if (isSuccessAlt) {
       console.log('OTP email sent successfully!');
-      return true;
+      return { success: true };
     }
 
     console.error('Edge Function returned unsuccessful response:', data);
-    return false;
+    return { 
+      success: false, 
+      error: 'FUNCTION_ERROR' 
+    };
 
   } catch (error) {
     console.error('Complete OTP delivery failure:', error);
-    return false;
+    return { 
+      success: false, 
+      error: 'UNKNOWN_ERROR' 
+    };
   }
 };
 export const debugEdgeFunctionStatus = async (): Promise<void> => {
@@ -2421,7 +2852,7 @@ export const validateEdgeFunctionEnvironment = async (): Promise<{
 // =====================================================
 // 9. AGENCY PAYMENTS
 // =====================================================
-export const saveAgencyPayment = async (payment: Partial<AgencyPayment> & { agency_name: string; amount: number; bill_no: string; }): Promise<boolean> => {
+export const saveAgencyPayment = async (payment: Partial<AgencyPayment> & { agency_name: string; amount: number; bill_no: string; office_id?: string; }): Promise<boolean> => {
   try {
     const online = await isOnline();
     const agencies = await getAgencies();
@@ -2435,6 +2866,7 @@ export const saveAgencyPayment = async (payment: Partial<AgencyPayment> & { agen
       bill_no: payment.bill_no,
       payment_date: payment.payment_date || new Date().toISOString(),
       agency_id: agency?.id || null,
+      office_id: payment.office_id || null,
       updated_at: new Date().toISOString(),
       ...(!isUpdate && { created_by: (await supabase.auth.getUser()).data.user?.id })
     };
@@ -2518,7 +2950,8 @@ export const saveAgencyPayment = async (payment: Partial<AgencyPayment> & { agen
       await SyncManager.getInstance().addPendingOperation({
         table: 'agency_payments',
         action: isUpdate ? 'UPDATE' : 'INSERT',
-        data: paymentData
+        data: paymentData,
+        office_id: payment.office_id || undefined
       });
       
       return true;
@@ -2529,7 +2962,10 @@ export const saveAgencyPayment = async (payment: Partial<AgencyPayment> & { agen
   }
 };
 
-export const getAgencyPaymentsLocal = async (): Promise<AgencyPayment[]> => {
+export const getAgencyPaymentsLocal = async (officeId?: string): Promise<AgencyPayment[]> => {
+  const startTime = performance.now();
+  const queryName = officeId ? 'getAgencyPayments:filtered' : 'getAgencyPayments:all';
+  
   try {
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_PAYMENTS);
     let localData = offline ? JSON.parse(offline) : [];
@@ -2537,10 +2973,16 @@ export const getAgencyPaymentsLocal = async (): Promise<AgencyPayment[]> => {
     const online = await isOnline();
     if (online) {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('agency_payments')
-          .select('*')
-          .order('payment_date', { ascending: false });
+          .select('*');
+        
+        // Apply office filter if provided
+        if (officeId) {
+          query = query.eq('office_id', officeId);
+        }
+        
+        const { data, error } = await query.order('payment_date', { ascending: false });
 
         if (!error && data) {
           const localIds = localData.map((item: any) => item.id);
@@ -2566,8 +3008,18 @@ export const getAgencyPaymentsLocal = async (): Promise<AgencyPayment[]> => {
     // Filter out deleted entries from local data
     localData = localData.filter((item: any) => !item.deleted_at);
     
+    // Apply office filter to local data if provided
+    if (officeId) {
+      localData = localData.filter((item: any) => item.office_id === officeId);
+    }
+    
+    const duration = performance.now() - startTime;
+    queryPerformanceAnalyzer.recordQuery(queryName, duration, officeId);
+    
     return localData;
   } catch (error) {
+    const duration = performance.now() - startTime;
+    queryPerformanceAnalyzer.recordQuery(`${queryName}:error`, duration, officeId);
     console.error('Error getting agency payments:', error);
     return [];
   }
@@ -2576,7 +3028,7 @@ export const getAgencyPaymentsLocal = async (): Promise<AgencyPayment[]> => {
 // =====================================================
 // 10. AGENCY MAJURI
 // =====================================================
-export const saveAgencyMajuri = async (majuri: Partial<AgencyMajuri> & { agency_name: string; amount: number; description?: string }): Promise<boolean> => {
+export const saveAgencyMajuri = async (majuri: Partial<AgencyMajuri> & { agency_name: string; amount: number; description?: string; office_id?: string; }): Promise<boolean> => {
   try {
     const online = await isOnline();
     const agencies = await getAgencies();
@@ -2590,6 +3042,7 @@ export const saveAgencyMajuri = async (majuri: Partial<AgencyMajuri> & { agency_
       description: majuri.description || '',
       majuri_date: majuri.majuri_date || new Date().toISOString(),
       agency_id: agency?.id || null,
+      office_id: majuri.office_id || null,
       updated_at: new Date().toISOString(),
       ...(!isUpdate && { created_by: (await supabase.auth.getUser()).data.user?.id })
     };
@@ -2669,7 +3122,8 @@ export const saveAgencyMajuri = async (majuri: Partial<AgencyMajuri> & { agency_
       await SyncManager.getInstance().addPendingOperation({
         table: 'agency_majuri',
         action: isUpdate ? 'UPDATE' : 'INSERT',
-        data: majuriData
+        data: majuriData,
+        office_id: majuri.office_id || undefined
       });
       
       return true;
@@ -2680,15 +3134,21 @@ export const saveAgencyMajuri = async (majuri: Partial<AgencyMajuri> & { agency_
   }
 };
 
-export const getAgencyMajuri = async (): Promise<AgencyMajuri[]> => {
+export const getAgencyMajuri = async (officeId?: string): Promise<AgencyMajuri[]> => {
   try {
     const online = await isOnline();
 
     if (online) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('agency_majuri')
-        .select('*')
-        .order('majuri_date', { ascending: false });
+        .select('*');
+      
+      // Apply office filter if provided
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      const { data, error } = await query.order('majuri_date', { ascending: false });
 
       if (!error && data) {
         await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_MAJURI, JSON.stringify(data));
@@ -2696,7 +3156,14 @@ export const getAgencyMajuri = async (): Promise<AgencyMajuri[]> => {
       }
     }
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_MAJURI);
-    return offline ? JSON.parse(offline) : [];
+    let offlineData = offline ? JSON.parse(offline) : [];
+    
+    // Apply office filter to offline data if provided
+    if (officeId) {
+      offlineData = offlineData.filter((item: any) => item.office_id === officeId);
+    }
+    
+    return offlineData;
   } catch (error) {
     console.error('Error getting agency majuri:', error);
     return [];
@@ -2711,6 +3178,7 @@ export const saveDriverTransaction = async (transaction: Partial<DriverTransacti
   amount: number;
   transaction_type: 'credit' | 'debit';
   description?: string;
+  office_id?: string;
 }): Promise<boolean> => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -2731,6 +3199,7 @@ export const saveDriverTransaction = async (transaction: Partial<DriverTransacti
       transaction_type: transaction.transaction_type,
       recorded_by: recordedBy,
       transaction_date: transaction.transaction_date || new Date().toISOString(),
+      office_id: transaction.office_id || null,
       updated_at: new Date().toISOString(),
       ...(!isUpdate && { 
         created_by: user.id,
@@ -2813,7 +3282,8 @@ export const saveDriverTransaction = async (transaction: Partial<DriverTransacti
       await SyncManager.getInstance().addPendingOperation({
         table: 'driver_transactions',
         action: isUpdate ? 'UPDATE' : 'INSERT',
-        data: transactionData
+        data: transactionData,
+        office_id: transaction.office_id || undefined
       });
       
       return true;
@@ -2824,15 +3294,21 @@ export const saveDriverTransaction = async (transaction: Partial<DriverTransacti
   }
 };
 
-export const getDriverTransactions = async (): Promise<DriverTransaction[]> => {
+export const getDriverTransactions = async (officeId?: string): Promise<DriverTransaction[]> => {
   try {
     const online = await isOnline();
 
     if (online) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('driver_transactions')
-        .select('*')
-        .order('transaction_date', { ascending: false });
+        .select('*');
+      
+      // Apply office filter if provided
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      const { data, error } = await query.order('transaction_date', { ascending: false });
 
       if (!error && data) {
         await AsyncStorage.setItem(OFFLINE_KEYS.DRIVER_TRANSACTIONS, JSON.stringify(data));
@@ -2840,7 +3316,14 @@ export const getDriverTransactions = async (): Promise<DriverTransaction[]> => {
       }
     }
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.DRIVER_TRANSACTIONS);
-    return offline ? JSON.parse(offline) : [];
+    let offlineData = offline ? JSON.parse(offline) : [];
+    
+    // Apply office filter to offline data if provided
+    if (officeId) {
+      offlineData = offlineData.filter((item: any) => item.office_id === officeId);
+    }
+    
+    return offlineData;
   } catch (error) {
     console.error('Error getting driver transactions:', error);
     return [];
@@ -2856,6 +3339,7 @@ export const saveTruckFuel = async (fuelEntry: Partial<TruckFuelEntry> & {
   quantity: number;
   price_per_liter: number;
   total_price: number;
+  office_id?: string;
 }): Promise<boolean> => {
   try {
     const online = await isOnline();
@@ -2870,6 +3354,7 @@ export const saveTruckFuel = async (fuelEntry: Partial<TruckFuelEntry> & {
       price_per_liter: fuelEntry.price_per_liter,
       total_price: fuelEntry.total_price,
       fuel_date: fuelEntry.fuel_date || new Date().toISOString(),
+      office_id: fuelEntry.office_id || null,
       updated_at: new Date().toISOString(),
       ...(!isUpdate && { 
         created_by: userId,
@@ -2952,7 +3437,8 @@ export const saveTruckFuel = async (fuelEntry: Partial<TruckFuelEntry> & {
       await SyncManager.getInstance().addPendingOperation({
         table: 'truck_fuel_entries',
         action: isUpdate ? 'UPDATE' : 'INSERT',
-        data: fuelData
+        data: fuelData,
+        office_id: fuelEntry.office_id || undefined
       });
       
       return true;
@@ -2963,15 +3449,21 @@ export const saveTruckFuel = async (fuelEntry: Partial<TruckFuelEntry> & {
   }
 };
 
-export const getTruckFuelEntries = async (): Promise<TruckFuelEntry[]> => {
+export const getTruckFuelEntries = async (officeId?: string): Promise<TruckFuelEntry[]> => {
   try {
     const online = await isOnline();
 
     if (online) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('truck_fuel_entries')
-        .select('*')
-        .order('fuel_date', { ascending: false });
+        .select('*');
+      
+      // Apply office filter if provided
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      const { data, error } = await query.order('fuel_date', { ascending: false });
 
       if (!error && data) {
         await AsyncStorage.setItem(OFFLINE_KEYS.TRUCK_FUEL, JSON.stringify(data));
@@ -2979,7 +3471,14 @@ export const getTruckFuelEntries = async (): Promise<TruckFuelEntry[]> => {
       }
     }
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.TRUCK_FUEL);
-    return offline ? JSON.parse(offline) : [];
+    let offlineData = offline ? JSON.parse(offline) : [];
+    
+    // Apply office filter to offline data if provided
+    if (officeId) {
+      offlineData = offlineData.filter((item: any) => item.office_id === officeId);
+    }
+    
+    return offlineData;
   } catch (error) {
     console.error('Error getting truck fuel entries:', error);
     return [];
@@ -2996,7 +3495,7 @@ export interface GeneralEntryInput {
   description?: string;
   entry_date?: string;
   agency_name?: string;
-  title?: string;
+  office_id?: string;
 }
 
 export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolean> => {
@@ -3012,6 +3511,7 @@ export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolea
       description: entry.description || '',
       agency_name: entry.agency_name || null,
       entry_date: entry.entry_date || new Date().toISOString(),
+      office_id: entry.office_id || null,
       updated_at: new Date().toISOString(),
       ...(!isUpdate && { 
         created_by: userId,
@@ -3097,7 +3597,8 @@ export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolea
       await SyncManager.getInstance().addPendingOperation({
         table: 'general_entries',
         action: isUpdate ? 'UPDATE' : 'INSERT',
-        data: supabaseData
+        data: supabaseData,
+        office_id: entry.office_id || undefined
       });
       
       return true;
@@ -3108,15 +3609,21 @@ export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolea
   }
 };
 
-export const getGeneralEntries = async (): Promise<GeneralEntry[]> => {
+export const getGeneralEntries = async (officeId?: string): Promise<GeneralEntry[]> => {
   try {
     const online = await isOnline();
 
     if (online) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('general_entries')
-        .select('*')
-        .order('entry_date', { ascending: false });
+        .select('*');
+      
+      // Apply office filter if provided
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      const { data, error } = await query.order('entry_date', { ascending: false });
 
       if (!error && data) {
         await AsyncStorage.setItem(OFFLINE_KEYS.GENERAL_ENTRIES, JSON.stringify(data));
@@ -3124,7 +3631,14 @@ export const getGeneralEntries = async (): Promise<GeneralEntry[]> => {
       }
     }
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.GENERAL_ENTRIES);
-    return offline ? JSON.parse(offline) : [];
+    let offlineData = offline ? JSON.parse(offline) : [];
+    
+    // Apply office filter to offline data if provided
+    if (officeId) {
+      offlineData = offlineData.filter((item: any) => item.office_id === officeId);
+    }
+    
+    return offlineData;
   } catch (error) {
     console.error('Error getting general entries:', error);
     return [];
@@ -3134,7 +3648,7 @@ export const getGeneralEntries = async (): Promise<GeneralEntry[]> => {
 // =====================================================
 // 14. NEW: AGENCY GENERAL ENTRIES
 // =====================================================
-export const saveAgencyEntry = async (entry: Omit<AgencyEntry, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'agency_id'>): Promise<boolean> => {
+export const saveAgencyEntry = async (entry: Omit<AgencyEntry, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'agency_id'> & { office_id?: string }): Promise<boolean> => {
   try {
     const online = await isOnline();
     const agencies = await getAgencies();
@@ -3152,6 +3666,7 @@ export const saveAgencyEntry = async (entry: Omit<AgencyEntry, 'id' | 'created_a
       entry_type: entry.entry_type,
       entry_date: entry.entry_date,
       agency_id: agency?.id || null,
+      office_id: entry.office_id || null,
       created_by: (await supabase.auth.getUser()).data.user?.id,
       delivery_status: entry.delivery_status
     };
@@ -3179,7 +3694,8 @@ export const saveAgencyEntry = async (entry: Omit<AgencyEntry, 'id' | 'created_a
       await SyncManager.getInstance().addPendingOperation({
         table: 'agency_entries',
         action: 'INSERT',
-        data: entryData
+        data: entryData,
+        office_id: entry.office_id || undefined
       });
       return true;
     }
@@ -3189,15 +3705,21 @@ export const saveAgencyEntry = async (entry: Omit<AgencyEntry, 'id' | 'created_a
   }
 };
 
-export const getAgencyEntry = async (): Promise<AgencyEntry[]> => {
+export const getAgencyEntry = async (officeId?: string): Promise<AgencyEntry[]> => {
   try {
     const online = await isOnline();
 
     if (online) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('agency_entries')
-        .select('*')
-        .order('entry_date', { ascending: false });
+        .select('*');
+      
+      // Apply office filter if provided
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      const { data, error } = await query.order('entry_date', { ascending: false });
 
       if (!error && data) {
         await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify(data));
@@ -3205,7 +3727,12 @@ export const getAgencyEntry = async (): Promise<AgencyEntry[]> => {
       }
     }
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
-    const offlineData = offline ? JSON.parse(offline) : [];
+    let offlineData = offline ? JSON.parse(offline) : [];
+    
+    // Apply office filter to offline data if provided
+    if (officeId) {
+      offlineData = offlineData.filter((item: any) => item.office_id === officeId);
+    }
     
     return offlineData;
   } catch (error) {
@@ -3267,6 +3794,10 @@ export const deleteTransactionByIdImproved = async (id: string, key: string): Pr
       const itemIndex = allItems.findIndex((item: any) => item.id === id);
       if (itemIndex === -1) return false;
       
+      // Get the record to extract office_id before deleting
+      const recordToDelete = allItems[itemIndex];
+      const officeId = recordToDelete?.office_id;
+      
       const updatedItems = allItems.filter((item: any) => item.id !== id);
       await AsyncStorage.setItem(key, JSON.stringify(updatedItems));
       
@@ -3274,13 +3805,15 @@ export const deleteTransactionByIdImproved = async (id: string, key: string): Pr
         await SyncManager.getInstance().addPendingOperation({
           table: tableName,
           action: 'DELETE',
-          data: { id: id }
+          data: { id: id },
+          office_id: officeId
         });
       } else if (!online) {
         await SyncManager.getInstance().addPendingOperation({
           table: tableName,
           action: 'DELETE',
-          data: { id: id }
+          data: { id: id },
+          office_id: officeId
         });
       }
       return true;
@@ -3373,7 +3906,7 @@ export const syncAllDataFixed = async (): Promise<boolean> => {
   }
 };
 
-export const getAllTransactionsForDate = async (targetDate: Date): Promise<any[]> => {
+export const getAllTransactionsForDate = async (targetDate: Date, officeId?: string): Promise<any[]> => {
   try {
     const online = await isOnline();
     
@@ -3386,14 +3919,29 @@ export const getAllTransactionsForDate = async (targetDate: Date): Promise<any[]
       const startISO = startOfDay.toISOString();
       const endISO = endOfDay.toISOString();
       
+      // Build queries with optional office filter
+      const buildQuery = (table: string, dateField: string) => {
+        let query = supabase
+          .from(table)
+          .select('*')
+          .gte(dateField, startISO)
+          .lte(dateField, endISO);
+        
+        if (officeId) {
+          query = query.eq('office_id', officeId);
+        }
+        
+        return query;
+      };
+      
       const [payments, majuri, driverTxn, fuelEntries, generalEntries, agencyEntries, uppadJamaEntries] = await Promise.all([
-        supabase.from('agency_payments').select('*').gte('payment_date', startISO).lte('payment_date', endISO),
-        supabase.from('agency_majuri').select('*').gte('majuri_date', startISO).lte('majuri_date', endISO),
-        supabase.from('driver_transactions').select('*').gte('transaction_date', startISO).lte('transaction_date', endISO),
-        supabase.from('truck_fuel_entries').select('*').gte('fuel_date', startISO).lte('fuel_date', endISO),
-        supabase.from('general_entries').select('*').gte('entry_date', startISO).lte('entry_date', endISO),
-        supabase.from('agency_entries').select('*').gte('entry_date', startISO).lte('entry_date', endISO),
-        supabase.from('uppad_jama_entries').select('*').gte('entry_date', startISO).lte('entry_date', endISO),
+        buildQuery('agency_payments', 'payment_date'),
+        buildQuery('agency_majuri', 'majuri_date'),
+        buildQuery('driver_transactions', 'transaction_date'),
+        buildQuery('truck_fuel_entries', 'fuel_date'),
+        buildQuery('general_entries', 'entry_date'),
+        buildQuery('agency_entries', 'entry_date'),
+        buildQuery('uppad_jama_entries', 'entry_date'),
       ]);
       
       const allTransactions = [
@@ -3410,13 +3958,13 @@ export const getAllTransactionsForDate = async (targetDate: Date): Promise<any[]
       
     } else {
       const [payments, majuri, driverTxn, fuelEntries, generalEntries, agencyEntries, uppadJamaEntries] = await Promise.all([
-        getAgencyPaymentsLocal(),
-        getAgencyMajuri(), 
-        getDriverTransactions(),
-        getTruckFuelEntries(),
-        getGeneralEntries(),
-        getAgencyEntry(),
-        getUppadJamaEntries()
+        getAgencyPaymentsLocal(officeId),
+        getAgencyMajuri(officeId), 
+        getDriverTransactions(officeId),
+        getTruckFuelEntries(officeId),
+        getGeneralEntries(officeId),
+        getAgencyEntry(officeId),
+        getUppadJamaEntries(officeId)
       ]);
       
       const filteredTransactions = [
@@ -3450,7 +3998,7 @@ export const initializeSupabaseStorage = async (): Promise<void> => {
   }
 };
 
-export const getMonthlyTransactions = async (month: string, year: string): Promise<any[]> => {
+export const getMonthlyTransactions = async (month: string, year: string, officeId?: string): Promise<any[]> => {
   try {
     // Start date: First day of the month at 00:00:00
     const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
@@ -3465,6 +4013,56 @@ export const getMonthlyTransactions = async (month: string, year: string): Promi
     const startISO = startDate.toISOString();
     const endISO = endDate.toISOString();
 
+    // Build queries with optional office_id filter
+    let paymentsQuery = supabase
+      .from('agency_payments')
+      .select('*')
+      .gte('payment_date', startISO)
+      .lte('payment_date', endISO);
+    if (officeId) paymentsQuery = paymentsQuery.eq('office_id', officeId);
+
+    let majuriQuery = supabase
+      .from('agency_majuri')
+      .select('*')
+      .gte('majuri_date', startISO)
+      .lte('majuri_date', endISO);
+    if (officeId) majuriQuery = majuriQuery.eq('office_id', officeId);
+
+    let agencyGeneralQuery = supabase
+      .from('agency_entries')
+      .select('*')
+      .gte('entry_date', startISO)
+      .lte('entry_date', endISO);
+    if (officeId) agencyGeneralQuery = agencyGeneralQuery.eq('office_id', officeId);
+
+    let generalQuery = supabase
+      .from('general_entries')
+      .select('*')
+      .gte('entry_date', startISO)
+      .lte('entry_date', endISO);
+    if (officeId) generalQuery = generalQuery.eq('office_id', officeId);
+
+    let driverQuery = supabase
+      .from('driver_transactions')
+      .select('*')
+      .gte('transaction_date', startISO)
+      .lte('transaction_date', endISO);
+    if (officeId) driverQuery = driverQuery.eq('office_id', officeId);
+
+    let fuelQuery = supabase
+      .from('truck_fuel_entries')
+      .select('*')
+      .gte('fuel_date', startISO)
+      .lte('fuel_date', endISO);
+    if (officeId) fuelQuery = fuelQuery.eq('office_id', officeId);
+
+    let uppadJamaQuery = supabase
+      .from('uppad_jama_entries')
+      .select('*')
+      .gte('entry_date', startISO)
+      .lte('entry_date', endISO);
+    if (officeId) uppadJamaQuery = uppadJamaQuery.eq('office_id', officeId);
+
     const [
       payments,
       majuri,
@@ -3474,41 +4072,13 @@ export const getMonthlyTransactions = async (month: string, year: string): Promi
       fuelEntries,
       uppadJamaEntries
     ] = await Promise.all([
-      supabase
-        .from('agency_payments')
-        .select('*')
-        .gte('payment_date', startISO)
-        .lte('payment_date', endISO),
-      supabase
-        .from('agency_majuri')
-        .select('*')
-        .gte('majuri_date', startISO)
-        .lte('majuri_date', endISO),
-      supabase
-        .from('agency_entries')
-        .select('*')
-        .gte('entry_date', startISO)
-        .lte('entry_date', endISO),
-      supabase
-        .from('general_entries')
-        .select('*')
-        .gte('entry_date', startISO)
-        .lte('entry_date', endISO),
-      supabase
-        .from('driver_transactions')
-        .select('*')
-        .gte('transaction_date', startISO)
-        .lte('transaction_date', endISO),
-      supabase
-        .from('truck_fuel_entries')
-        .select('*')
-        .gte('fuel_date', startISO)
-        .lte('fuel_date', endISO),
-      supabase
-        .from('uppad_jama_entries')
-        .select('*')
-        .gte('entry_date', startISO)
-        .lte('entry_date', endISO),
+      paymentsQuery,
+      majuriQuery,
+      agencyGeneralQuery,
+      generalQuery,
+      driverQuery,
+      fuelQuery,
+      uppadJamaQuery,
     ]);
 
     // Filter out admin panel transactions and include only home screen Uppad/Jama entries
@@ -3583,12 +4153,13 @@ export const getMonthlyTransactions = async (month: string, year: string): Promi
 // CASH TRACKING FUNCTIONS
 // =====================================================
 
-export const saveLeaveCashRecord = async (recordData: Omit<CashRecord, 'id' | 'created_at' | 'updated_at'>): Promise<void> => {
+export const saveLeaveCashRecord = async (recordData: Omit<CashRecord, 'id' | 'created_at' | 'updated_at'> & { office_id?: string }): Promise<void> => {
   try {
     const currentTime = new Date().toISOString();
     const newRecord: CashRecord = {
       id: `cash_${Date.now()}`,
       ...recordData,
+      office_id: recordData.office_id || undefined,
       created_at: currentTime,
       updated_at: currentTime
     };
@@ -3623,15 +4194,21 @@ export const saveLeaveCashRecord = async (recordData: Omit<CashRecord, 'id' | 'c
   }
 };
 
-export const getCashRecords = async (): Promise<CashRecord[]> => {
+export const getCashRecords = async (officeId?: string): Promise<CashRecord[]> => {
   try {
     console.log('🔍 DEBUG: Getting cash records from Supabase...');
     // Try to get from Supabase first
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('cash_records')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*');
+      
+      // Apply office filter if provided
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
         console.log('🔍 DEBUG: Supabase cash records:', data);
@@ -3649,8 +4226,14 @@ export const getCashRecords = async (): Promise<CashRecord[]> => {
     // Fallback to offline storage
     console.log('🔍 DEBUG: Getting cash records from offline storage...');
     const storedData = await AsyncStorage.getItem(OFFLINE_KEYS.CASH_RECORDS);
-    const offlineRecords = storedData ? JSON.parse(storedData) : [];
+    let offlineRecords = storedData ? JSON.parse(storedData) : [];
     console.log('🔍 DEBUG: Offline cash records:', offlineRecords);
+    
+    // Apply office filter to offline data if provided
+    if (officeId) {
+      offlineRecords = offlineRecords.filter((item: any) => item.office_id === officeId);
+    }
+    
     return offlineRecords;
   } catch (error) {
     console.error('💥 Error getting cash records:', error);
@@ -3824,5 +4407,652 @@ export const revertCashRecordToPending = async (id: string): Promise<void> => {
   } catch (error) {
     console.error('💥 Error reverting cash record:', error);
     throw error;
+  }
+};
+
+// =====================================================
+// OFFICE MANAGEMENT FUNCTIONS
+// =====================================================
+
+/**
+ * Fetch all offices from the database
+ * @returns Promise<Office[]> - Array of all offices
+ */
+export const getOffices = async (): Promise<Office[]> => {
+  const startTime = performance.now();
+  
+  try {
+    const { data, error } = await supabase
+      .from('offices')
+      .select('*')
+      .eq('is_active', true)
+      .order('name');
+
+    const duration = performance.now() - startTime;
+    queryPerformanceAnalyzer.recordQuery('getOffices', duration);
+
+    if (error) {
+      console.error('Error fetching offices:', error);
+      throw error;
+    }
+
+    return (data || []) as Office[];
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    queryPerformanceAnalyzer.recordQuery('getOffices:error', duration);
+    console.error('Error getting offices:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch a single office by ID
+ * @param id - Office UUID
+ * @returns Promise<Office | null> - Office object or null if not found
+ */
+export const getOfficeById = async (id: string): Promise<Office | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('offices')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No rows returned
+        return null;
+      }
+      console.error('Error fetching office by ID:', error);
+      throw error;
+    }
+
+    return data as Office;
+  } catch (error) {
+    console.error('Error getting office by ID:', error);
+    return null;
+  }
+};
+
+/**
+ * Create a new office with uniqueness validation
+ * @param name - Office name (must be unique)
+ * @param address - Optional office address
+ * @returns Promise<Office | null> - Created office or null if failed
+ */
+export const createOffice = async (name: string, address?: string): Promise<Office | null> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('No authenticated user found.');
+      return null;
+    }
+
+    // Trim and validate name
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      console.error('Office name cannot be empty');
+      return null;
+    }
+
+    // Check for uniqueness (case-insensitive)
+    const { data: existingOffices, error: checkError } = await supabase
+      .from('offices')
+      .select('id, name')
+      .ilike('name', trimmedName);
+
+    if (checkError) {
+      console.error('Error checking office name uniqueness:', checkError);
+      throw checkError;
+    }
+
+    if (existingOffices && existingOffices.length > 0) {
+      console.error('Office with this name already exists');
+      return null;
+    }
+
+    // Create the office
+    const officeData = {
+      name: trimmedName,
+      address: address?.trim() || null,
+      is_active: true,
+      created_by: user.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('offices')
+      .insert([officeData])
+      .select()
+      .single();
+
+    if (error) {
+      // Check for unique constraint violation
+      if (error.code === '23505') {
+        console.error('Office name already exists (unique constraint)');
+        return null;
+      }
+      console.error('Error creating office:', error);
+      throw error;
+    }
+
+    await logHistory('add', 'offices', data.id, officeData);
+    console.log('✅ Office created successfully:', data.name);
+    
+    return data as Office;
+  } catch (error) {
+    console.error('Error creating office:', error);
+    return null;
+  }
+};
+
+/**
+ * Update an existing office
+ * @param id - Office UUID
+ * @param updates - Partial office data to update
+ * @returns Promise<boolean> - True if successful, false otherwise
+ */
+export const updateOffice = async (id: string, updates: Partial<Office>): Promise<boolean> => {
+  try {
+    // Validate that we're not updating to an empty name
+    if (updates.name !== undefined) {
+      const trimmedName = updates.name.trim();
+      if (!trimmedName) {
+        console.error('Office name cannot be empty');
+        return false;
+      }
+
+      // Check for uniqueness (case-insensitive), excluding current office
+      const { data: existingOffices, error: checkError } = await supabase
+        .from('offices')
+        .select('id, name')
+        .ilike('name', trimmedName)
+        .neq('id', id);
+
+      if (checkError) {
+        console.error('Error checking office name uniqueness:', checkError);
+        throw checkError;
+      }
+
+      if (existingOffices && existingOffices.length > 0) {
+        console.error('Office with this name already exists');
+        return false;
+      }
+
+      updates.name = trimmedName;
+    }
+
+    // Trim address if provided
+    if (updates.address !== undefined) {
+      updates.address = updates.address?.trim() || undefined;
+    }
+
+    const updateData = {
+      ...updates,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase
+      .from('offices')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) {
+      // Check for unique constraint violation
+      if (error.code === '23505') {
+        console.error('Office name already exists (unique constraint)');
+        return false;
+      }
+      console.error('Error updating office:', error);
+      throw error;
+    }
+
+    await logHistory('update', 'offices', id, updateData);
+    console.log('✅ Office updated successfully');
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating office:', error);
+    return false;
+  }
+};
+
+/**
+ * Delete an office (only if no transactions are associated)
+ * @param id - Office UUID
+ * @returns Promise<boolean> - True if successful, false if office has transactions or error
+ */
+export const deleteOffice = async (id: string): Promise<boolean> => {
+  try {
+    // Check if office has any associated transactions
+    const transactionTables = [
+      'agency_payments',
+      'agency_majuri',
+      'driver_transactions',
+      'truck_fuel_entries',
+      'general_entries',
+      'agency_entries',
+      'uppad_jama_entries',
+      'cash_records'
+    ];
+
+    for (const table of transactionTables) {
+      const { data, error } = await supabase
+        .from(table)
+        .select('id')
+        .eq('office_id', id)
+        .limit(1);
+
+      if (error) {
+        console.error(`Error checking ${table} for office transactions:`, error);
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        console.error(`Cannot delete office: has associated transactions in ${table}`);
+        return false;
+      }
+    }
+
+    // Check if office has any assigned users
+    const { data: users, error: userError } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('office_id', id)
+      .limit(1);
+
+    if (userError) {
+      console.error('Error checking users for office assignment:', userError);
+      throw userError;
+    }
+
+    if (users && users.length > 0) {
+      console.error('Cannot delete office: has assigned users');
+      return false;
+    }
+
+    // No transactions or users found, safe to delete
+    const { error: deleteError } = await supabase
+      .from('offices')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      console.error('Error deleting office:', deleteError);
+      throw deleteError;
+    }
+
+    await logHistory('delete', 'offices', id, { deleted_at: new Date().toISOString() });
+    console.log('✅ Office deleted successfully');
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting office:', error);
+    return false;
+  }
+};
+
+/**
+ * Get the office assignment for a user
+ * @param userId - User UUID
+ * @returns Promise<string | null> - Office ID or null if not assigned
+ */
+export const getUserOfficeAssignment = async (userId: string): Promise<string | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('office_id')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No user profile found
+        return null;
+      }
+      console.error('Error fetching user office assignment:', error);
+      throw error;
+    }
+
+    return data?.office_id || null;
+  } catch (error) {
+    console.error('Error getting user office assignment:', error);
+    return null;
+  }
+};
+
+/**
+ * Set or update the office assignment for a user
+ * @param userId - User UUID
+ * @param officeId - Office UUID
+ * @returns Promise<boolean> - True if successful, false otherwise
+ */
+export const setUserOfficeAssignment = async (userId: string, officeId: string): Promise<boolean> => {
+  try {
+    // Verify that the office exists
+    const office = await getOfficeById(officeId);
+    if (!office) {
+      console.error('Office not found');
+      return false;
+    }
+
+    // Update user profile with office assignment
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({
+        office_id: officeId,
+        office_name: office.name,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error setting user office assignment:', error);
+      throw error;
+    }
+
+    await logHistory('update', 'user_profiles', userId, { 
+      office_id: officeId, 
+      office_name: office.name 
+    });
+    console.log('✅ User office assignment updated successfully');
+    
+    return true;
+  } catch (error) {
+    console.error('Error setting user office assignment:', error);
+    return false;
+  }
+};
+
+// =====================================================
+// OFFLINE SYNC MANAGEMENT FUNCTIONS
+// =====================================================
+
+/**
+ * Manually trigger sync of all pending operations
+ * @returns Promise<boolean> - true if all operations synced successfully
+ */
+export const syncPendingOperations = async (): Promise<boolean> => {
+  try {
+    console.log('🔄 Manually triggering sync of pending operations...');
+    const syncManager = SyncManager.getInstance();
+    const result = await syncManager.syncPendingOperations();
+    console.log(`✅ Sync completed: ${result ? 'All operations synced' : 'Some operations failed'}`);
+    return result;
+  } catch (error) {
+    console.error('❌ Error syncing pending operations:', error);
+    return false;
+  }
+};
+
+/**
+ * Get the count of pending sync operations
+ * @returns Promise<number> - Number of pending operations
+ */
+export const getPendingOperationsCount = async (): Promise<number> => {
+  try {
+    const syncManager = SyncManager.getInstance();
+    return await syncManager.getPendingOperationsCount();
+  } catch (error) {
+    console.error('❌ Error getting pending operations count:', error);
+    return 0;
+  }
+};
+
+/**
+ * Get all logged sync conflicts
+ * @returns Promise<SyncConflict[]> - Array of sync conflicts
+ */
+export const getSyncConflicts = async (): Promise<any[]> => {
+  try {
+    const syncManager = SyncManager.getInstance();
+    return await syncManager.getSyncConflicts();
+  } catch (error) {
+    console.error('❌ Error getting sync conflicts:', error);
+    return [];
+  }
+};
+
+/**
+ * Clear all logged sync conflicts
+ * @returns Promise<void>
+ */
+export const clearSyncConflicts = async (): Promise<void> => {
+  try {
+    const syncManager = SyncManager.getInstance();
+    await syncManager.clearSyncConflicts();
+    console.log('✅ Sync conflicts cleared');
+  } catch (error) {
+    console.error('❌ Error clearing sync conflicts:', error);
+  }
+};
+
+/**
+ * Get detailed sync status including pending operations and conflicts
+ * @returns Promise<object> - Detailed sync status
+ */
+export const getDetailedSyncStatus = async (): Promise<{
+  pendingCount: number;
+  conflictCount: number;
+  lastSync: string | null;
+  conflicts: any[];
+}> => {
+  try {
+    const [pendingCount, conflicts, lastSync] = await Promise.all([
+      getPendingOperationsCount(),
+      getSyncConflicts(),
+      AsyncStorage.getItem(OFFLINE_KEYS.LAST_SYNC)
+    ]);
+
+    return {
+      pendingCount,
+      conflictCount: conflicts.length,
+      lastSync,
+      conflicts
+    };
+  } catch (error) {
+    console.error('❌ Error getting detailed sync status:', error);
+    return {
+      pendingCount: 0,
+      conflictCount: 0,
+      lastSync: null,
+      conflicts: []
+    };
+  }
+};
+
+
+// =====================================================
+// ADMIN OTP APPROVAL SYSTEM
+// =====================================================
+
+export interface LoginRequest {
+  id: string;
+  user_id: string;
+  user_email: string;
+  user_name: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  otp_code?: string;
+  approved_by?: string;
+  approved_at?: string;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Create a login request that requires admin approval
+ * @param userId - User ID requesting login
+ * @param email - User email
+ * @param userName - User name
+ * @returns Login request ID or null
+ */
+export const createLoginRequest = async (
+  userId: string,
+  email: string,
+  userName: string
+): Promise<string | null> => {
+  try {
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+
+    const { data, error } = await supabase
+      .from('login_requests')
+      .insert([{
+        user_id: userId,
+        user_email: email,
+        user_name: userName,
+        status: 'pending',
+        expires_at: expiresAt,
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    console.log('✅ Login request created:', data.id);
+    
+    // Send notification to all admins
+    await notifyAdminsOfLoginRequest(email, userName);
+
+    return data.id;
+  } catch (error) {
+    console.error('Error creating login request:', error);
+    return null;
+  }
+};
+
+/**
+ * Check if a login request has been approved and get the OTP
+ * @param requestId - Login request ID
+ * @returns OTP code if approved, null otherwise
+ */
+export const checkLoginRequestStatus = async (
+  requestId: string
+): Promise<{ status: string; otp?: string } | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('login_requests')
+      .select('status, otp_code, expires_at')
+      .eq('id', requestId)
+      .single();
+
+    if (error) throw error;
+
+    // Check if expired
+    if (new Date(data.expires_at) < new Date()) {
+      return { status: 'expired' };
+    }
+
+    return {
+      status: data.status,
+      otp: data.otp_code || undefined,
+    };
+  } catch (error) {
+    console.error('Error checking login request status:', error);
+    return null;
+  }
+};
+
+/**
+ * Verify OTP from admin-approved login request
+ * @param requestId - Login request ID
+ * @param otpCode - OTP code entered by user
+ * @returns true if OTP matches
+ */
+export const verifyAdminOtp = async (
+  requestId: string,
+  otpCode: string
+): Promise<boolean> => {
+  try {
+    const { data, error } = await supabase
+      .from('login_requests')
+      .select('otp_code, status, expires_at')
+      .eq('id', requestId)
+      .single();
+
+    if (error) throw error;
+
+    // Check if expired
+    if (new Date(data.expires_at) < new Date()) {
+      console.log('❌ Login request expired');
+      return false;
+    }
+
+    // Check if approved
+    if (data.status !== 'approved') {
+      console.log('❌ Login request not approved yet');
+      return false;
+    }
+
+    // Verify OTP
+    const isValid = data.otp_code === otpCode.trim();
+    
+    if (isValid) {
+      console.log('✅ Admin OTP verified successfully');
+    } else {
+      console.log('❌ Invalid OTP code');
+    }
+
+    return isValid;
+  } catch (error) {
+    console.error('Error verifying admin OTP:', error);
+    return false;
+  }
+};
+
+/**
+ * Send push notification to all admins about new login request
+ * @param userEmail - Email of user requesting login
+ * @param userName - Name of user requesting login
+ */
+const notifyAdminsOfLoginRequest = async (
+  userEmail: string,
+  userName: string
+): Promise<void> => {
+  try {
+    // Get all admin users
+    const { data: admins, error } = await supabase
+      .from('user_profiles')
+      .select('id, full_name')
+      .eq('is_admin', true)
+      .eq('is_active', true);
+
+    if (error) throw error;
+
+    console.log(`📢 Notifying ${admins?.length || 0} admins about login request`);
+
+    // Here you would send push notifications to admins
+    // This requires your notification service to be set up
+    // For now, we'll just log it
+    console.log(`🔔 Login request from ${userName} (${userEmail})`);
+    
+    // TODO: Implement actual push notification
+    // Example: await sendPushNotification(adminIds, { title: 'New Login Request', body: `${userName} wants to login` });
+    
+  } catch (error) {
+    console.error('Error notifying admins:', error);
+  }
+};
+
+/**
+ * Get all pending login requests (for admin screen)
+ * @returns Array of pending login requests
+ */
+export const getPendingLoginRequests = async (): Promise<LoginRequest[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('login_requests')
+      .select('*')
+      .in('status', ['pending', 'approved'])
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    return data || [];
+  } catch (error) {
+    console.error('Error getting pending login requests:', error);
+    return [];
   }
 };

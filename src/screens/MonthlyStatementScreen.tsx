@@ -38,6 +38,8 @@ import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
 import Icon from 'react-native-vector-icons/Ionicons';
 import CheckBox from '@react-native-community/checkbox';
+import { useOffice } from '../context/OfficeContext';
+import { useUserAccess } from '../context/UserAccessContext';
 
 type MonthlyStatementScreenNavigationProp = NavigationProp<RootStackParamList, 'MonthlyStatement'>;
 
@@ -114,6 +116,12 @@ const CustomDropdown = ({ options, selectedValue, onValueChange, placeholder, la
 
 function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): React.JSX.Element {
   const { goBack } = navigation;
+  const { currentOffice } = useOffice();
+  const { isAdmin } = useUserAccess();
+  
+  const currentOfficeId = currentOffice?.id || null;
+  const currentOfficeName = currentOffice?.name || 'Unknown Office';
+  
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [agencyOptions, setAgencyOptions] = useState<{ label: string; value: string }[]>([]);
   const [selectedAgency, setSelectedAgency] = useState<string>('');
@@ -239,7 +247,10 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
 
   // Generate HTML content for a single agency
   const generateHtmlForAgency = async (agencyName: string | null) => {
-    const transactions = await getMonthlyTransactions(selectedMonth, selectedYear);
+    // For admin viewing "All Offices", pass undefined to get all data
+    // For regular users or admin viewing specific office, pass the office_id
+    const officeIdForQuery = isAdmin && !currentOfficeId ? undefined : currentOfficeId || undefined;
+    const transactions = await getMonthlyTransactions(selectedMonth, selectedYear, officeIdForQuery);
     
     let paid: AgencyPayment[] = [];
     let majuri: AgencyMajuri[] = [];
@@ -302,6 +313,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
             .header h1 { font-size: 20px; color: #1976D2; margin-bottom: 5px; font-weight: bold; }
             .header h2 { font-size: 16px; color: #555; margin-bottom: 5px; }
             .date-range { font-size: 12px; color: #666; font-style: italic; }
+            .office-info { font-size: 13px; color: #1976D2; font-weight: bold; margin-top: 5px; }
             .section { margin-bottom: 25px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
             .section-title { background: linear-gradient(135deg, #2196F3, #1976D2); color: white; padding: 8px 12px; font-size: 14px; font-weight: bold; margin: 0; }
             .table { width: 100%; border-collapse: collapse; margin: 0; }
@@ -330,6 +342,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
               <div class="date-range">
                   ${getMonthName(selectedMonth)} ${selectedYear}${agencyName ? ` - ${agencyName}` : ''}
               </div>
+              ${currentOfficeName ? `<div class="office-info">Office: ${currentOfficeName}</div>` : ''}
           </div>
 
           ${paid.length > 0 ? `
@@ -509,7 +522,9 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
           </div>
 
           <div class="footer">
-              <p>Generated on ${new Date().toLocaleString('en-IN')} | Yash Roadlines Management System</p>
+              <p><strong>YASH ROADLINES</strong></p>
+              ${currentOfficeName ? `<p>Office: ${currentOfficeName}</p>` : ''}
+              <p>Generated on ${new Date().toLocaleString('en-IN')}</p>
           </div>
       </body>
       </html>
@@ -692,7 +707,10 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
 
     try {
       // Generate PDF data (same logic as generateMonthlyStatementPdf)
-      const transactions = await getMonthlyTransactions(selectedMonth, selectedYear);
+      // For admin viewing "All Offices", pass undefined to get all data
+      // For regular users or admin viewing specific office, pass the office_id
+      const officeIdForQuery = isAdmin && !currentOfficeId ? undefined : currentOfficeId || undefined;
+      const transactions = await getMonthlyTransactions(selectedMonth, selectedYear, officeIdForQuery);
 
       let paid: AgencyPayment[] = [];
       let majuri: AgencyMajuri[] = [];
@@ -784,6 +802,12 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       font-size: 12px; 
       color: #666; 
       font-style: italic; 
+  }
+  .office-info { 
+      font-size: 13px; 
+      color: #1976D2; 
+      font-weight: bold; 
+      margin-top: 5px; 
   }
   .section { 
       margin-bottom: 25px; 
@@ -889,6 +913,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                   <div class="date-range">
                       ${getMonthName(selectedMonth)} ${selectedYear}${selectedAgency ? ` - ${selectedAgency}` : ''}
                   </div>
+                  ${currentOfficeName ? `<div class="office-info">Office: ${currentOfficeName}</div>` : ''}
               </div>
 
               ${paid.length > 0 ? `
@@ -1069,7 +1094,9 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
               </div>
 
               <div class="footer">
-                  <p>Generated on ${new Date().toLocaleString('en-IN')} | Yash Roadlines Management System</p>
+                  <p><strong>YASH ROADLINES</strong></p>
+                  ${currentOfficeName ? `<p>Office: ${currentOfficeName}</p>` : ''}
+                  <p>Generated on ${new Date().toLocaleString('en-IN')}</p>
               </div>
           </body>
           </html>
@@ -1218,7 +1245,10 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     setLoading(true);
 
     try {
-      const transactions = await getMonthlyTransactions(selectedMonth, selectedYear);
+      // For admin viewing "All Offices", pass undefined to get all data
+      // For regular users or admin viewing specific office, pass the office_id
+      const officeIdForQuery = isAdmin && !currentOfficeId ? undefined : currentOfficeId || undefined;
+      const transactions = await getMonthlyTransactions(selectedMonth, selectedYear, officeIdForQuery);
 
       let paid: AgencyPayment[] = [];
       let majuri: AgencyMajuri[] = [];
@@ -1309,6 +1339,12 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         font-size: 12px; 
         color: #666; 
         font-style: italic; 
+    }
+    .office-info { 
+        font-size: 13px; 
+        color: #1976D2; 
+        font-weight: bold; 
+        margin-top: 5px; 
     }
     .section { 
         margin-bottom: 15px; 
@@ -1424,6 +1460,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                     <h1>YASH ROADLINES</h1>
                     <h2>Monthly Statement Report</h2>
                     <p class="date-range">Report for ${monthOptions.find(m => m.value === selectedMonth)?.label}, ${selectedYear}</p>
+                    ${currentOfficeName ? `<p class="office-info">Office: ${currentOfficeName}</p>` : ''}
                 </div>
                 
                 ${reportType === 'agency' && selectedAgency ? `
@@ -1650,6 +1687,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                 
                 <div class="footer">
                     <div><strong>YASH ROADLINES</strong></div>
+                    ${currentOfficeName ? `<div>Office: ${currentOfficeName}</div>` : ''}
                     <div>Report Generated on: ${new Date().toLocaleString('en-IN', {
         year: 'numeric',
         month: 'long',

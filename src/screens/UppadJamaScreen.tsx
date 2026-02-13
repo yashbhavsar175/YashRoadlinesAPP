@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator, StatusBar
 import { Button, TextInput, List, Divider, Menu, useTheme } from 'react-native-paper';
 import { supabase } from '../supabase';
 import { useAlert } from '../context/AlertContext';
+import { useOffice } from '../context/OfficeContext';
 import { NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
@@ -31,6 +32,7 @@ interface UppadJamaScreenProps {
 
 function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Element {
   const { showAlert } = useAlert();
+  const { currentOffice } = useOffice();
   const { goBack } = navigation;
 
   // Tab state
@@ -59,7 +61,8 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
   const loadEntries = useCallback(async () => {
     try {
       setLoadingEntries(true);
-      const list = await getUppadJamaEntries();
+      const officeId = currentOffice?.id;
+      const list = await getUppadJamaEntries(officeId);
       if (list) {
         // Force a re-render by updating the state
         setEntries(list);
@@ -70,7 +73,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
     } finally {
       setLoadingEntries(false);
     }
-  }, []);
+  }, [currentOffice]);
 
   // Memoize the load functions with proper types
   const memoizedLoadPersons = useCallback(loadPersons, []);
@@ -275,6 +278,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         amount: num,
         entry_type: entryType,
         description: description?.trim() || undefined,
+        office_id: currentOffice?.id,
       });
 
       console.log('UppadJamaScreen - Entry saved:', {
@@ -282,6 +286,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         amount: num,
         entry_type: entryType,
         description: description?.trim() || undefined,
+        office_id: currentOffice?.id,
         success: success
       });
 
@@ -388,6 +393,14 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         {activeTab === 'entry' ? (
           <View style={GlobalStyles.card}>
             <Text style={GlobalStyles.title}>Uppad/Jama Entry</Text>
+            
+            {/* Office indicator */}
+            {currentOffice && (
+              <View style={styles.officeIndicatorContainer}>
+                <Text style={styles.officeIndicatorLabel}>Office:</Text>
+                <Text style={styles.officeIndicatorValue}>{currentOffice.name}</Text>
+              </View>
+            )}
 
             <View style={styles.labelRow}>
               <Text style={styles.inputLabel}>Person</Text>
@@ -570,6 +583,28 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     fontWeight: '600',
     fontSize: 14,
+  },
+  officeIndicatorContainer: {
+    backgroundColor: '#E3F2FD',
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.primary,
+    padding: 10,
+    marginTop: 12,
+    marginBottom: 8,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  officeIndicatorLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginRight: 8,
+  },
+  officeIndicatorValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
   },
 });
 

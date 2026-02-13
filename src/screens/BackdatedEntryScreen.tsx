@@ -35,6 +35,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import CustomDropdown from '../components/Dropdown';
 import NotificationService from '../services/NotificationService';
 import { supabase } from '../supabase';
+import { useOffice } from '../context/OfficeContext';
 
 type BackdatedEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'BackdatedEntry'>;
 
@@ -99,6 +100,7 @@ const entryTypeOptions: EntryTypeOption[] = [
 function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.JSX.Element {
   const { goBack } = navigation;
   const { showAlert } = useAlert();
+  const { getCurrentOfficeId } = useOffice();
   
   // Admin check
   const [isAdmin, setIsAdmin] = useState<boolean>(false);

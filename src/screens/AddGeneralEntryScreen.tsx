@@ -8,6 +8,7 @@ import { GlobalStyles } from '../theme/styles';
 import { saveGeneralEntry, GeneralEntryInput, getAgencies } from '../data/Storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAlert } from '../context/AlertContext';
+import { useOffice } from '../context/OfficeContext';
 import NotificationService from '../services/NotificationService';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
@@ -20,6 +21,7 @@ interface AddGeneralEntryScreenProps {
 
 function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): React.JSX.Element {
   const { showAlert } = useAlert();
+  const { currentOffice, getCurrentOfficeId } = useOffice();
   const { goBack } = navigation;
   const [description, setDescription] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
@@ -55,12 +57,11 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
 
     setSaving(true);
     const input: GeneralEntryInput = {
-      // Use description as a concise title; limit length to keep it tidy
-      title: description.trim().slice(0, 60),
       amount: numAmount,
       entry_type: entryType,
       description: description.trim(),
       agency_name: agencyName || undefined,
+      office_id: getCurrentOfficeId() || undefined,
     };
 
     try {
@@ -114,6 +115,16 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
         <View style={GlobalStyles.card}>
           <Text style={GlobalStyles.title}>Add General Entry</Text>
+          
+          {/* Office Indicator */}
+          {currentOffice && (
+            <View style={styles.officeIndicatorContainer}>
+              <Icon name="business-outline" size={18} color={Colors.primary} />
+              <Text style={styles.officeIndicatorText}>
+                Office: <Text style={styles.officeIndicatorName}>{currentOffice.name}</Text>
+              </Text>
+            </View>
+          )}
           
           <CommonInput
             label="Description"
@@ -171,6 +182,28 @@ const styles = StyleSheet.create({
   scrollViewContent: {
     paddingVertical: 20,
     flexGrow: 1,
+  },
+  officeIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryLight,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.primary,
+  },
+  officeIndicatorText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  officeIndicatorName: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '700',
   },
   inputLabel: {
     fontSize: 15,

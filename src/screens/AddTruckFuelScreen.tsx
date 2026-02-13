@@ -11,6 +11,7 @@ import { saveTruckFuel, getTruckFuelEntries, TruckFuelEntry, deleteTransactionBy
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import NotificationService from '../services/NotificationService';
+import { useOffice } from '../context/OfficeContext';
 
 interface DriverFuelEntry {
   id: string;
@@ -29,6 +30,7 @@ interface AddTruckFuelScreenProps {
 function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.Element {
   const { showAlert } = useAlert();
   const { goBack } = navigation;
+  const { getCurrentOfficeId } = useOffice();
   const [driverName, setDriverName] = useState<string>('');
   const [fuelType, setFuelType] = useState<'Diesel' | 'Petrol' | 'CNG'>('Diesel');
   const [amount, setAmount] = useState<string>('');
@@ -46,7 +48,8 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
   const loadFuelEntries = useCallback(async () => {
     setLoading(true);
     try {
-      const storedEntries = await getTruckFuelEntries();
+      const currentOfficeId = getCurrentOfficeId();
+      const storedEntries = await getTruckFuelEntries(currentOfficeId || undefined);
       const driverEntries: DriverFuelEntry[] = storedEntries.map(entry => ({
         id: entry.id,
         driverName: entry.truck_number,
@@ -67,7 +70,7 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [getCurrentOfficeId]);
 
   useFocusEffect(
     useCallback(() => {

@@ -10,6 +10,9 @@ interface UserAccessContextType {
   refreshPermissions: () => Promise<void>;
   hasScreenAccess: (screenName: string) => boolean;
   lastUpdated: number; // Timestamp to track when permissions were last updated
+  assignedOfficeId: string | null;
+  assignedOfficeName: string | null;
+  canAccessMultipleOffices: boolean;
 }
 
 const UserAccessContext = createContext<UserAccessContextType | undefined>(undefined);
@@ -24,6 +27,9 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
   const [userEmail, setUserEmail] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false); // Start with false to avoid blocking
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
+  const [assignedOfficeId, setAssignedOfficeId] = useState<string | null>(null);
+  const [assignedOfficeName, setAssignedOfficeName] = useState<string | null>(null);
+  const [canAccessMultipleOffices, setCanAccessMultipleOffices] = useState<boolean>(false);
 
   const refreshPermissions = async () => {
     try {
@@ -34,12 +40,22 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
       setIsAdmin(accessData.isAdmin);
       setScreenAccess(accessData.screenAccess);
       setUserEmail(accessData.userEmail);
+      setAssignedOfficeId(accessData.assignedOfficeId || null);
+      setAssignedOfficeName(accessData.assignedOfficeName || null);
+      
+      // Determine if user can access multiple offices (admin only)
+      const canSwitch = accessData.isAdmin === true;
+      setCanAccessMultipleOffices(canSwitch);
+      
       setLastUpdated(Date.now()); // Update timestamp when permissions change
       
       console.log('✅ UserAccessContext: Permissions refreshed', {
         isAdmin: accessData.isAdmin,
         userEmail: accessData.userEmail,
-        screenCount: Object.keys(accessData.screenAccess).length
+        screenCount: Object.keys(accessData.screenAccess).length,
+        assignedOfficeId: accessData.assignedOfficeId,
+        assignedOfficeName: accessData.assignedOfficeName,
+        canAccessMultipleOffices: canSwitch
       });
     } catch (error) {
       console.error('🔴 UserAccessContext: Error refreshing permissions:', error);
@@ -47,6 +63,9 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
       setIsAdmin(false);
       setScreenAccess({} as ScreenAccess);
       setUserEmail(undefined);
+      setAssignedOfficeId(null);
+      setAssignedOfficeName(null);
+      setCanAccessMultipleOffices(false);
     } finally {
       setIsLoading(false);
       console.log('🏁 UserAccessContext: Permission refresh completed');
@@ -70,6 +89,9 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
     refreshPermissions,
     hasScreenAccess,
     lastUpdated,
+    assignedOfficeId,
+    assignedOfficeName,
+    canAccessMultipleOffices,
   };
 
   return (
