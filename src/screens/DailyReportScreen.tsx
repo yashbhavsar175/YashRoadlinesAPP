@@ -98,18 +98,6 @@ interface TransactionItem {
     storageKey: string;
     agencyName?: string;
     originalTransactions?: OriginalTransaction[];
-    edited?: boolean;
-}
-
-interface EditableTransaction {
-    id: string;
-    type: 'credit' | 'debit';
-    label: string;
-    amount: number;
-    subLabel?: string;
-    storageKey: string;
-    originalData: any;
-    tableSource?: string; // Added to track which table this entry belongs to
 }
 
 type DailyReportScreenProps = { navigation: NavigationProp<RootStackParamList, 'DailyReport'> };
@@ -128,7 +116,7 @@ const formatDateKey = (date: Date): string => {
   return `${y}-${m}-${d}`;
 };
 
-const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isExpanded, isAdmin, isSelected, onEdit, selectionMode, onDelete }: { 
+const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isExpanded, isAdmin, isSelected, selectionMode, onDelete }: { 
   item: TransactionItem; 
   index: number;
   onPress: (id: string) => void;
@@ -136,7 +124,6 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
   isExpanded: boolean;
   isAdmin: boolean;
   isSelected?: boolean;
-  onEdit?: (item: TransactionItem) => void;
   selectionMode?: boolean;
   onDelete?: (id: string) => void;
 }) => {
@@ -148,26 +135,10 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
   
   const handlePress = useCallback((e?: any) => {
     e?.stopPropagation();
-    if (onEdit && !selectionMode) {
-      // Check if this is a double tap
-      const now = Date.now();
-      if (lastTap.current && (now - lastTap.current) < 300) {
-        // Double tap detected
-        lastTap.current = null;
-        onEdit(item);
-      } else {
-        // Single tap
-        lastTap.current = now;
-        setTimeout(() => {
-          if (lastTap.current === now) {
-            onPress(item.id);
-          }
-        }, 300);
-      }
-    } else {
+    if (!selectionMode) {
       onPress(item.id);
     }
-  }, [onPress, onEdit, item, selectionMode]);
+  }, [onPress, item, selectionMode]);
   
   const handleLongPress = useCallback(() => {
     onLongPress(item.id);
@@ -194,12 +165,6 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
         onLongPress={handleLongPress}
         activeOpacity={0.7}
       >
-        {isAdmin && !selectionMode && (
-          <View style={styles.editHint}>
-            <Icon name="pencil" size={12} color="#666" />
-            <Text style={styles.editHintText}>Double tap to edit</Text>
-          </View>
-        )}
         <View style={styles.transactionContent}>
           <View style={[styles.transactionLabelContainer, { maxWidth: isSmallScreen ? '60%' : '70%' }]}>
             <Text 
@@ -335,12 +300,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   const [expandedAgencyId, setExpandedAgencyId] = useState<string | null>(null);
   
   // Editing State
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingItem, setEditingItem] = useState<EditableTransaction | null>(null);
-  const [editAmount, setEditAmount] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editBillNo, setEditBillNo] = useState("");
-  
   
   // Constants
   const PROOF_BUCKET = 'paid_proofs';
@@ -563,8 +522,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             time: time,
             storageKey: OFFLINE_KEYS.AGENCY_PAYMENTS,
             agencyName: key,
-            originalTransactions: value.transactions.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()),
-            edited: value.transactions.some(t => ('updated_at' in t && 'created_at' in t) && (t as any).updated_at && (t as any).created_at && new Date((t as any).updated_at).getTime() > new Date((t as any).created_at).getTime())
+            originalTransactions: value.transactions.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime())
           });
         });
 
@@ -578,7 +536,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           let amount = 0;
           let storageKey = '';
           let dateKey = new Date().toISOString();
-          let edited = false;
 
           if ('majuri_date' in item && 'agency_name' in item) {
             const majuriItem = item as AgencyMajuri;
@@ -588,9 +545,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount = majuriItem.amount;
             storageKey = OFFLINE_KEYS.AGENCY_MAJURI;
             dateKey = majuriItem.majuri_date;
-            if ('updated_at' in majuriItem && 'created_at' in majuriItem && majuriItem.updated_at && majuriItem.created_at) {
-              try { edited = new Date((majuriItem as any).updated_at).getTime() > new Date((majuriItem as any).created_at).getTime(); } catch { edited = false; }
-            }
           } else if ('transaction_date' in item && 'driver_name' in item) {
             const driverItem = item as DriverTransaction;
             transactionType = driverItem.type === 'earned' ? 'credit' : 'debit';
@@ -599,9 +553,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount = driverItem.amount;
             storageKey = OFFLINE_KEYS.DRIVER_TRANSACTIONS;
             dateKey = driverItem.transaction_date;
-            if ('updated_at' in driverItem && 'created_at' in driverItem && (driverItem as any).updated_at && (driverItem as any).created_at) {
-              try { edited = new Date((driverItem as any).updated_at).getTime() > new Date((driverItem as any).created_at).getTime(); } catch { edited = false; }
-            }
           } else if ('fuel_date' in item && 'truck_number' in item) {
             const fuelItem = item as TruckFuelEntry;
             transactionType = 'debit';
@@ -610,9 +561,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount = (fuelItem as any).amount || fuelItem.price_per_liter * ((fuelItem as any).quantity || 0);
             storageKey = OFFLINE_KEYS.TRUCK_FUEL;
             dateKey = fuelItem.fuel_date;
-            if ('updated_at' in fuelItem && 'created_at' in fuelItem && (fuelItem as any).updated_at && (fuelItem as any).created_at) {
-              try { edited = new Date((fuelItem as any).updated_at).getTime() > new Date((fuelItem as any).created_at).getTime(); } catch { edited = false; }
-            }
           } else if ('person_name' in item && 'entry_type' in item) {
             const uppadJamaItem = item as UppadJamaEntry;
             transactionType = uppadJamaItem.entry_type === 'credit' ? 'credit' : 'debit';
@@ -621,9 +569,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount = uppadJamaItem.amount;
             storageKey = OFFLINE_KEYS.UPPAD_JAMA_ENTRIES;
             dateKey = uppadJamaItem.entry_date;
-            if ('updated_at' in uppadJamaItem && 'created_at' in uppadJamaItem && (uppadJamaItem as any).updated_at && (uppadJamaItem as any).created_at) {
-              try { edited = new Date((uppadJamaItem as any).updated_at).getTime() > new Date((uppadJamaItem as any).created_at).getTime(); } catch { edited = false; }
-            }
           } else if ('entry_type' in item) {
             const generalItem = item as GeneralEntry;
             transactionType = generalItem.entry_type;
@@ -634,9 +579,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount = generalItem.amount;
             storageKey = OFFLINE_KEYS.GENERAL_ENTRIES;
             dateKey = generalItem.entry_date;
-            if ('updated_at' in generalItem && 'created_at' in generalItem && (generalItem as any).updated_at && (generalItem as any).created_at) {
-              try { edited = new Date((generalItem as any).updated_at).getTime() > new Date((generalItem as any).created_at).getTime(); } catch { edited = false; }
-            }
           }
 
           const time = new Date(dateKey).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -649,8 +591,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             amount,
             time,
             storageKey,
-            originalTransactions: [item as any],
-            edited
+            originalTransactions: [item as any]
           });
         }
 
@@ -1264,8 +1205,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           time: time,
           storageKey: OFFLINE_KEYS.AGENCY_PAYMENTS,
           agencyName: key,
-          originalTransactions: value.transactions.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()),
-          edited: value.transactions.some(t => ('updated_at' in t && 'created_at' in t) && (t as any).updated_at && (t as any).created_at && new Date((t as any).updated_at).getTime() > new Date((t as any).created_at).getTime())
+          originalTransactions: value.transactions.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime())
         });
       });
 
@@ -1276,7 +1216,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         let amount = 0;
         let storageKey = '';
         let dateKey = new Date().toISOString();
-        let edited = false;
         
         if ('majuri_date' in item && 'agency_name' in item) { // Handle individual Majuri entries
           transactionType = 'debit';
@@ -1319,15 +1258,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           dateKey = item.entry_date;
         }
 
-        // Determine if this entry was edited (updated_at > created_at)
-        if ('updated_at' in item && 'created_at' in item && (item as any).updated_at && (item as any).created_at) {
-          try {
-            edited = new Date((item as any).updated_at).getTime() > new Date((item as any).created_at).getTime();
-          } catch {
-            edited = false;
-          }
-        }
-
         const time = new Date(dateKey).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
         return {
           id: item.id,
@@ -1336,7 +1266,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           amount: amount,
           time: time,
           storageKey: storageKey,
-          edited: edited,
           // Attach original item so we have created_by for permission checks and originalData for editing
           originalTransactions: [item as any],
         };
@@ -1353,7 +1282,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           amount: item.amount,
           time: time,
           storageKey: OFFLINE_KEYS.AGENCY_ENTRIES,
-          edited: new Date(item.updated_at).getTime() > new Date(item.created_at).getTime(),
           // Attach original item for proper permission checks and editing
           originalTransactions: [item as any],
         };
@@ -1496,48 +1424,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       return 0;
     }
   }, [getCurrentOfficeId]);
-  // Handle item edit
-  const handleEditItemInternal = useCallback(async (item: TransactionItem) => {
-    // Vibration feedback for edit action
-    if (Platform.OS === 'android') {
-      // Add haptic feedback if available
-    }
-    // Ownership guard: block editing if not created by current user unless admin
-    const ownerId: string | undefined = (item.originalTransactions && item.originalTransactions[0])
-      ? (item.originalTransactions[0] as any).created_by
-      : (item as any).created_by;
-    if (!isAdmin && currentUserId && ownerId && ownerId !== currentUserId) {
-      const ownerIsAdmin = await isOwnerAdminUser(ownerId);
-      if (ownerIsAdmin) {
-        showAlert("You are not permitted to edit entries created by Yash Bhavsar (Admin).");
-      } else {
-        showAlert('You can only edit your own entries.');
-      }
-      return;
-    }
-    
-    setIsEditing(true);
-    setEditingItem({
-      id: item.id,
-      type: item.type,
-      label: item.label,
-      amount: item.amount,
-      subLabel: item.subLabel,
-      storageKey: item.storageKey,
-      originalData: item.originalTransactions ? item.originalTransactions[0] : item,
-    });
-
-    setEditAmount(item.amount.toString());
-    setEditDescription(item.subLabel || '');
-
-    if (item.storageKey === OFFLINE_KEYS.AGENCY_PAYMENTS) {
-      setEditBillNo(item.originalTransactions?.[0]?.bill_no || '');
-    } else {
-      setEditBillNo('');
-    }
-  }, [isAdmin, currentUserId, showAlert]);
-
-
+  
+  // REMOVED: Edit functionality has been disabled
+  // const handleEditItemInternal = useCallback(async (item: TransactionItem) => { ... }, [isAdmin, currentUserId, showAlert]);
 
   const toggleExpansion = useCallback((id: string) => {
     setExpandedAgencyId(prev => prev === id ? null : id);
@@ -1677,162 +1566,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     }
   };
 
-
-
-  const handleUpdateSave = async () => {
-    if (!editingItem) return;
-
-    const numAmount = parseFloat(editAmount);
-    if (isNaN(numAmount) || numAmount <= 0) {
-      showAlert('Please enter a valid positive number.');
-      return;
-    }
-
-    let success = false;
-    setLoading(true);
-    try {
-      const originalData = editingItem.originalData;
-      switch (editingItem.storageKey) {
-        case OFFLINE_KEYS.AGENCY_PAYMENTS: {
-          const updatedPayment = { 
-            ...originalData, 
-            amount: numAmount, 
-            bill_no: editBillNo,
-            id: originalData.id, // Ensure ID is preserved
-            updated_at: new Date().toISOString()
-          };
-          success = await saveAgencyPayment(updatedPayment);
-          break;
-        }
-        case OFFLINE_KEYS.AGENCY_MAJURI: {
-          const updatedMajuri = { 
-            ...originalData, 
-            amount: numAmount, 
-            description: editDescription,
-            id: originalData.id, // Ensure ID is preserved
-            updated_at: new Date().toISOString()
-          };
-          success = await saveAgencyMajuri(updatedMajuri);
-          break;
-        }
-        case OFFLINE_KEYS.DRIVER_TRANSACTIONS: {
-          const updatedDriverTxn = { 
-            ...originalData, 
-            amount: numAmount, 
-            description: editDescription,
-            id: originalData.id, // Ensure ID is preserved
-            updated_at: new Date().toISOString()
-          };
-          success = await saveDriverTransaction(updatedDriverTxn);
-          break;
-        }
-        case OFFLINE_KEYS.TRUCK_FUEL: {
-          const updatedFuel = { 
-            ...originalData, 
-            total_price: numAmount,
-            id: originalData.id, // Ensure ID is preserved
-            updated_at: new Date().toISOString()
-          };
-          success = await saveTruckFuel(updatedFuel);
-          break;
-        }
-        case OFFLINE_KEYS.GENERAL_ENTRIES: {
-          const updatedGeneral = { 
-            ...originalData, 
-            amount: numAmount, 
-            description: editDescription,
-            id: originalData.id, // Ensure ID is preserved
-            updated_at: new Date().toISOString()
-          };
-          success = await saveGeneralEntry(updatedGeneral);
-          break;
-        }
-        case OFFLINE_KEYS.AGENCY_ENTRIES: {
-          const updatedAgencyEntry = { 
-            ...originalData, 
-            amount: numAmount, 
-            description: editDescription,
-            id: originalData.id, // Ensure ID is preserved
-            updated_at: new Date().toISOString()
-          };
-          success = await saveAgencyGeneralEntry(updatedAgencyEntry);
-          break;
-        }
-        case OFFLINE_KEYS.UPPAD_JAMA_ENTRIES: {
-            const updatedUppadJamaEntry = {
-                ...originalData,
-                amount: numAmount,
-                description: editDescription,
-                id: originalData.id,
-                updated_at: new Date().toISOString()
-            };
-            success = await saveUppadJamaEntry(updatedUppadJamaEntry);
-            break;
-        }
-      }
-
-      if (success) {
-        // Trigger admin notification for edit (always send to admin)
-        if (profile) {
-          const userName = profile.username || profile.name || 'User';
-          
-          // Create detailed audit message showing before/after changes
-          const originalData = editingItem.originalData;
-          const changes = [];
-          
-          // Check amount changes
-          const originalAmount = originalData?.amount || 0;
-          if (originalAmount !== numAmount) {
-            changes.push(`Amount: ₹${originalAmount} → ₹${numAmount}`);
-          }
-          
-          // Check description changes  
-          const originalDesc = originalData?.description || originalData?.remark || '';
-          if (originalDesc !== editDescription) {
-            changes.push(`Description: "${originalDesc}" → "${editDescription}"`);
-          }
-          
-          // Check other field changes based on entry type
-          if (originalData?.personName && originalData.personName !== (originalData?.updatedPersonName || originalData?.personName)) {
-            changes.push(`Person: "${originalData.personName}" → "${originalData.updatedPersonName}"`);
-          }
-          
-          const changeDetails = changes.length > 0 ? changes.join(', ') : 'Minor updates';
-          const detailedMessage = `${editingItem.label || 'Entry'} edited by ${userName}. Changes: ${changeDetails}. Time: ${new Date().toLocaleString()}`;
-          
-          // Send database notification (admin will see in notification list)
-          await NotificationService.notifyEdit(
-            getEntryCategory(editingItem.tableSource || editingItem.storageKey),
-            detailedMessage
-          );
-          
-          // Send device notification (admin will get push notification)
-          await DeviceNotificationService.notifyAdminEntryUpdated(
-            `${editingItem.label || 'Entry'} Modified`,
-            userName,
-            { 
-              id: editingItem.id, 
-              before: { amount: originalAmount, description: originalDesc },
-              after: { amount: numAmount, description: editDescription },
-              changes: changeDetails,
-              timestamp: new Date().toISOString()
-            }
-          );
-        }
-        showAlert('Entry updated');
-        setIsEditing(false);
-        setEditingItem(null);
-        await loadDailyTransactions(selectedDate);
-      } else {
-        showAlert('Failed to update entry. Please try again.');
-      }
-    } catch (error) {
-      console.error('Update error:', error);
-      showAlert('An error occurred while updating the entry.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  
+  // REMOVED: Edit functionality has been disabled
+  // const handleUpdateSave = async () => { ... };
   
   const handleDeleteEntry = useCallback((id: string, storageKey: string, label: string, item?: any) => {
     Alert.alert(
@@ -1931,18 +1667,11 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       // Allow selection of individual items (non-group items)
       toggleSelectionInternal(item.id);
     } else {
-      // Handle double tap for editing individual items
+      // Single tap only - edit functionality removed
       const now = Date.now();
-      if (lastTap && (now - lastTap) < DOUBLE_TAP_DELAY) {
-        // Double tap detected - edit the item
-        setLastTap(null);
-        handleEditItemInternal(item);
-      } else {
-        // Single tap
-        setLastTap(now);
-      }
+      setLastTap(now);
     }
-  }, [selectionMode, toggleExpansion, toggleSelectionInternal, lastTap, handleEditItemInternal]);
+  }, [selectionMode, toggleExpansion, toggleSelectionInternal, lastTap]);
 
   // Main renderItem function for FlatList
   const renderItem = useCallback(({ item }: { item: TransactionItem, index: number }) => {
@@ -1990,22 +1719,11 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                 <Text style={styles.transactionLabel} numberOfLines={1}>
                   {item.label}
                 </Text>
-                {item.edited && (
-                  <View style={styles.editedBadge}>
-                    <Text style={styles.editedBadgeText}>Edited</Text>
-                  </View>
-                )}
               </View>
               {item.subLabel && (
                 <Text style={styles.transactionSubLabel} numberOfLines={1}>
                   {item.subLabel}
                 </Text>
-              )}
-              {!selectionMode && canSelect && (
-                <View style={styles.editHintContainer}>
-                  <Icon name="pencil" size={10} color="#666" />
-                  <Text style={styles.editHintText}>Double tap to edit</Text>
-                </View>
               )}
             </View>
             <View style={styles.amountContainer}>
@@ -2072,16 +1790,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                       if (selectionMode) {
                         toggleSelectionInternal(subItem.id);
                       } else {
-                        // Handle double tap for editing sub-items
+                        // Single tap only - edit functionality removed
                         const now = Date.now();
-                        if (lastTap && (now - lastTap) < DOUBLE_TAP_DELAY) {
-                          // Double tap detected - edit the sub-item
-                          setLastTap(null);
-                          handleEditItemInternal(subItemAsTransaction);
-                        } else {
-                          // Single tap
-                          setLastTap(now);
-                        }
+                        setLastTap(now);
                       }
                     }}
                     onLongPress={() => {
@@ -2110,11 +1821,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                            <Text style={styles.subItemText} numberOfLines={1}>
                              {description}
                            </Text>
-                           {subItem.edited && (
-                             <View style={styles.editedBadgeSmall}>
-                               <Text style={styles.editedBadgeText}>Edited</Text>
-                             </View>
-                           )}
                          </View>
                         <Text style={styles.subItemAmount}>
                           ₹{subItem.amount.toLocaleString('en-IN')}
@@ -2122,15 +1828,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                       </View>
                     </View>
                   </TouchableOpacity>
-                  
-                  {!selectionMode && (
-                    <View style={styles.subItemActions}>
-                      <View style={styles.editHintContainer}>
-                        <Icon name="pencil" size={12} color="#666" />
-                        <Text style={styles.editHintText}>Double tap to edit</Text>
-                      </View>
-                    </View>
-                  )}
                 </View>
               );
             })}
@@ -2140,7 +1837,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
       </View>
     );
-  }, [expandedAgencyId, handleEditItemInternal, handleDeleteItem, handleItemPress, selectedIds, selectionMode, toggleSelectionInternal, handleDeleteEntry, handleCaptureProof, openGalleryViewer, proofCounts]);
+  }, [expandedAgencyId, handleDeleteItem, handleItemPress, selectedIds, selectionMode, toggleSelectionInternal, handleDeleteEntry, handleCaptureProof, openGalleryViewer, proofCounts]);
 
   const renderSubItem = useCallback(({ subItem, item }: { subItem: OriginalTransaction; item: TransactionItem }) => {
     const isSubItemSelected = selectedIds.has(subItem.id);
@@ -2154,27 +1851,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           if (selectionMode) {
             toggleSelectionInternal(subItem.id); // Use the renamed function
           } else {
-            // Handle double tap for sub items
+            // Single tap only - edit functionality removed
             const now = Date.now();
-            if (lastTap && (now - lastTap) < DOUBLE_TAP_DELAY) {
-              // Create a transaction item from sub item for editing
-              const subItemAsTransaction: TransactionItem = {
-                id: subItem.id,
-                type: item.type,
-                label: item.label,
-                amount: 'amount' in subItem ? subItem.amount : 0,
-                time: item.time,
-                subLabel: item.type === 'credit'
-                  ? ('bill_no' in subItem ? `Bill No: ${subItem.bill_no}` : '')
-                  : ('description' in subItem ? subItem.description : ''),
-                storageKey: item.storageKey,
-                originalTransactions: [subItem]
-              };
-              handleEditItemInternal(subItemAsTransaction); // Renamed handleEditItem to handleEditItemInternal
-              setLastTap(null);
-            } else {
-              setLastTap(now);
-            } 
+            setLastTap(now);
           }
         }}
         onLongPress={() => {
@@ -2184,13 +1863,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         delayLongPress={500}
       >
         <View style={[styles.subItemCard, isSubItemSelected && styles.selectedItemStyle]}>
-          {isSubEdited && (
-            <View style={styles.editedBadgeAbsolute}>
-              <View style={styles.editedBadgeSmall}>
-                <Text style={styles.editedBadgeText}>Edited</Text>
-              </View>
-            </View>
-          )}
           <View style={styles.subItemHeader}>
             {selectionMode && (
               <Icon
@@ -2221,7 +1893,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         </View>
       </TouchableOpacity> // Removed toggleSelection from dependency array as it's not used directly here
     );
-  }, [selectionMode, selectedIds, lastTap, handleEditItemInternal, toggleSelectionInternal]);
+  }, [selectionMode, selectedIds, lastTap, toggleSelectionInternal]);
 
   const renderEmptyState = () => (
     <View style={[GlobalStyles.card, styles.emptyStateCard]}>
@@ -2526,79 +2198,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
   const keyExtractor = useCallback((item: TransactionItem) => item.id, []);
 
-  const renderEditModal = () => {
-    if (!editingItem) return null;
-
-    return (
-      <Modal
-        visible={isEditing}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsEditing(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Entry</Text>
-            
-            <Text style={styles.inputLabel}>Amount</Text>
-            <TextInput
-              style={styles.input}
-              value={editAmount}
-              onChangeText={setEditAmount}
-              keyboardType="numeric"
-              placeholder="Enter amount"
-            />
-
-            {editingItem.storageKey === OFFLINE_KEYS.AGENCY_PAYMENTS && (
-              <>
-                <Text style={styles.inputLabel}>Bill Number</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editBillNo}
-                  onChangeText={setEditBillNo}
-                  placeholder="Enter bill number"
-                />
-              </>
-            )}
-
-            {editingItem.storageKey !== OFFLINE_KEYS.AGENCY_PAYMENTS && (
-              <>
-                <Text style={styles.inputLabel}>Description</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editDescription}
-                  onChangeText={setEditDescription}
-                  placeholder="Enter description"
-                />
-              </>
-            )}
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setIsEditing(false)}
-              >
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={handleUpdateSave}
-              >
-                <Text style={styles.modalButtonText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
-
+  // REMOVED: Edit modal has been disabled
+  // const renderEditModal = () => { ... };
 
 
   return (
     <View style={styles.container}>
-      {renderEditModal()}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>Back</Text>

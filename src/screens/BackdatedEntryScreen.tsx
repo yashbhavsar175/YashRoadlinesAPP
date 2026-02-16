@@ -262,6 +262,7 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
             description: description.trim(),
             amount: numericAmount,
             majuri_date: date.toISOString(),
+            office_id: getCurrentOfficeId() || undefined
           });
           break;
 
@@ -443,6 +444,7 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
             amount: numericAmount,
             bill_no: billNo.trim(),
             payment_date: date.toISOString(),
+            office_id: getCurrentOfficeId() || undefined
           });
           break;
 

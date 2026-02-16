@@ -83,6 +83,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
       agency_name: selectedAgency,
       amount: amount,
       description: description.trim(),
+      office_id: getCurrentOfficeId() || undefined
     };
 
     const success = await saveAgencyMajuri(newMajuriEntry);

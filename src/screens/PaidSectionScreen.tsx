@@ -4,6 +4,7 @@ import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { saveAgencyPayment, getAgencies, Agency, AgencyPayment, getAgencyPaymentsLocal } from '../data/Storage';
 import { useAlert } from '../context/AlertContext';
+import { useOffice } from '../context/OfficeContext';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import NotificationService from '../services/NotificationService';
@@ -18,6 +19,7 @@ interface PaidSectionScreenProps {
 function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.Element {
   const { goBack } = navigation;
   const { showAlert } = useAlert();
+  const { getCurrentOfficeId } = useOffice();
   const [selectedAgency, setSelectedAgency] = useState<string>('');
   const [billNo, setBillNo] = useState<string>('');
   const [paidAmount, setPaidAmount] = useState<string>('');
@@ -97,7 +99,8 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
         amount: amount,
         bill_no: billNo.trim(),
         payment_date: new Date().toISOString(),
-        date: new Date().toISOString()
+        date: new Date().toISOString(),
+        office_id: getCurrentOfficeId() || undefined
       };
 
       const success = await saveAgencyPayment(newPaymentEntry);
