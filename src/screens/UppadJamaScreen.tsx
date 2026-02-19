@@ -394,14 +394,6 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
           <View style={GlobalStyles.card}>
             <Text style={GlobalStyles.title}>Uppad/Jama Entry</Text>
             
-            {/* Office indicator */}
-            {currentOffice && (
-              <View style={styles.officeIndicatorContainer}>
-                <Text style={styles.officeIndicatorLabel}>Office:</Text>
-                <Text style={styles.officeIndicatorValue}>{currentOffice.name}</Text>
-              </View>
-            )}
-
             <View style={styles.labelRow}>
               <Text style={styles.inputLabel}>Person</Text>
               <TouchableOpacity onPress={loadPersons} disabled={loadingPersons}>
@@ -594,17 +586,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  officeIndicatorLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginRight: 8,
-  },
-  officeIndicatorValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.primary,
   },
 });
 

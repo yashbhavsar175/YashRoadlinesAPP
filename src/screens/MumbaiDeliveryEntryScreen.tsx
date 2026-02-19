@@ -22,11 +22,11 @@ import { GlobalStyles } from '../theme/styles';
 import { saveAgencyEntry, getAgencyEntry, deleteTransactionByIdImproved, OFFLINE_KEYS, AgencyEntry } from '../data/Storage';
 import { useAlert } from '../context/AlertContext';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, LongPressGestureHandler, TapGestureHandler, State } from 'react-native-gesture-handler';
 import NotificationService from '../services/NotificationService';
 import { useOffice } from '../context/OfficeContext';
 
-type MumbaiDeliveryEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'MumbaiDeliveryEntry'>;
+type MumbaiDeliveryEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'MumbaiDelivery'>;
 
 interface MumbaiDeliveryEntryScreenProps {
   navigation: MumbaiDeliveryEntryScreenNavigationProp;
@@ -129,6 +129,37 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
     }
   };
 
+  const handleToggleDeliveryStatus = async (id: string) => {
+    const entry = recentEntries.find(e => e.id === id);
+    if (!entry) return;
+
+    const newStatus = entry.delivery_status === 'yes' ? 'no' : 'yes';
+    const statusText = newStatus === 'yes' ? 'Delivered' : 'Not Delivered';
+
+    try {
+      // Update the entry with new status
+      const updatedEntry = {
+        ...entry,
+        delivery_status: newStatus,
+      };
+
+      const success = await saveAgencyEntry(updatedEntry);
+      if (success) {
+        // Update local state
+        const updatedEntries = recentEntries.map(e => 
+          e.id === id ? { ...e, delivery_status: newStatus } : e
+        );
+        setRecentEntries(updatedEntries);
+        showAlert(`Status updated to: ${statusText}`);
+      } else {
+        showAlert('Failed to update status');
+      }
+    } catch (error) {
+      console.error('Update status error:', error);
+      showAlert('Error updating status');
+    }
+  };
+
   const handleDeleteEntry = (id: string) => {
     const entryToDelete = recentEntries.find(entry => entry.id === id);
 
@@ -167,6 +198,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
 
   const renderEntryItem = ({ item }: { item: AgencyEntry }) => {
     const deliveryText = item.delivery_status === 'yes' ? 'Delivered' : 'Not Delivered';
+    const chipStyle = item.delivery_status === 'yes' ? styles.deliveredChip : styles.notDeliveredChip;
 
     return (
       <LongPressGestureHandler
@@ -177,31 +209,33 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         }}
         minDurationMs={800}
       >
-        <View style={[GlobalStyles.card, styles.entryCard]}>
-          <View style={styles.entryHeader}>
-            <View style={styles.deliveredChip}>
-              <Text style={styles.chipText}>{deliveryText}</Text>
+        <TapGestureHandler
+          numberOfTaps={2}
+          onActivated={() => handleToggleDeliveryStatus(item.id)}
+        >
+          <View style={[GlobalStyles.card, styles.entryCard]}>
+            <View style={styles.entryHeader}>
+              <View style={chipStyle}>
+                <Text style={styles.chipText}>{deliveryText}</Text>
+              </View>
+              <Text style={styles.entryDate}>{new Date(item.entry_date).toLocaleDateString('en-IN')}</Text>
             </View>
-            <Text style={styles.entryDate}>{new Date(item.entry_date).toLocaleDateString('en-IN')}</Text>
+            <View style={styles.entryContent}>
+              <Text style={styles.entryDescription}>{item.description}</Text>
+              <Text style={styles.creditAmount}>
+                ₹{item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+              </Text>
+            </View>
           </View>
-          <View style={styles.entryContent}>
-            <Text style={styles.entryDescription}>{item.description}</Text>
-            <Text style={styles.creditAmount}>
-              ₹{item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-            </Text>
-          </View>
-        </View>
+        </TapGestureHandler>
       </LongPressGestureHandler>
     );
   };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.primary} translucent={false} />
 
         <View style={styles.header}>
           <TouchableOpacity onPress={goBack} style={styles.backButton}>
@@ -211,16 +245,17 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
           <View style={styles.headerSpacer} />
         </View>
 
-        <FlatList
-          data={recentEntries}
-          renderItem={renderEntryItem}
-          keyExtractor={(item) => item.id}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
-          }
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          ListHeaderComponent={
+        <KeyboardAvoidingView
+          style={styles.contentContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
+            }
+          >
             <View style={GlobalStyles.card}>
               <View style={styles.cardContent}>
                 <Text style={[GlobalStyles.title, styles.cardTitle]}>Add Mumbai Delivery Entry</Text>
@@ -263,24 +298,63 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
                 </TouchableOpacity>
               </View>
             </View>
-          }
-          ListEmptyComponent={
-            !loading ? (
-              <View style={styles.emptyContainer}>
-                <Icon name="car-outline" size={60} color={Colors.textSecondary} />
-                <Text style={styles.emptyText}>No Mumbai delivery entries yet</Text>
-              </View>
-            ) : null
-          }
-        />
 
-        {loading && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading Mumbai delivery entries...</Text>
-          </View>
-        )}
-      </KeyboardAvoidingView>
+            <View style={styles.recentEntriesSection}>
+              <Text style={styles.sectionTitle}>Recent Deliveries</Text>
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={Colors.primary} />
+                  <Text style={styles.loadingText}>Loading Mumbai delivery entries...</Text>
+                </View>
+              ) : recentEntries.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Icon name="car-outline" size={60} color={Colors.textSecondary} />
+                  <Text style={styles.emptyText}>No Mumbai delivery entries yet</Text>
+                </View>
+              ) : (
+                recentEntries.map((item) => {
+                  const deliveryText = item.delivery_status === 'yes' ? 'Delivered' : 'Not Delivered';
+                  const chipStyle = item.delivery_status === 'yes' ? styles.deliveredChip : styles.notDeliveredChip;
+                  
+                  return (
+                    <LongPressGestureHandler
+                      key={item.id}
+                      onHandlerStateChange={({ nativeEvent }) => {
+                        if (nativeEvent.state === State.ACTIVE) {
+                          handleDeleteEntry(item.id);
+                        }
+                      }}
+                      minDurationMs={800}
+                    >
+                      <TapGestureHandler
+                        numberOfTaps={2}
+                        onActivated={() => handleToggleDeliveryStatus(item.id)}
+                      >
+                        <View style={[GlobalStyles.card, styles.entryCard]}>
+                          <View style={styles.entryHeader}>
+                            <View style={chipStyle}>
+                              <Text style={styles.chipText}>{deliveryText}</Text>
+                            </View>
+                            <Text style={styles.entryDate}>
+                              {new Date(item.entry_date).toLocaleDateString('en-IN')}
+                            </Text>
+                          </View>
+                          <View style={styles.entryContent}>
+                            <Text style={styles.entryDescription}>{item.description}</Text>
+                            <Text style={styles.creditAmount}>
+                              ₹{item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                            </Text>
+                          </View>
+                        </View>
+                      </TapGestureHandler>
+                    </LongPressGestureHandler>
+                  );
+                })
+              )}
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
     </GestureHandlerRootView>
   );
 }
@@ -295,9 +369,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.primary,
     paddingHorizontal: 16,
-    height: 56 + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0),
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+    height: 56,
     justifyContent: 'space-between',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   headerTitle: {
     color: Colors.surface,
@@ -315,7 +393,10 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 34,
   },
-  listContent: {
+  contentContainer: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 16,
   },
   cardContent: {
@@ -353,6 +434,16 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.6,
   },
+  recentEntriesSection: {
+    marginTop: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
   entryCard: {
     marginBottom: 12,
   },
@@ -368,7 +459,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.success,
+  },
+  notDeliveredChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: Colors.error,
   },
   chipText: {
     color: Colors.surface,
@@ -400,7 +497,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 40,
-    marginTop: 50,
+    marginTop: 20,
   },
   emptyText: {
     marginTop: 16,
@@ -409,14 +506,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   loadingContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    justifyContent: 'center',
+    padding: 40,
+    marginTop: 20,
   },
   loadingText: {
     marginTop: 10,

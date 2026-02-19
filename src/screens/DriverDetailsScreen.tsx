@@ -297,15 +297,6 @@ function DriverDetailsScreen({ navigation }: DriverDetailsScreenProps): React.JS
       <View style={styles.cardContent}>
         <Text style={GlobalStyles.title}>Add Driver Transaction</Text>
 
-        {currentOffice && (
-          <View style={styles.officeIndicatorContainer}>
-            <Icon name="business-outline" size={16} color={Colors.textSecondary} />
-            <Text style={styles.officeIndicatorText}>
-              Office: {currentOffice.name}
-            </Text>
-          </View>
-        )}
-
         <CommonInput
           label="Driver Name"
           required
@@ -452,12 +443,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: Colors.border,
-  },
-  officeIndicatorText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginLeft: 6,
-    fontWeight: '500',
   },
   descriptionInput: {
     height: 80,

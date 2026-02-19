@@ -116,16 +116,6 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
         <View style={GlobalStyles.card}>
           <Text style={GlobalStyles.title}>Add General Entry</Text>
           
-          {/* Office Indicator */}
-          {currentOffice && (
-            <View style={styles.officeIndicatorContainer}>
-              <Icon name="business-outline" size={18} color={Colors.primary} />
-              <Text style={styles.officeIndicatorText}>
-                Office: <Text style={styles.officeIndicatorName}>{currentOffice.name}</Text>
-              </Text>
-            </View>
-          )}
-          
           <CommonInput
             label="Description"
             required
@@ -193,17 +183,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderLeftWidth: 3,
     borderLeftColor: Colors.primary,
-  },
-  officeIndicatorText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginLeft: 8,
-    fontWeight: '500',
-  },
-  officeIndicatorName: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '700',
   },
   inputLabel: {
     fontSize: 15,

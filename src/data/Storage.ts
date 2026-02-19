@@ -150,6 +150,61 @@ export interface AgencyEntry {
   created_at: string;
   updated_at: string;
   delivery_status?: 'yes' | 'no';
+  // New fields for Mumbai Delivery redesign
+  billty_no?: string;
+  consignee_name?: string;
+  item_description?: string;
+  confirmation_status?: 'pending' | 'confirmed';
+  confirmed_at?: string;
+  confirmed_amount?: number;
+  bilty_photo_id?: string;
+  signature_photo_id?: string;
+  taken_from_godown?: boolean;
+  payment_received?: boolean;
+}
+
+export interface DeliveryRecord extends AgencyEntry {
+  // All fields inherited from AgencyEntry
+  // New required fields for delivery workflow
+  billty_no: string;
+  consignee_name: string;
+  item_description: string;
+  confirmation_status: 'pending' | 'confirmed';
+  taken_from_godown: boolean;
+  payment_received: boolean;
+}
+
+export interface PaymentConfirmation {
+  delivery_record_id: string;
+  confirmed_amount: number;
+  bilty_photo: PhotoData;
+  signature_photo: PhotoData;
+  confirmed_at: string;
+  confirmed_by?: string;
+}
+
+export interface PhotoRecord {
+  id: string;
+  delivery_record_id: string;
+  photo_type: 'bilty' | 'signature';
+  file_path: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  uploaded: boolean;
+  upload_url?: string;
+  office_id?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PhotoData {
+  uri: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  timestamp: string;
 }
 
 export interface UppadJamaEntry {
@@ -199,7 +254,11 @@ export const OFFLINE_KEYS = {
   PERSONS: 'offline_persons',
   CASH_RECORDS: 'offline_cash_records',
   PENDING_SYNC: 'pending_sync_operations',
-  LAST_SYNC: 'last_sync_timestamp'
+  LAST_SYNC: 'last_sync_timestamp',
+  // New keys for Mumbai Delivery redesign
+  DELIVERY_RECORDS: 'offline_delivery_records',
+  DELIVERY_PHOTOS: 'offline_delivery_photos',
+  PENDING_PHOTO_UPLOADS: 'pending_photo_uploads',
 };
  
 // =====================================================
@@ -692,7 +751,10 @@ class SyncManager {
       return 0;
     }
   }
-};
+}
+
+// Export SyncManager for testing and external use
+export { SyncManager };
 
 // =====================================================
 // 11a. UPPAD/JAMA ENTRIES (separate from drivers)
@@ -3737,6 +3799,573 @@ export const getAgencyEntry = async (officeId?: string): Promise<AgencyEntry[]> 
     return offlineData;
   } catch (error) {
     console.error('Error getting agency entries:', error);
+    return [];
+  }
+};
+
+// =====================================================
+// 14. DELIVERY RECORD FUNCTIONS (Mumbai Delivery Redesign)
+// =====================================================
+
+/**
+ * Save a delivery record with validation and offline support
+ * Handles both create and update operations
+ * @param record - Partial delivery record with required fields
+ * @returns Promise<boolean> - true if successful, false otherwise
+ */
+export const saveDeliveryRecord = async (
+  record: Partial<DeliveryRecord> & {
+    billty_no: string;
+    consignee_name: string;
+    item_description: string;
+    amount: number;
+    office_id?: string;
+  }
+): Promise<boolean> => {
+  try {
+    // Validate required fields
+    if (!record.billty_no || record.billty_no.trim() === '') {
+      console.error('Billty No is required');
+      return false;
+    }
+    if (!record.consignee_name || record.consignee_name.trim() === '') {
+      console.error('Consignee Name is required');
+      return false;
+    }
+    if (!record.item_description || record.item_description.trim() === '') {
+      console.error('Item Description is required');
+      return false;
+    }
+    if (!record.amount || record.amount <= 0) {
+      console.error('Amount must be a positive number');
+      return false;
+    }
+
+    const online = await isOnline();
+
+    // Prepare delivery record data for agency_entries table
+    const deliveryData = {
+      agency_name: 'Mumbai',
+      billty_no: record.billty_no.trim(),
+      consignee_name: record.consignee_name.trim(),
+      item_description: record.item_description.trim(),
+      description: record.item_description.trim(), // Also set description for compatibility
+      amount: record.amount,
+      entry_type: 'credit' as 'credit',
+      entry_date: record.entry_date || new Date().toISOString().split('T')[0],
+      office_id: record.office_id || null,
+      created_by: (await supabase.auth.getUser()).data.user?.id,
+      // Set default values for new records
+      confirmation_status: record.confirmation_status || 'pending',
+      taken_from_godown: record.taken_from_godown ?? false,
+      payment_received: record.payment_received ?? false,
+      delivery_status: 'yes' as 'yes',
+    };
+
+    // Handle update vs create
+    const isUpdate = !!record.id && !record.id.startsWith('temp_');
+
+    if (online) {
+      if (isUpdate) {
+        // Update existing record in agency_entries table
+        const { data, error } = await supabase
+          .from('agency_entries')
+          .update(deliveryData)
+          .eq('id', record.id)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        
+        // Update local storage
+        await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, data);
+        await logHistory('update', 'agency_entries', data.id, deliveryData);
+        return true;
+      } else {
+        // Create new record in agency_entries table
+        const { data, error } = await supabase
+          .from('agency_entries')
+          .insert([deliveryData])
+          .select()
+          .single();
+        
+        if (error) throw error;
+        
+        // Save to local storage
+        await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, data);
+        await logHistory('add', 'agency_entries', data.id, deliveryData);
+        return true;
+      }
+    } else {
+      // Offline mode
+      const tempId = record.id || `temp_${Date.now()}`;
+      const currentDate = new Date().toISOString();
+      const offlineData = {
+        ...deliveryData,
+        id: tempId,
+        created_at: currentDate,
+        updated_at: currentDate,
+      };
+      
+      // Save to offline storage
+      await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, offlineData);
+      
+      // Queue for sync
+      await SyncManager.getInstance().addPendingOperation({
+        table: 'agency_entries',
+        action: isUpdate ? 'UPDATE' : 'INSERT',
+        data: deliveryData,
+        office_id: record.office_id || undefined,
+      });
+      
+      return true;
+    }
+  } catch (error) {
+    console.error('Error saving delivery record:', error);
+    return false;
+  }
+};
+
+/**
+ * Get delivery records with filtering and ordering
+ * Fetches from Supabase if online, falls back to AsyncStorage if offline
+ * @param officeId - Optional office ID to filter records
+ * @param status - Optional confirmation status filter: 'pending', 'confirmed', or 'all'
+ * @returns Array of delivery records ordered by confirmation_status (pending first) then entry_date descending
+ */
+export const getDeliveryRecords = async (
+  officeId?: string,
+  status?: 'pending' | 'confirmed' | 'all'
+): Promise<DeliveryRecord[]> => {
+  try {
+    const online = await isOnline();
+
+    if (online) {
+      // Build query for agency_entries table with Mumbai filter
+      let query = supabase
+        .from('agency_entries')
+        .select('*')
+        .eq('agency_name', 'Mumbai');
+      
+      // Apply office filter if provided
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      // Apply confirmation status filter if provided
+      if (status && status !== 'all') {
+        query = query.eq('confirmation_status', status);
+      }
+      
+      // Order by entry_date descending
+      const { data, error } = await query.order('entry_date', { ascending: false });
+
+      if (!error && data) {
+        // Sort to ensure pending records come first, then by entry_date descending
+        const sortedData = data.sort((a, b) => {
+          // First sort by confirmation_status (pending before confirmed)
+          if (a.confirmation_status === 'pending' && b.confirmation_status === 'confirmed') {
+            return -1;
+          }
+          if (a.confirmation_status === 'confirmed' && b.confirmation_status === 'pending') {
+            return 1;
+          }
+          // Then sort by entry_date descending
+          return new Date(b.entry_date).getTime() - new Date(a.entry_date).getTime();
+        });
+        
+        // Cache the data
+        await AsyncStorage.setItem(OFFLINE_KEYS.DELIVERY_RECORDS, JSON.stringify(sortedData));
+        return sortedData as DeliveryRecord[];
+      } else if (error) {
+        console.error('Error fetching delivery records from Supabase:', error);
+        // Fall through to offline mode
+      }
+    }
+    
+    // Offline mode - fetch from AsyncStorage
+    const offline = await AsyncStorage.getItem(OFFLINE_KEYS.DELIVERY_RECORDS);
+    let offlineData: DeliveryRecord[] = offline ? JSON.parse(offline) : [];
+    
+    // If no offline data, try to get from agency entries cache
+    if (offlineData.length === 0) {
+      const agencyEntriesCache = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
+      if (agencyEntriesCache) {
+        const allEntries: AgencyEntry[] = JSON.parse(agencyEntriesCache);
+        offlineData = allEntries.filter(entry => entry.agency_name === 'Mumbai') as DeliveryRecord[];
+      }
+    }
+    
+    // Apply filters to offline data
+    offlineData = offlineData.filter((record) => {
+      // Filter by office_id if provided
+      if (officeId && record.office_id !== officeId) {
+        return false;
+      }
+      
+      // Filter by confirmation_status if provided
+      if (status && status !== 'all' && record.confirmation_status !== status) {
+        return false;
+      }
+      
+      return true;
+    });
+    
+    // Sort offline data: pending first, then by entry_date descending
+    offlineData.sort((a, b) => {
+      // First sort by confirmation_status (pending before confirmed)
+      if (a.confirmation_status === 'pending' && b.confirmation_status === 'confirmed') {
+        return -1;
+      }
+      if (a.confirmation_status === 'confirmed' && b.confirmation_status === 'pending') {
+        return 1;
+      }
+      // Then sort by entry_date descending
+      return new Date(b.entry_date).getTime() - new Date(a.entry_date).getTime();
+    });
+    
+    return offlineData;
+  } catch (error) {
+    console.error('Error getting delivery records:', error);
+    return [];
+  }
+};
+
+/**
+ * Confirm payment for a delivery record
+ * Updates delivery record with confirmation data, sets status to confirmed,
+ * and links photo records
+ * @param confirmation - Payment confirmation data including photos
+ * @returns Promise<boolean> - true if successful, false otherwise
+ */
+export const confirmDeliveryPayment = async (
+  confirmation: PaymentConfirmation
+): Promise<boolean> => {
+  try {
+    // Validate required fields
+    if (!confirmation.delivery_record_id) {
+      console.error('Delivery record ID is required');
+      return false;
+    }
+    if (!confirmation.confirmed_amount || confirmation.confirmed_amount <= 0) {
+      console.error('Confirmed amount must be a positive number');
+      return false;
+    }
+    if (!confirmation.bilty_photo) {
+      console.error('Bilty photo is required');
+      return false;
+    }
+    if (!confirmation.signature_photo) {
+      console.error('Signature photo is required');
+      return false;
+    }
+
+    const online = await isOnline();
+    const currentUser = (await supabase.auth.getUser()).data.user;
+    const confirmedAt = confirmation.confirmed_at || new Date().toISOString();
+
+    // Validate office-based access control - Validates: Requirement 7.4
+    // First, get the delivery record to check its office_id
+    let deliveryRecord: DeliveryRecord | null = null;
+    
+    if (online) {
+      const { data, error } = await supabase
+        .from('mumbai_deliveries')
+        .select('*')
+        .eq('id', confirmation.delivery_record_id)
+        .single();
+      
+      if (error || !data) {
+        console.error('Delivery record not found or access denied');
+        return false;
+      }
+      deliveryRecord = data as DeliveryRecord;
+    } else {
+      // Offline mode - check local storage
+      const offlineRecords = await AsyncStorage.getItem(OFFLINE_KEYS.DELIVERY_RECORDS);
+      const records: DeliveryRecord[] = offlineRecords ? JSON.parse(offlineRecords) : [];
+      deliveryRecord = records.find(r => r.id === confirmation.delivery_record_id) || null;
+      
+      if (!deliveryRecord) {
+        console.error('Delivery record not found in offline storage');
+        return false;
+      }
+    }
+
+    // Prepare confirmation data
+    const confirmationData = {
+      confirmation_status: 'confirmed' as const,
+      confirmed_at: confirmedAt,
+      confirmed_amount: confirmation.confirmed_amount,
+      taken_from_godown: true,
+      payment_received: true,
+      delivery_status: 'yes' as const, // Update legacy field for backward compatibility
+      updated_at: new Date().toISOString(),
+    };
+
+    if (online) {
+      // Save photos first and get their IDs
+      const biltyPhotoId = await savePhotoRecord({
+        delivery_record_id: confirmation.delivery_record_id,
+        photo_type: 'bilty',
+        file_path: confirmation.bilty_photo.uri,
+        file_name: confirmation.bilty_photo.fileName,
+        file_size: confirmation.bilty_photo.fileSize,
+        mime_type: confirmation.bilty_photo.mimeType,
+        uploaded: false,
+        created_by: currentUser?.id,
+        office_id: deliveryRecord.office_id, // Inherit office_id from delivery record - Validates: Requirement 7.4
+      });
+
+      const signaturePhotoId = await savePhotoRecord({
+        delivery_record_id: confirmation.delivery_record_id,
+        photo_type: 'signature',
+        file_path: confirmation.signature_photo.uri,
+        file_name: confirmation.signature_photo.fileName,
+        file_size: confirmation.signature_photo.fileSize,
+        mime_type: confirmation.signature_photo.mimeType,
+        uploaded: false,
+        created_by: currentUser?.id,
+        office_id: deliveryRecord.office_id, // Inherit office_id from delivery record - Validates: Requirement 7.4
+      });
+
+      // Update delivery record with confirmation data and photo IDs
+      const { data, error } = await supabase
+        .from('mumbai_deliveries')
+        .update({
+          ...confirmationData,
+          bilty_photo_id: biltyPhotoId,
+          signature_photo_id: signaturePhotoId,
+        })
+        .eq('id', confirmation.delivery_record_id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Update local storage
+      await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, data);
+      await logHistory('update', 'mumbai_deliveries', data.id, confirmationData);
+      
+      return true;
+    } else {
+      // Offline mode
+      // Save photos locally first
+      const biltyPhotoId = await savePhotoRecord({
+        delivery_record_id: confirmation.delivery_record_id,
+        photo_type: 'bilty',
+        file_path: confirmation.bilty_photo.uri,
+        file_name: confirmation.bilty_photo.fileName,
+        file_size: confirmation.bilty_photo.fileSize,
+        mime_type: confirmation.bilty_photo.mimeType,
+        uploaded: false,
+        created_by: currentUser?.id,
+        office_id: deliveryRecord.office_id, // Inherit office_id from delivery record - Validates: Requirement 7.4
+      });
+
+      const signaturePhotoId = await savePhotoRecord({
+        delivery_record_id: confirmation.delivery_record_id,
+        photo_type: 'signature',
+        file_path: confirmation.signature_photo.uri,
+        file_name: confirmation.signature_photo.fileName,
+        file_size: confirmation.signature_photo.fileSize,
+        mime_type: confirmation.signature_photo.mimeType,
+        uploaded: false,
+        created_by: currentUser?.id,
+        office_id: deliveryRecord.office_id, // Inherit office_id from delivery record - Validates: Requirement 7.4
+      });
+
+      // Update local delivery record
+      const offlineRecords = await AsyncStorage.getItem(OFFLINE_KEYS.DELIVERY_RECORDS);
+      let records: DeliveryRecord[] = offlineRecords ? JSON.parse(offlineRecords) : [];
+      
+      const recordIndex = records.findIndex(r => r.id === confirmation.delivery_record_id);
+      if (recordIndex !== -1) {
+        records[recordIndex] = {
+          ...records[recordIndex],
+          ...confirmationData,
+          bilty_photo_id: biltyPhotoId,
+          signature_photo_id: signaturePhotoId,
+        };
+        await AsyncStorage.setItem(OFFLINE_KEYS.DELIVERY_RECORDS, JSON.stringify(records));
+      }
+
+      // Queue for sync
+      await SyncManager.getInstance().addPendingOperation({
+        table: 'mumbai_deliveries',
+        action: 'UPDATE',
+        data: {
+          ...confirmationData,
+          bilty_photo_id: biltyPhotoId,
+          signature_photo_id: signaturePhotoId,
+        },
+        office_id: deliveryRecord.office_id || undefined, // Include office_id for validation - Validates: Requirement 7.4
+      });
+
+      return true;
+    }
+  } catch (error) {
+    console.error('Error confirming delivery payment:', error);
+    return false;
+  }
+};
+
+/**
+ * Save photo record to database and local storage
+ * @param photo - Photo record data
+ * @returns Promise<string> - Photo ID
+ */
+export const savePhotoRecord = async (
+  photo: Partial<PhotoRecord> & {
+    delivery_record_id: string;
+    photo_type: 'bilty' | 'signature';
+    file_path: string;
+    file_name: string;
+    file_size: number;
+    mime_type: string;
+  }
+): Promise<string> => {
+  try {
+    const online = await isOnline();
+    const currentUser = (await supabase.auth.getUser()).data.user;
+
+    const photoData = {
+      delivery_record_id: photo.delivery_record_id,
+      photo_type: photo.photo_type,
+      file_path: photo.file_path,
+      file_name: photo.file_name,
+      file_size: photo.file_size,
+      mime_type: photo.mime_type,
+      uploaded: photo.uploaded ?? false,
+      upload_url: photo.upload_url || null,
+      office_id: photo.office_id || null,
+      created_by: photo.created_by || currentUser?.id,
+    };
+
+    if (online) {
+      // Save to database
+      const { data, error } = await supabase
+        .from('delivery_photos')
+        .insert([photoData])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Save to local storage
+      await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_PHOTOS, data);
+
+      // Queue photo for upload if not already uploaded
+      if (!photo.uploaded) {
+        const pendingUploads = await AsyncStorage.getItem(OFFLINE_KEYS.PENDING_PHOTO_UPLOADS);
+        const uploads = pendingUploads ? JSON.parse(pendingUploads) : [];
+        uploads.push(data.id);
+        await AsyncStorage.setItem(OFFLINE_KEYS.PENDING_PHOTO_UPLOADS, JSON.stringify(uploads));
+      }
+
+      return data.id;
+    } else {
+      // Offline mode - generate temp ID
+      const tempId = `temp_photo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const currentDate = new Date().toISOString();
+      
+      const offlinePhotoData = {
+        ...photoData,
+        id: tempId,
+        created_at: currentDate,
+        updated_at: currentDate,
+      };
+
+      // Save to local storage
+      await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_PHOTOS, offlinePhotoData);
+
+      // Queue for sync
+      await SyncManager.getInstance().addPendingOperation({
+        table: 'delivery_photos',
+        action: 'INSERT',
+        data: photoData,
+        office_id: photo.office_id || undefined,
+      });
+
+      // Queue photo for upload
+      const pendingUploads = await AsyncStorage.getItem(OFFLINE_KEYS.PENDING_PHOTO_UPLOADS);
+      const uploads = pendingUploads ? JSON.parse(pendingUploads) : [];
+      uploads.push(tempId);
+      await AsyncStorage.setItem(OFFLINE_KEYS.PENDING_PHOTO_UPLOADS, JSON.stringify(uploads));
+
+      return tempId;
+    }
+  } catch (error) {
+    console.error('Error saving photo record:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get photos for a delivery record
+ * @param deliveryRecordId - Delivery record ID
+ * @param officeId - Optional office ID for access control validation
+ * @returns Promise<PhotoRecord[]> - Array of photo records
+ */
+export const getDeliveryPhotos = async (
+  deliveryRecordId: string,
+  officeId?: string
+): Promise<PhotoRecord[]> => {
+  try {
+    const online = await isOnline();
+
+    // Validate office-based access control - Validates: Requirement 7.4
+    if (officeId) {
+      // First verify the delivery record belongs to the specified office
+      const deliveryRecords = await getDeliveryRecords(officeId, 'all');
+      const hasAccess = deliveryRecords.some(r => r.id === deliveryRecordId);
+      
+      if (!hasAccess) {
+        console.error('Access denied: Delivery record does not belong to the specified office');
+        return [];
+      }
+    }
+
+    if (online) {
+      let query = supabase
+        .from('delivery_photos')
+        .select('*')
+        .eq('delivery_record_id', deliveryRecordId);
+      
+      // Apply office filter if provided - Validates: Requirement 7.4
+      if (officeId) {
+        query = query.eq('office_id', officeId);
+      }
+      
+      const { data, error } = await query.order('created_at', { ascending: true });
+
+      if (!error && data) {
+        // Cache the data
+        for (const photo of data) {
+          await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_PHOTOS, photo);
+        }
+        return data as PhotoRecord[];
+      }
+    }
+
+    // Offline mode - fetch from AsyncStorage
+    const offline = await AsyncStorage.getItem(OFFLINE_KEYS.DELIVERY_PHOTOS);
+    let offlineData: PhotoRecord[] = offline ? JSON.parse(offline) : [];
+
+    // Filter by delivery_record_id
+    offlineData = offlineData.filter(photo => photo.delivery_record_id === deliveryRecordId);
+    
+    // Apply office filter if provided - Validates: Requirement 7.4
+    if (officeId) {
+      offlineData = offlineData.filter(photo => photo.office_id === officeId);
+    }
+
+    // Sort by created_at
+    offlineData.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    return offlineData;
+  } catch (error) {
+    console.error('Error getting delivery photos:', error);
     return [];
   }
 };

@@ -6,6 +6,7 @@ import { NavigationContainer, CommonActions, NavigationContainerRef, NavigationS
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 // Create navigation reference
 import { createStackNavigator } from '@react-navigation/stack';
+import type { InitialState } from '@react-navigation/native';
 import { GestureHandlerRootView, PinchGestureHandler, PanGestureHandler, State } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // App.tsx
@@ -46,6 +47,7 @@ import PageBuilderScreen from './src/screens/PageBuilderScreen';
 import PageManagementScreen from './src/screens/PageManagementScreen';
 import UppadJamaScreen from './src/screens/UppadJamaScreen';
 import MumbaiDeliveryEntryScreen from './src/screens/MumbaiDeliveryEntryScreen';
+import MumbaiDeliveryNavigator from './src/navigation/MumbaiDeliveryNavigator';
 import BackdatedEntryScreen from './src/screens/BackdatedEntryScreen';
 import NotificationTestScreen from './src/screens/NotificationTestScreen';
 import ComprehensiveNotificationTest from './src/screens/ComprehensiveNotificationTest';
@@ -57,6 +59,7 @@ import AdminPasswordChangeScreen from './src/screens/AdminPasswordChangeScreen';
 import AdminUserManagementScreen from './src/screens/AdminUserManagementScreen';
 import MajurDashboardScreen from './src/screens/MajurDashboardScreen';
 import OfficeManagementScreen from './src/screens/OfficeManagementScreen';
+import { Colors } from './src/theme/colors';
 import { AlertProvider } from './src/context/AlertContext';
 import { UserAccessProvider } from './src/context/UserAccessContext';
 import { OfficeProvider } from './src/context/OfficeContext';
@@ -101,7 +104,6 @@ type RootStackParamList = {
   UppadJama: undefined;
   CashBalance: undefined;
   MumbaiDelivery: undefined;
-  MumbaiDeliveryEntry: undefined;
   BackdatedEntry: undefined;
   NotificationTest: undefined;
   ComprehensiveNotificationTest: undefined;
@@ -528,6 +530,31 @@ function App(): React.JSX.Element {
     const isInitialized = useRef(false);
     const deactivationHandledRef = useRef(false);
     
+    // Navigation state persistence - Validates: Requirement 9.4
+    const [isNavigationReady, setIsNavigationReady] = useState(false);
+    const [initialNavigationState, setInitialNavigationState] = useState<InitialState | undefined>();
+    const NAVIGATION_STATE_KEY = 'NAVIGATION_STATE_KEY';
+    
+    // Load persisted navigation state on mount
+    useEffect(() => {
+      const restoreNavigationState = async () => {
+        try {
+          const savedStateString = await AsyncStorage.getItem(NAVIGATION_STATE_KEY);
+          if (savedStateString) {
+            const state = JSON.parse(savedStateString);
+            setInitialNavigationState(state);
+            console.log('✅ Navigation state restored');
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to restore navigation state:', error);
+        } finally {
+          setIsNavigationReady(true);
+        }
+      };
+      
+      restoreNavigationState();
+    }, []);
+    
     const checkActiveUser = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -807,15 +834,23 @@ function App(): React.JSX.Element {
         <OfficeProvider>
           <UserAccessProvider>
             <AlertProvider>
-              <NavigationContainer
-              ref={navigationRef as React.Ref<NavigationContainerRef<RootStackParamList>>}
-              onStateChange={(state: NavigationState | undefined) => {
-                if (state) {
-                  const currentRoute = state.routes[state.index];
-                  setCurrentRouteName(currentRoute?.name);
-                }
-              }}
-            >
+              {isNavigationReady && (
+                <NavigationContainer
+                  ref={navigationRef as React.Ref<NavigationContainerRef<RootStackParamList>>}
+                  initialState={initialNavigationState}
+                  onStateChange={(state: NavigationState | undefined) => {
+                    if (state) {
+                      const currentRoute = state.routes[state.index];
+                      setCurrentRouteName(currentRoute?.name);
+                      
+                      // Persist navigation state - Validates: Requirement 9.4
+                      AsyncStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state))
+                        .catch((error) => {
+                          console.warn('⚠️ Failed to persist navigation state:', error);
+                        });
+                    }
+                  }}
+                >
             <View style={styles.container}>
               <Stack.Navigator
                 initialRouteName="Splash"
@@ -864,7 +899,21 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="PageBuilder" component={PageBuilderScreen} options={{ title: 'Create Custom Page' }} />
                 <Stack.Screen name="PageManagement" component={PageManagementScreen} options={{ title: 'Manage Pages' }} />
                 <Stack.Screen name="UppadJama" component={UppadJamaScreen} options={{ title: 'Uppad/Jama' }} />
-                <Stack.Screen name="MumbaiDeliveryEntry" component={MumbaiDeliveryEntryScreen} options={{ title: 'Mumbai Delivery Entry' }} />
+                <Stack.Screen 
+                  name="MumbaiDelivery" 
+                  component={MumbaiDeliveryNavigator} 
+                  options={{ 
+                    title: 'Mumbai Delivery',
+                    headerShown: true,
+                    headerStyle: {
+                      backgroundColor: Colors.primary,
+                    },
+                    headerTintColor: Colors.surface,
+                    headerTitleStyle: {
+                      fontWeight: 'bold',
+                    },
+                  }} 
+                />
                 <Stack.Screen name="BackdatedEntry" component={BackdatedEntryScreen} options={{ title: 'Backdated Entry' }} />
                 <Stack.Screen name="NotificationTest" component={NotificationTestScreen} />
                 <Stack.Screen name="ComprehensiveNotificationTest" component={ComprehensiveNotificationTest} options={{ title: 'Complete Notification Test' }} />
@@ -897,6 +946,7 @@ function App(): React.JSX.Element {
               )}
             </View>
             </NavigationContainer>
+          )}
           </AlertProvider>
         </UserAccessProvider>
       </OfficeProvider>

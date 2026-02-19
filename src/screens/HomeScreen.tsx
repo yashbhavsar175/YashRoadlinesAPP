@@ -629,7 +629,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     officeSelectorLabel: {
       fontSize: 15,
       fontWeight: '600',
-      color: BWColors.textPrimary,
+      color: BWColors.text,
     },
     officeSelectorDropdown: {
       flex: 1,
@@ -1502,7 +1502,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
                 {(contextIsAdmin || hasScreenAccess('MumbaiDeliveryEntryScreen')) && (
                   <TouchableOpacity 
-                    onPress={() => navigate('MumbaiDeliveryEntry')} 
+                    onPress={() => navigate('MumbaiDelivery')} 
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
