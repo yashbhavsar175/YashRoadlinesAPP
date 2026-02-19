@@ -1,5 +1,5 @@
 // PaymentConfirmationScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,10 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
-  FlatList,
   TouchableOpacity,
-  Animated,
 } from 'react-native';
 import { NavigationProp } from '@react-navigation/native';
-import { GestureHandlerRootView, TapGestureHandler, State } from 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { MumbaiDeliveryTabParamList } from '../navigation/MumbaiDeliveryNavigator';
 import { Colors } from '../theme/colors';
@@ -43,14 +41,16 @@ function PaymentConfirmationScreen({
   const { currentOffice, getCurrentOfficeId } = useOffice();
   const { showAlert } = useAlert();
 
-  // State management
   const [deliveryRecords, setDeliveryRecords] = useState<DeliveryRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedRecord, setSelectedRecord] = useState<DeliveryRecord | null>(null);
   const [popupVisible, setPopupVisible] = useState<boolean>(false);
 
-  // Load delivery records on mount and when office changes
+  // Double tap tracking
+  const lastTapRef = useRef<{ [key: string]: number }>({});
+  const DOUBLE_TAP_DELAY = 350;
+
   useEffect(() => {
     loadDeliveryRecords();
   }, [currentOffice]);
@@ -59,17 +59,9 @@ function PaymentConfirmationScreen({
     try {
       setLoading(true);
       const officeId = getCurrentOfficeId();
-      
       logInfo('Loading delivery records for office', { officeId });
-      
-      // Fetch all delivery records for the current office
       const records = await getDeliveryRecords(officeId || undefined, 'all');
-      
-      logInfo('Loaded delivery records', {
-        recordCount: records.length,
-        officeId,
-      });
-      
+      logInfo('Loaded delivery records', { recordCount: records.length, officeId });
       setDeliveryRecords(records);
     } catch (error) {
       logError(error instanceof Error ? error : new Error('Failed to load delivery records'), {
@@ -89,52 +81,56 @@ function PaymentConfirmationScreen({
     setRefreshing(false);
   };
 
-  const handleDoubleTap = (record: DeliveryRecord) => {
+  // Custom double tap — reliable on Android
+ const handleTap = (record: DeliveryRecord) => {
+  const now = Date.now();
+  const lastTap = lastTapRef.current[record.id] || 0;
+  const diff = now - lastTap;
+  
+  console.log('TAP detected:', record.id, '| diff:', diff, 'ms | threshold:', DOUBLE_TAP_DELAY);
+  
+  if (now - lastTap < DOUBLE_TAP_DELAY) {
+    lastTapRef.current[record.id] = 0;
+    console.log('DOUBLE TAP! Setting selectedRecord and popupVisible=true');
     setSelectedRecord(record);
     setPopupVisible(true);
-  };
-
-  const handleDoubleTapEvent = (event: any, record: DeliveryRecord) => {
-    if (event.nativeEvent.state === State.ACTIVE) {
-      handleDoubleTap(record);
-    }
-  // Simplified double-tap handler using onActivated
-  const handleDoubleTapActivated = (record: DeliveryRecord) => {
-    logInfo('Double tap activated for record', { recordId: record.id, billtyNo: record.billty_no });
-    handleDoubleTap(record);
-  };
-
+    console.log('State set done. selectedRecord:', record.id, 'popupVisible: true');
+  } else {
+    lastTapRef.current[record.id] = now;
+    console.log('Single tap, waiting for second tap...');
+  }
+};
+useEffect(() => {
+  console.log('=== STATE CHANGE ===');
+  console.log('popupVisible:', popupVisible);
+  console.log('selectedRecord:', selectedRecord?.id || 'null');
+}, [popupVisible, selectedRecord]);
   const handleConfirmPayment = async (confirmation: PaymentConfirmation) => {
     try {
       const { confirmDeliveryPayment } = await import('../data/Storage');
       const { isOnline } = await import('../data/modules/NetworkHelper');
-      
-      // Check online status - Validates: Requirement 6.3
       const online = await isOnline();
-      
+
       logInfo('Confirming payment', {
         deliveryRecordId: confirmation.delivery_record_id,
         confirmedAmount: confirmation.confirmed_amount,
         online,
       });
-      
-      // Confirm the payment
+
       const success = await confirmDeliveryPayment(confirmation);
-      
+
       if (success) {
         logInfo('Payment confirmed successfully', {
           deliveryRecordId: confirmation.delivery_record_id,
           online,
         });
-        
-        // Show appropriate success message based on online status - Validates: Requirement 6.3, 10.6
+
         if (!online) {
           showAlert('Working offline - confirmation will sync when connected');
         } else {
           showAlert('Payment confirmed successfully!');
         }
-        
-        // Send notification (Requirement 3.7)
+
         try {
           const NotificationService = (await import('../services/NotificationService')).default;
           const billtyNo = selectedRecord?.billty_no || 'Unknown';
@@ -143,22 +139,16 @@ function PaymentConfirmationScreen({
             `Payment confirmed: Billty No ${billtyNo}, Amount ₹${confirmation.confirmed_amount}`
           );
         } catch (notifError) {
-          // Log but don't fail the confirmation if notification fails
           logError(notifError instanceof Error ? notifError : new Error('Notification failed'), {
             functionName: 'PaymentConfirmationScreen.handleConfirmPayment',
             additionalInfo: 'Failed to send notification after successful confirmation',
           });
         }
-        
+
         setPopupVisible(false);
         setSelectedRecord(null);
         await loadDeliveryRecords();
       } else {
-        logError(new Error('Confirm payment returned false'), {
-          functionName: 'PaymentConfirmationScreen.handleConfirmPayment',
-          parameters: { confirmation },
-          additionalInfo: 'confirmDeliveryPayment returned false',
-        });
         showAlert('Failed to confirm payment');
       }
     } catch (error) {
@@ -176,12 +166,11 @@ function PaymentConfirmationScreen({
     setSelectedRecord(null);
   };
 
-  // Separate records by status
   const pendingRecords = deliveryRecords.filter(
-    (r) => r.confirmation_status === 'pending'
+    (r) => r.confirmation_status === 'pending' && r.billty_no && r.billty_no.trim() !== ''
   );
   const confirmedRecords = deliveryRecords.filter(
-    (r) => r.confirmation_status === 'confirmed'
+    (r) => r.confirmation_status === 'confirmed' && r.billty_no && r.billty_no.trim() !== ''
   );
 
   return (
@@ -199,7 +188,6 @@ function PaymentConfirmationScreen({
         <View style={GlobalStyles.card}>
           <Text style={GlobalStyles.title}>Delivery Records</Text>
 
-          {/* Loading State */}
           {loading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
@@ -207,7 +195,6 @@ function PaymentConfirmationScreen({
             </View>
           )}
 
-          {/* Empty State */}
           {!loading && deliveryRecords.length === 0 && (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No delivery records found</Text>
@@ -217,7 +204,6 @@ function PaymentConfirmationScreen({
             </View>
           )}
 
-          {/* Delivery Records Table */}
           {!loading && deliveryRecords.length > 0 && (
             <View style={styles.tableContainer}>
               {/* Table Header */}
@@ -228,20 +214,18 @@ function PaymentConfirmationScreen({
                 <Text style={[styles.tableHeaderText, styles.itemColumn]}>Item</Text>
                 <Text style={[styles.tableHeaderText, styles.amountColumn]}>Amount</Text>
               </View>
-              
+
               <Text style={styles.sectionTitle}>
                 Pending Deliveries ({pendingRecords.length})
               </Text>
-              
-              {/* Pending Records List */}
+
               {pendingRecords.map((record, index) => (
-                <TapGestureHandler
+                <TouchableOpacity
                   key={record.id}
-                  numberOfTaps={2}
-                  onHandlerStateChange={(event) => handleDoubleTapEvent(event, record)}
-                  onActivated={() => handleDoubleTapActivated(record)}
+                  onPress={() => handleTap(record)}
+                  activeOpacity={0.7}
                 >
-                  <Animated.View style={styles.tableRow}>
+                  <View style={styles.tableRow}>
                     <Text style={[styles.tableCell, styles.indexColumn]}>{index + 1}</Text>
                     <View style={styles.billtyColumnContainer}>
                       <Text style={[styles.tableCell, styles.billtyColumn]} numberOfLines={1}>
@@ -262,28 +246,25 @@ function PaymentConfirmationScreen({
                     <Text style={[styles.tableCell, styles.amountColumn]}>
                       ₹{record.amount.toFixed(2)}
                     </Text>
-                  </Animated.View>
-                </TapGestureHandler>
+                  </View>
+                </TouchableOpacity>
               ))}
-              
-              {/* Green Separator */}
+
               {confirmedRecords.length > 0 && (
                 <View style={styles.greenSeparator} />
               )}
-              
+
               <Text style={styles.sectionTitle}>
                 Confirmed Deliveries ({confirmedRecords.length})
               </Text>
-              
-              {/* Confirmed Records List */}
+
               {confirmedRecords.map((record, index) => (
-                <TapGestureHandler
+                <TouchableOpacity
                   key={record.id}
-                  numberOfTaps={2}
-                  onHandlerStateChange={(event) => handleDoubleTapEvent(event, record)}
-                  onActivated={() => handleDoubleTapActivated(record)}
+                  onPress={() => handleTap(record)}
+                  activeOpacity={0.7}
                 >
-                  <Animated.View style={[styles.tableRow, styles.confirmedRow]}>
+                  <View style={[styles.tableRow, styles.confirmedRow]}>
                     <View style={styles.checkmarkContainer}>
                       <Icon name="checkmark-circle" size={20} color={Colors.success} />
                     </View>
@@ -307,15 +288,15 @@ function PaymentConfirmationScreen({
                     <Text style={[styles.tableCell, styles.amountColumn]}>
                       ₹{record.confirmed_amount?.toFixed(2) || record.amount.toFixed(2)}
                     </Text>
-                  </Animated.View>
-                </TapGestureHandler>
+                  </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Payment Confirmation Popup */}
+      {/* Popup — ScrollView ke bahar, screen level pe */}
       {selectedRecord && (
         <PaymentConfirmationPopup
           visible={popupVisible}
@@ -333,17 +314,6 @@ const styles = StyleSheet.create({
   scrollViewContent: {
     paddingVertical: 20,
     flexGrow: 1,
-  },
-  officeIndicatorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primaryLight,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.primary,
   },
   loadingContainer: {
     paddingVertical: 40,

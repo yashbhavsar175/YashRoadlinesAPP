@@ -19,13 +19,13 @@ import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import { saveAgencyEntry, getAgencyEntry, deleteTransactionByIdImproved, OFFLINE_KEYS, AgencyEntry } from '../data/Storage';
+import { saveAgencyEntry, getAgencyEntry, deleteTransactionByIdImproved, OFFLINE_KEYS, AgencyEntry, PaymentConfirmation, DeliveryRecord } from '../data/Storage';
 import { useAlert } from '../context/AlertContext';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { GestureHandlerRootView, LongPressGestureHandler, TapGestureHandler, State } from 'react-native-gesture-handler';
 import NotificationService from '../services/NotificationService';
 import { useOffice } from '../context/OfficeContext';
-
+import PaymentConfirmationPopup from '../components/PaymentConfirmationPopup';
 type MumbaiDeliveryEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'MumbaiDelivery'>;
 
 interface MumbaiDeliveryEntryScreenProps {
@@ -42,7 +42,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   const [amount, setAmount] = useState<string>('');
   const [date, setDate] = useState<Date>(new Date());
   const [saving, setSaving] = useState<boolean>(false);
-
+  const [selectedEntry, setSelectedEntry] = useState<AgencyEntry | null>(null);
+  const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   // List states
   const [recentEntries, setRecentEntries] = useState<AgencyEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -133,7 +134,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
     const entry = recentEntries.find(e => e.id === id);
     if (!entry) return;
 
-    const newStatus = entry.delivery_status === 'yes' ? 'no' : 'yes';
+    const newStatus: 'yes' | 'no' = entry.delivery_status === 'yes' ? 'no' : 'yes';
     const statusText = newStatus === 'yes' ? 'Delivered' : 'Not Delivered';
 
     try {
@@ -141,12 +142,12 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       const updatedEntry = {
         ...entry,
         delivery_status: newStatus,
-      };
+      } as AgencyEntry;
 
-      const success = await saveAgencyEntry(updatedEntry);
+      const success = await saveAgencyEntry(updatedEntry as any);
       if (success) {
         // Update local state
-        const updatedEntries = recentEntries.map(e => 
+        const updatedEntries = recentEntries.map(e =>
           e.id === id ? { ...e, delivery_status: newStatus } : e
         );
         setRecentEntries(updatedEntries);
@@ -159,7 +160,24 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       showAlert('Error updating status');
     }
   };
-
+  const convertToDeliveryRecord = (entry: AgencyEntry): DeliveryRecord => ({
+    id: entry.id,
+    billty_no: entry.description?.slice(0, 20) || 'N/A',
+    consignee_name: 'Mumbai Delivery',
+    item_description: entry.description || '',
+    amount: entry.amount,
+    delivery_status: entry.delivery_status || 'no',
+    entry_date: entry.entry_date,
+    confirmation_status: 'pending',
+    taken_from_godown: false,
+    payment_received: false,
+    agency_id: '',
+    agency_name: '',
+    description: '',
+    entry_type: 'credit',
+    created_at: '',
+    updated_at: ''
+  });
   const handleDeleteEntry = (id: string) => {
     const entryToDelete = recentEntries.find(entry => entry.id === id);
 
@@ -211,9 +229,22 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       >
         <TapGestureHandler
           numberOfTaps={2}
-          onActivated={() => handleToggleDeliveryStatus(item.id)}
+          onActivated={() => {
+            setSelectedEntry(item);
+            setShowPaymentPopup(true);
+          }}
         >
           <View style={[GlobalStyles.card, styles.entryCard]}>
+            <TouchableOpacity 
+    onPress={() => {
+      console.log('TEST: Opening popup for', item.id);
+      setSelectedEntry(item);
+      setShowPaymentPopup(true);
+    }}
+    style={{ padding: 8, backgroundColor: 'red', marginBottom: 8 }}
+  >
+    <Text style={{ color: 'white' }}>TEST POPUP</Text>
+  </TouchableOpacity>
             <View style={styles.entryHeader}>
               <View style={chipStyle}>
                 <Text style={styles.chipText}>{deliveryText}</Text>
@@ -231,7 +262,28 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       </LongPressGestureHandler>
     );
   };
-
+  const handlePaymentConfirm = async (confirmation: PaymentConfirmation) => {
+    try {
+      if (!selectedEntry) return;
+      const updatedEntry = {
+        ...selectedEntry,
+        delivery_status: 'yes' as 'yes',
+        amount: confirmation.confirmed_amount,
+      };
+      const success = await saveAgencyEntry(updatedEntry);
+      if (success) {
+        await loadData(false);
+        showAlert('Payment confirmed!');
+      } else {
+        showAlert('Failed to confirm payment');
+      }
+    } catch (error) {
+      showAlert('Error confirming payment');
+    } finally {
+      setShowPaymentPopup(false);
+      setSelectedEntry(null);
+    }
+  };
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
@@ -315,7 +367,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
                 recentEntries.map((item) => {
                   const deliveryText = item.delivery_status === 'yes' ? 'Delivered' : 'Not Delivered';
                   const chipStyle = item.delivery_status === 'yes' ? styles.deliveredChip : styles.notDeliveredChip;
-                  
+
                   return (
                     <LongPressGestureHandler
                       key={item.id}
@@ -328,9 +380,22 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
                     >
                       <TapGestureHandler
                         numberOfTaps={2}
-                        onActivated={() => handleToggleDeliveryStatus(item.id)}
+                        onActivated={() => {
+                          setSelectedEntry(item);
+                          setShowPaymentPopup(true);
+                        }}
                       >
                         <View style={[GlobalStyles.card, styles.entryCard]}>
+                          <TouchableOpacity 
+    onPress={() => {
+      console.log('TEST: Opening popup for', item.id);
+      setSelectedEntry(item);
+      setShowPaymentPopup(true);
+    }}
+    style={{ padding: 8, backgroundColor: 'red', marginBottom: 8 }}
+  >
+    <Text style={{ color: 'white' }}>TEST POPUP</Text>
+  </TouchableOpacity>
                           <View style={styles.entryHeader}>
                             <View style={chipStyle}>
                               <Text style={styles.chipText}>{deliveryText}</Text>
@@ -355,6 +420,17 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
+      {selectedEntry && (
+        <PaymentConfirmationPopup
+          visible={showPaymentPopup}
+          deliveryRecord={convertToDeliveryRecord(selectedEntry)}
+          onConfirm={handlePaymentConfirm}
+          onCancel={() => {
+            setShowPaymentPopup(false);
+            setSelectedEntry(null);
+          }}
+        />
+      )}
     </GestureHandlerRootView>
   );
 }

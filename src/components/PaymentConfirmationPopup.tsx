@@ -57,6 +57,12 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
         setBiltyPhoto(null);
         setSignaturePhoto(null);
       }
+      // Debugging log to confirm modal visibility state
+      console.log(
+        'PaymentConfirmationPopup: Modal visibility changed to',
+        visible,
+        'for record', deliveryRecord.id
+      );
     }
   }, [visible, deliveryRecord, readOnly]);
 
@@ -188,22 +194,21 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
       setConfirming(false);
     }
   };
+console.log('PaymentConfirmationPopup RENDER - visible:', visible, '| record:', deliveryRecord?.id);
 
   return (
     <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={onCancel}
-      statusBarTranslucent={false}
-    >
-      <View style={styles.modalOverlay}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.keyboardAvoidingView}
-        >
-          <View style={styles.modalContainer}>
-            <ScrollView
+  visible={visible}
+  transparent={true}
+  animationType="fade"
+  onRequestClose={onCancel}
+  statusBarTranslucent={true}
+>
+      {/* Removed temporary debug log and background colors */}
+  <View style={styles.modalOverlay}>
+         <View style={styles.keyboardAvoidingView}>
+      <View style={styles.modalContainer}>
+        <ScrollView 
               style={styles.scrollView}
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
@@ -358,7 +363,7 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
             </View>
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+    </View>
     </View>
     </Modal>
   );
@@ -370,23 +375,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 9999,        // Add karo
+  elevation: 9999,   
   },
-  keyboardAvoidingView: {
-    width: '90%',
-    maxWidth: 500,
-    maxHeight: '85%',
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    overflow: 'hidden',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-  },
+keyboardAvoidingView: {
+  width: '90%',
+  maxWidth: 500,
+  maxHeight: '90%',  // 85% se 90% karo
+},
+modalContainer: {
+  backgroundColor: Colors.surface,
+  borderRadius: 12,
+  overflow: 'hidden',
+  elevation: 20,
+  width: '100%',
+  maxHeight: '90%',
+  minHeight: 500,    // yeh add karo — proper height milegi
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 5 },
+  shadowOpacity: 0.4,
+  shadowRadius: 10,
+},
   scrollView: {
     flex: 1,
   },

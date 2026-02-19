@@ -7,7 +7,7 @@
 -- ============================================================================
 
 -- Add billty_no column
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -18,10 +18,10 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN billty_no TEXT;
     END IF;
-END $;
+END $$;
 
 -- Add consignee_name column
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -32,10 +32,10 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN consignee_name TEXT;
     END IF;
-END $;
+END $$;
 
 -- Add item_description column
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -46,10 +46,10 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN item_description TEXT;
     END IF;
-END $;
+END $$;
 
 -- Add confirmation_status column with check constraint
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -61,10 +61,10 @@ BEGIN
         ADD COLUMN confirmation_status TEXT DEFAULT 'pending' 
         CHECK (confirmation_status IN ('pending', 'confirmed'));
     END IF;
-END $;
+END $$;
 
 -- Add confirmed_at column
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -75,10 +75,10 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN confirmed_at TIMESTAMP WITH TIME ZONE;
     END IF;
-END $;
+END $$;
 
 -- Add confirmed_amount column
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -89,10 +89,10 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN confirmed_amount NUMERIC(10, 2);
     END IF;
-END $;
+END $$;
 
 -- Add bilty_photo_id column (will be linked after delivery_photos table is created)
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -103,10 +103,10 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN bilty_photo_id UUID;
     END IF;
-END $;
+END $$;
 
 -- Add signature_photo_id column (will be linked after delivery_photos table is created)
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -117,10 +117,10 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN signature_photo_id UUID;
     END IF;
-END $;
+END $$;
 
 -- Add taken_from_godown column
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -131,10 +131,10 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN taken_from_godown BOOLEAN DEFAULT FALSE;
     END IF;
-END $;
+END $$;
 
 -- Add payment_received column
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -145,7 +145,7 @@ BEGIN
         ALTER TABLE public.agency_entries 
         ADD COLUMN payment_received BOOLEAN DEFAULT FALSE;
     END IF;
-END $;
+END $$;
 
 -- ============================================================================
 -- 2. CREATE DELIVERY_PHOTOS TABLE
@@ -204,7 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_delivery_photos_uploaded ON public.delivery_photo
 -- ============================================================================
 
 -- Add foreign key constraint for bilty_photo_id
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints 
@@ -215,10 +215,10 @@ BEGIN
         ADD CONSTRAINT fk_agency_entries_bilty_photo 
         FOREIGN KEY (bilty_photo_id) REFERENCES public.delivery_photos(id) ON DELETE SET NULL;
     END IF;
-END $;
+END $$;
 
 -- Add foreign key constraint for signature_photo_id
-DO $ 
+DO $$ 
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints 
@@ -229,7 +229,7 @@ BEGIN
         ADD CONSTRAINT fk_agency_entries_signature_photo 
         FOREIGN KEY (signature_photo_id) REFERENCES public.delivery_photos(id) ON DELETE SET NULL;
     END IF;
-END $;
+END $$;
 
 -- ============================================================================
 -- 5. ENABLE ROW LEVEL SECURITY FOR DELIVERY_PHOTOS TABLE

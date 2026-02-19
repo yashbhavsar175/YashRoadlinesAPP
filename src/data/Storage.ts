@@ -1902,6 +1902,36 @@ export const getAgencies = async (): Promise<Agency[]> => {
   }
 };
 
+/**
+ * Get a single agency by its name.
+ * Fetches from Supabase if online, falls back to AsyncStorage if offline.
+ * @param agencyName - The name of the agency to retrieve.
+ * @returns Promise<Agency | null> - The agency object if found, otherwise null.
+ */
+export const getAgencyByName = async (agencyName: string): Promise<Agency | null> => {
+  try {
+    const online = await isOnline();
+
+    if (online) {
+      const { data, error } = await supabase
+        .from('agencies')
+        .select('*')
+        .eq('name', agencyName)
+        .single();
+
+      if (!error && data) {
+        return data as Agency;
+      }
+    }
+    // Fallback to offline data if not found online or offline
+    const offlineAgencies = await getAgencies(); // getAgencies already handles offline cache
+    return offlineAgencies.find(agency => agency.name === agencyName) || null;
+  } catch (error) {
+    console.error('Error getting agency by name:', error);
+    return null;
+  }
+};
+
 // =====================================================
 // 8b. PERSON MANAGEMENT
 // =====================================================
@@ -3843,8 +3873,16 @@ export const saveDeliveryRecord = async (
 
     const online = await isOnline();
 
+    // Get Mumbai agency ID
+    const agency = await getAgencyByName('Mumbai');
+    if (!agency) {
+      console.error('Mumbai agency not found');
+      return false;
+    }
+
     // Prepare delivery record data for agency_entries table
     const deliveryData = {
+      agency_id: agency.id,
       agency_name: 'Mumbai',
       billty_no: record.billty_no.trim(),
       consignee_name: record.consignee_name.trim(),
