@@ -22,6 +22,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { DeliveryRecord } from '../data/Storage';
 import { validateDeliveryRecord } from '../utils/ValidationUtils';
 import { logError, logValidationError, logInfo } from '../utils/ErrorLogger';
+import { ensureMumbaiAgency } from '../utils/ensureMumbaiAgency';
 
 // Storage key for form data persistence - Validates: Requirement 9.4
 const FORM_DATA_KEY = 'MUMBAI_DELIVERY_FORM_DATA';
@@ -189,28 +190,67 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
    * Validates: Requirements 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 10.1, 10.5, 6.1
    */
   const handleSave = async () => {
+    console.log('🎯 handleSave: Starting...');
+    
     // Validate inputs with comprehensive validation
-    if (!validateInputs()) {
+    const validationResult = validateDeliveryRecord(
+      billtyNo,
+      consigneeName,
+      itemDescription,
+      amount
+    );
+
+    if (!validationResult.isValid) {
+      console.log('❌ Validation failed:', validationResult.errors);
+      // Log validation errors
+      Object.entries(validationResult.errors).forEach(([field, error]) => {
+        if (error) {
+          logValidationError(field, { billtyNo, consigneeName, itemDescription, amount }[field], error);
+        }
+      });
+      
       // Show first error message using AlertContext (Requirement 10.6)
-      const firstError = Object.values(errors).find(err => err);
+      const firstError = Object.values(validationResult.errors).find(err => err);
       if (firstError) {
         showAlert(firstError);
       }
+      setErrors(validationResult.errors);
       return;
     }
 
+    console.log('✅ Validation passed');
     setSaving(true);
 
     try {
+      console.log('📦 Importing modules...');
       const { saveDeliveryRecord, getDeliveryRecords } = await import('../data/Storage');
       const { isOnline } = await import('../data/modules/NetworkHelper');
       
       // Check online status - Validates: Requirement 6.1
+      console.log('🌐 Checking online status...');
       const online = await isOnline();
+      console.log(`📡 Online: ${online}`);
+      
+      // Ensure Mumbai agency exists (only when online)
+      if (online) {
+        console.log('🏢 Ensuring Mumbai agency exists...');
+        const agencyExists = await ensureMumbaiAgency();
+        console.log(`🏢 Agency exists: ${agencyExists}`);
+        if (!agencyExists) {
+          logError(new Error('Mumbai agency check failed'), {
+            functionName: 'DataEntryScreen.handleSave',
+            additionalInfo: 'Could not verify or create Mumbai agency',
+          });
+          // Continue anyway - offline cache might have it
+        }
+      }
       
       // Check for duplicate billty number (Requirement 10.5)
       const officeId = getCurrentOfficeId();
+      console.log('🏢 Current office ID:', officeId);
+      
       if (officeId) {
+        console.log('🔍 Checking for duplicates...');
         const existingRecords = await getDeliveryRecords(officeId, 'all');
         const duplicate = existingRecords.find(
           record => record.billty_no?.trim().toLowerCase() === billtyNo.trim().toLowerCase()
@@ -218,12 +258,15 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
         
         if (duplicate) {
           // Display warning but allow save to proceed
+          console.log('⚠️ Duplicate found:', duplicate.id);
           logInfo('Duplicate billty number detected', {
             billtyNo: billtyNo.trim(),
             existingRecordId: duplicate.id,
           });
           showAlert(`Warning: Billty No "${billtyNo.trim()}" already exists for this office`);
           // Continue with save after showing warning
+        } else {
+          console.log('✅ No duplicates found');
         }
       }
       
@@ -237,6 +280,12 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
         entry_date: new Date().toISOString().split('T')[0],
       };
 
+      console.log('📝 Delivery record prepared:', {
+        billty_no: deliveryRecord.billty_no,
+        amount: deliveryRecord.amount,
+        office_id: deliveryRecord.office_id,
+      });
+
       logInfo('Saving delivery record', {
         billtyNo: deliveryRecord.billty_no,
         amount: deliveryRecord.amount,
@@ -245,7 +294,9 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
       });
 
       // Save delivery record
+      console.log('💾 Calling saveDeliveryRecord...');
       const success = await saveDeliveryRecord(deliveryRecord);
+      console.log('💾 Save result:', success);
 
       if (success) {
         logInfo('Delivery record saved successfully', {
@@ -265,11 +316,33 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
 
         // Send notification (Requirement 1.6)
         try {
+          // Get current user info for notifications
+          const userDataString = await AsyncStorage.getItem('user_profile');
+          const userData = userDataString ? JSON.parse(userDataString) : null;
+          const userName = userData?.name || 'User';
+          
+          // Send in-app notification
           const NotificationService = (await import('../services/NotificationService')).default;
           await NotificationService.notifyAdd(
             'mumbai_delivery',
             `New delivery: Billty No ${deliveryRecord.billty_no}, Amount ₹${deliveryRecord.amount}`
           );
+          
+          // Send device notification to admin
+          const DeviceNotificationService = (await import('../services/DeviceNotificationService')).default;
+          await DeviceNotificationService.notifyAdminEntryAdded(
+            'Mumbai Delivery',
+            userName,
+            {
+              billtyNo: deliveryRecord.billty_no,
+              consigneeName: deliveryRecord.consignee_name,
+              itemDescription: deliveryRecord.item_description,
+              amount: deliveryRecord.amount,
+              office: getCurrentOfficeId()
+            }
+          );
+          
+          console.log('✅ Notifications sent to admin for new delivery');
         } catch (notifError) {
           // Log but don't fail the save operation if notification fails
           logError(notifError instanceof Error ? notifError : new Error('Notification failed'), {
@@ -281,9 +354,9 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
         logError(new Error('Save operation returned false'), {
           functionName: 'DataEntryScreen.handleSave',
           parameters: deliveryRecord,
-          additionalInfo: 'saveDeliveryRecord returned false',
+          additionalInfo: 'saveDeliveryRecord returned false - Mumbai agency may not exist',
         });
-        showAlert('Failed to save delivery record');
+        showAlert('Failed to save: Mumbai agency not found. Please contact administrator.');
       }
 
     } catch (error) {
@@ -318,15 +391,23 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
   };
 
   return (
-    <KeyboardAvoidingView
-      style={GlobalStyles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={GlobalStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
-      <ScrollView contentContainerStyle={styles.scrollViewContent}>
-        <View style={GlobalStyles.card}>
-          <Text style={GlobalStyles.title}>Mumbai Delivery</Text>
+      {/* KeyboardAvoidingView wraps only the content area, not the navigator header
+          This prevents the header (including back button) from flickering when keyboard opens
+          Using 'padding' behavior for both platforms for smoother keyboard handling */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <ScrollView 
+          contentContainerStyle={styles.scrollViewContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={GlobalStyles.card}>
+            <Text style={GlobalStyles.title}>Mumbai Delivery</Text>
 
           {/* Billty No Input - Validates: Requirement 1.1 */}
           <CommonInput
@@ -412,7 +493,8 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
       >
         <Text style={GlobalStyles.buttonPrimaryText}>Go Back</Text>
       </TouchableOpacity>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 

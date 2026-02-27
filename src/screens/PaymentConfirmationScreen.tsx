@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationProp } from '@react-navigation/native';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -124,12 +125,32 @@ useEffect(() => {
         }
 
         try {
+          // Get current user info for notifications
+          const userDataString = await AsyncStorage.getItem('user_profile');
+          const userData = userDataString ? JSON.parse(userDataString) : null;
+          const userName = userData?.name || 'User';
+          
+          // Send in-app notification
           const NotificationService = (await import('../services/NotificationService')).default;
           const billtyNo = selectedRecord?.billty_no || 'Unknown';
           await NotificationService.notifyAdd(
             'mumbai_delivery',
             `Payment confirmed: Billty No ${billtyNo}, Amount ₹${confirmation.confirmed_amount}`
           );
+          
+          // Send device notification to admin
+          const DeviceNotificationService = (await import('../services/DeviceNotificationService')).default;
+          await DeviceNotificationService.notifyAdminPaymentConfirmed(
+            'Mumbai Delivery',
+            userName,
+            {
+              billtyNo: billtyNo,
+              amount: confirmation.confirmed_amount,
+              consigneeName: selectedRecord?.consignee_name || 'N/A',
+            }
+          );
+          
+          console.log('✅ Notifications sent to admin');
         } catch (notifError) {
           logError(notifError instanceof Error ? notifError : new Error('Notification failed'), {
             functionName: 'PaymentConfirmationScreen.handleConfirmPayment',

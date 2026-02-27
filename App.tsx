@@ -687,6 +687,15 @@ function App(): React.JSX.Element {
             
             console.log('✅ All notification services initialized');
             
+            // Ensure Mumbai agency exists in database
+            try {
+              const { ensureMumbaiAgency } = await import('./src/utils/ensureMumbaiAgency');
+              await ensureMumbaiAgency();
+              console.log('✅ Mumbai agency verified');
+            } catch (agencyError) {
+              console.warn('⚠️ Could not verify Mumbai agency:', agencyError);
+            }
+            
             await checkSyncStatus();
             await checkActiveUser();
           } catch (error) {
@@ -749,13 +758,14 @@ function App(): React.JSX.Element {
     // Track if app was truly closed or just backgrounded
     const appStateRef = useRef(AppState.currentState);
     const wasInBackgroundRef = useRef(false);
+    const isCameraActiveRef = useRef(false); // Track if camera is active
   
     useEffect(() => {
       console.log('🚀 APP LAUNCH: Initial setup, wasInBackgroundRef =', wasInBackgroundRef.current);
       
       const handleAppStateChange = async (nextAppState: AppStateStatus) => {
         const previousState = appStateRef.current;
-        console.log('📱 APP STATE CHANGE:', previousState, '→', nextAppState);
+        console.log('📱 APP STATE CHANGE:', previousState, '→', nextAppState, 'isCameraActive:', isCameraActiveRef.current);
         
         // Track state transitions
         if (previousState === 'active' && (nextAppState === 'background' || nextAppState === 'inactive')) {
@@ -776,15 +786,25 @@ function App(): React.JSX.Element {
         if (nextAppState === 'active') {
           console.log('▶️ APP BECOMING ACTIVE: wasInBackgroundRef =', wasInBackgroundRef.current);
           
+          // Check if camera was active
+          const cameraActive = await AsyncStorage.getItem('camera_active');
+          if (cameraActive === 'true') {
+            isCameraActiveRef.current = true;
+            console.log('📸 Camera was active, will not reset navigation');
+          }
+          
           // Check if this is a fresh app launch or resume from background
           const backgroundTime = await AsyncStorage.getItem('app_background_time');
           const timeSinceBackground = backgroundTime ? Date.now() - parseInt(backgroundTime) : 0;
           
           console.log('⏱️ TIME CHECK: backgroundTime =', backgroundTime, 'timeSinceBackground =', timeSinceBackground, 'ms');
           
-          // If more than 5 seconds since background, treat as fresh launch
-          // OR if wasInBackgroundRef is false (fresh launch)
-          if (!wasInBackgroundRef.current || timeSinceBackground > 5000) {
+          // IMPORTANT: Don't reset navigation if camera was active
+          // Camera activity causes app to background, but we should stay on current screen
+          const shouldResetNavigation = !isCameraActiveRef.current && 
+                                        (!wasInBackgroundRef.current || timeSinceBackground > 5000);
+          
+          if (shouldResetNavigation) {
             console.log('🔄 FRESH LAUNCH DETECTED: Clearing navigation state and going to Home');
             console.log('   Reason:', !wasInBackgroundRef.current ? 'wasInBackgroundRef is false' : `timeSinceBackground (${timeSinceBackground}ms) > 5000ms`);
             
@@ -804,14 +824,20 @@ function App(): React.JSX.Element {
               console.log('⚠️ Navigation ref not ready');
             }
           } else {
-            console.log('↩️ RESUME FROM BACKGROUND: Staying on current screen');
-            console.log('   timeSinceBackground =', timeSinceBackground, 'ms (< 5000ms)');
+            if (isCameraActiveRef.current) {
+              console.log('📸 CAMERA WAS ACTIVE: Staying on current screen');
+            } else {
+              console.log('↩️ RESUME FROM BACKGROUND: Staying on current screen');
+              console.log('   timeSinceBackground =', timeSinceBackground, 'ms (< 5000ms)');
+            }
           }
           
-          // Reset flag when app becomes active
+          // Reset flags when app becomes active
           wasInBackgroundRef.current = false;
+          isCameraActiveRef.current = false; // Reset camera flag
           await AsyncStorage.removeItem('app_background_time');
-          console.log('🧹 Cleaned up: wasInBackgroundRef = false, background_time removed');
+          await AsyncStorage.removeItem('camera_active'); // Clean up camera flag
+          console.log('🧹 Cleaned up: wasInBackgroundRef = false, isCameraActive = false, background_time removed');
           
           await syncAllDataFixed();
           await checkSyncStatus();

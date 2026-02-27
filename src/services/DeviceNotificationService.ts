@@ -102,6 +102,7 @@ class DeviceNotificationService {
       console.log('📱 [DeviceNotification] Data:', JSON.stringify(data, null, 2));
       
       // STEP 1: Insert into admin_notifications table (for realtime listener)
+      // AdminNotificationListener will automatically display this notification
       try {
         console.log('💾 [DeviceNotification] Attempting database insert...');
         const { data: insertedNotification, error: dbError } = await supabase
@@ -134,7 +135,12 @@ class DeviceNotificationService {
         console.error('❌ [DeviceNotification] Database error:', dbErr);
       }
       
-      // STEP 2: Server push (for when admin app is closed)
+      // STEP 2: Server push (DISABLED - AdminNotificationListener handles notifications)
+      // Server push was causing duplicate notifications because:
+      // 1. Database insert → AdminNotificationListener → Notification 1
+      // 2. Server push → FCM → Notification 2
+      // Now only database insert is used, AdminNotificationListener displays it
+      /*
       try {
         console.log('📤 [DeviceNotification] Sending server push to admin...');
         const result = await PushGateway.sendPushToAdmin({
@@ -148,6 +154,10 @@ class DeviceNotificationService {
           },
         });
         console.log('📤 [DeviceNotification] Server push result:', result);
+      } catch (e) {
+        console.error('❌ [DeviceNotification] Server push failed:', e);
+      }
+      */
       } catch (e) {
         console.error('❌ [DeviceNotification] Server push failed:', e);
       }
@@ -184,6 +194,17 @@ class DeviceNotificationService {
       title: `${entryType} Deleted`,
       message: `${userName} deleted a ${entryType} entry`,
       type: 'delete',
+      screen: entryType,
+      userName,
+      details,
+    });
+  }
+
+  async notifyAdminPaymentConfirmed(entryType: string, userName: string, details: any) {
+    await this.sendAdminDeviceNotification({
+      title: `Payment Confirmed - ${entryType}`,
+      message: `${userName} confirmed payment for Billty ${details.billtyNo} - ₹${details.amount}`,
+      type: 'edit',
       screen: entryType,
       userName,
       details,

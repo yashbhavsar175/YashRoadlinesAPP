@@ -100,6 +100,10 @@ class PhotoManagerService {
       if (!hasPermission) {
         throw new Error('Camera permission denied');
       }
+      
+      // Set camera active flag in AsyncStorage to prevent navigation reset
+      await AsyncStorage.setItem('camera_active', 'true');
+      console.log('📸 Camera active flag set');
     }
 
     const imagePickerOptions = {
@@ -157,6 +161,10 @@ class PhotoManagerService {
         throw error;
       }
       throw new Error('Failed to capture photo');
+    } finally {
+      // Clear camera active flag
+      await AsyncStorage.removeItem('camera_active');
+      console.log('📸 Camera active flag cleared');
     }
   }
 

@@ -7,6 +7,13 @@ class NotificationListener {
   private static instance: NotificationListener;
   private subscription: any = null;
   private currentUserId: string | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private baseReconnectDelay = 1000;
+  private maxReconnectDelay = 30000;
+  private consecutiveFailures = 0;
+  private maxConsecutiveFailures = 3; // Stop after 3 consecutive immediate failures
 
   private constructor() {}
 
@@ -79,11 +86,18 @@ class NotificationListener {
       return;
     }
 
+    // Prevent duplicate subscriptions
+    if (this.subscription) {
+      console.log('⚠️ Subscription already exists, cleaning up first');
+      supabase.removeChannel(this.subscription);
+      this.subscription = null;
+    }
+
     console.log('🔗 Setting up notification subscription for user:', this.currentUserId);
 
     // Subscribe to new notifications for current user
     this.subscription = supabase
-      .channel('user_notifications')
+      .channel(`user_notifications_${this.currentUserId}`) // Unique channel name per user
       .on(
         'postgres_changes',
         {
@@ -97,9 +111,82 @@ class NotificationListener {
           this.showNotificationToUser(payload.new);
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          this.reconnectAttempts = 0; // Reset on successful connection
+          this.consecutiveFailures = 0; // Reset consecutive failures
+          console.log('✅ Notification subscription active');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Notification subscription error:', err);
+          this.consecutiveFailures++;
+          if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+            console.error(`❌ Too many consecutive failures (${this.consecutiveFailures}). Stopping reconnection.`);
+            return;
+          }
+          this.handleReconnection();
+        } else if (status === 'CLOSED') {
+          console.warn('⚠️ Notification channel closed');
+          this.consecutiveFailures++;
+          // Only reconnect if we didn't manually close it and haven't failed too many times
+          if (this.subscription && this.consecutiveFailures < this.maxConsecutiveFailures) {
+            this.handleReconnection();
+          } else if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+            console.error(`❌ Too many consecutive failures (${this.consecutiveFailures}). Stopping reconnection.`);
+          }
+        } else if (status === 'TIMED_OUT') {
+          console.warn('⏱️ Notification subscription timed out');
+          this.handleReconnection();
+        }
+      });
+  }
 
-    console.log('✅ Notification subscription active');
+  private handleReconnection() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('❌ Max reconnection attempts reached for NotificationListener. Stopping reconnection.');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    
+    // Exponential backoff with jitter to prevent thundering herd
+    const exponentialDelay = Math.min(
+      this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+      this.maxReconnectDelay
+    );
+    const jitter = Math.random() * 1000; // Add up to 1 second random jitter
+    const delay = exponentialDelay + jitter;
+
+    console.log(`🔄 Reconnecting NotificationListener ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${Math.round(delay)}ms...`);
+
+    this.reconnectTimeout = setTimeout(async () => {
+      try {
+        // Clean up old subscription first
+        if (this.subscription) {
+          await supabase.removeChannel(this.subscription);
+          this.subscription = null;
+        }
+        
+        // Verify user ID is still valid before reconnecting
+        await this.getCurrentUserId();
+        if (!this.currentUserId) {
+          console.error('❌ No valid user ID, stopping reconnection');
+          return;
+        }
+        
+        this.setupNotificationSubscription();
+      } catch (error) {
+        console.error('❌ Reconnection attempt failed:', error);
+        // Only retry if we haven't hit max attempts
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.handleReconnection();
+        }
+      }
+    }, delay);
   }
 
   private showNotificationToUser(notification: any) {
@@ -156,10 +243,20 @@ class NotificationListener {
   }
 
   cleanup() {
+    console.log('🧹 Cleaning up NotificationListener...');
+    
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    
     if (this.subscription) {
-      supabase.removeChannel(this.subscription);
-      this.subscription = null;
-      console.log('🧹 Notification subscription cleaned up');
+      const channelToRemove = this.subscription;
+      this.subscription = null; // Clear reference first to prevent reconnection
+      supabase.removeChannel(channelToRemove);
+      this.reconnectAttempts = 0;
+      this.consecutiveFailures = 0;
+      console.log('✅ Notification subscription cleaned up');
     }
   }
 }

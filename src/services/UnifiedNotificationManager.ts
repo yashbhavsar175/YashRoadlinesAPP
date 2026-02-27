@@ -21,6 +21,11 @@ class UnifiedNotificationManager {
   private isAdmin = false;
   private currentUserId: string | null = null;
   private realtimeSubscription: any = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private baseReconnectDelay = 1000;
+  private maxReconnectDelay = 30000;
 
   private constructor() {}
 
@@ -226,8 +231,55 @@ class UnifiedNotificationManager {
             });
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            this.reconnectAttempts = 0;
+            console.log('✅ User notification subscription active');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('❌ User notification subscription error');
+            this.handleReconnection();
+          } else if (status === 'CLOSED') {
+            console.warn('⚠️ User notification channel closed');
+            this.handleReconnection();
+          } else if (status === 'TIMED_OUT') {
+            console.warn('⏱️ User notification subscription timed out');
+            this.handleReconnection();
+          }
+        });
     }
+  }
+
+  private handleReconnection() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('❌ Max reconnection attempts reached for UnifiedNotificationManager');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(
+      this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+      this.maxReconnectDelay
+    );
+
+    console.log(`🔄 Reconnecting UnifiedNotificationManager ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`);
+
+    this.reconnectTimeout = setTimeout(async () => {
+      try {
+        if (this.realtimeSubscription) {
+          await supabase.removeChannel(this.realtimeSubscription);
+          this.realtimeSubscription = null;
+        }
+        this.setupRealtimeSubscriptions();
+      } catch (error) {
+        console.error('❌ Reconnection attempt failed:', error);
+        this.handleReconnection();
+      }
+    }, delay);
   }
 
   showLocalNotification(config: NotificationConfig) {
@@ -279,9 +331,15 @@ class UnifiedNotificationManager {
   }
 
   cleanup() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    
     if (this.realtimeSubscription) {
       supabase.removeChannel(this.realtimeSubscription);
       this.realtimeSubscription = null;
+      this.reconnectAttempts = 0;
     }
   }
 }

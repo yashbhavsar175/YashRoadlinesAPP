@@ -1,5 +1,5 @@
 // src/screens/MumbaiDeliveryEntryScreen.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -10,7 +10,11 @@ import {
   Alert,
   FlatList,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  Dimensions
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
@@ -48,6 +52,61 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   const [recentEntries, setRecentEntries] = useState<AgencyEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Log device info and keyboard events
+  useEffect(() => {
+    const { width, height } = Dimensions.get('window');
+    console.log('📱 Mumbai Screen - Device Info:', {
+      width,
+      height,
+      platform: Platform.OS,
+      version: Platform.Version
+    });
+
+    const keyboardWillShow = Keyboard.addListener('keyboardWillShow', (e) => {
+      console.log('⌨️ Mumbai - Keyboard WILL Show:', {
+        height: e.endCoordinates.height,
+        duration: e.duration
+      });
+    });
+
+    const keyboardDidShow = Keyboard.addListener('keyboardDidShow', (e) => {
+      console.log('⌨️ Mumbai - Keyboard DID Show:', {
+        height: e.endCoordinates.height,
+        screenY: e.endCoordinates.screenY
+      });
+    });
+
+    const keyboardWillHide = Keyboard.addListener('keyboardWillHide', (e) => {
+      console.log('⌨️ Mumbai - Keyboard WILL Hide:', {
+        duration: e.duration
+      });
+    });
+
+    const keyboardDidHide = Keyboard.addListener('keyboardDidHide', () => {
+      console.log('⌨️ Mumbai - Keyboard DID Hide');
+    });
+
+    // Log component mount
+    console.log('🎬 Mumbai Screen - Component Mounted');
+
+    return () => {
+      console.log('🎬 Mumbai Screen - Component Unmounting');
+      keyboardWillShow.remove();
+      keyboardDidShow.remove();
+      keyboardWillHide.remove();
+      keyboardDidHide.remove();
+    };
+  }, []);
+
+  // Log every render
+  console.log('🔄 Mumbai Screen - Rendering...', {
+    loading,
+    saving,
+    entriesCount: recentEntries.length,
+    descriptionLength: description.length,
+    amountLength: amount.length
+  });
 
   const loadData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -129,6 +188,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
           }
         );
 
+        Keyboard.dismiss();
         setTimeout(() => {
           showAlert('Mumbai delivery entry saved successfully!');
         }, 100);
@@ -376,6 +436,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
               placeholderTextColor={Colors.placeholder}
               multiline
               numberOfLines={2}
+              onFocus={() => console.log('🎯 Mumbai - Description input focused')}
+              onBlur={() => console.log('🎯 Mumbai - Description input blurred')}
             />
           </View>
 
@@ -388,6 +450,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
               placeholder="Enter amount"
               placeholderTextColor={Colors.placeholder}
               keyboardType="numeric"
+              onFocus={() => console.log('🎯 Mumbai - Amount input focused')}
+              onBlur={() => console.log('🎯 Mumbai - Amount input blurred')}
             />
           </View>
 
@@ -423,10 +487,33 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={Colors.primary} translucent={false} />
 
-        <View style={styles.header}>
+        <View 
+          style={styles.header}
+          onLayout={(event) => {
+            const { x, y, width, height } = event.nativeEvent.layout;
+            console.log('📐 Mumbai - Header Layout:', { x, y, width, height });
+          }}
+        >
           {/* Left: Back Button */}
-          <TouchableOpacity onPress={goBack} style={styles.backButton}>
-            <Text style={styles.backButtonText}>{'<'}</Text>
+          <TouchableOpacity 
+            onPress={() => {
+              console.log('🔙 Mumbai - Back button pressed');
+              goBack();
+            }} 
+            style={styles.backButton}
+            onLayout={(event) => {
+              const { x, y, width, height } = event.nativeEvent.layout;
+              console.log('📐 Mumbai - Back Button Layout:', { x, y, width, height, visible: width > 0 && height > 0 });
+            }}
+            activeOpacity={0.7}
+          >
+            <Text 
+              style={styles.backButtonText}
+              onLayout={(event) => {
+                const { x, y, width, height } = event.nativeEvent.layout;
+                console.log('📐 Mumbai - Back Button TEXT Layout:', { x, y, width, height });
+              }}
+            >{'<'}</Text>
           </TouchableOpacity>
           
           {/* Center: Title */}
@@ -438,26 +525,32 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
           <View style={styles.headerSpacer} />
         </View>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading Mumbai delivery entries...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={recentEntries}
-            keyExtractor={(item) => item.id}
-            renderItem={renderEntryItem}
-            ListHeaderComponent={renderHeader}
-            ListEmptyComponent={renderEmpty}
-            contentContainerStyle={styles.flatListContent}
-            showsVerticalScrollIndicator={true}
-            keyboardShouldPersistTaps="handled"
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
-            }
-          />
-        )}
+        <KeyboardAvoidingView 
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.loadingText}>Loading Mumbai delivery entries...</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={recentEntries}
+              keyExtractor={(item) => item.id}
+              renderItem={renderEntryItem}
+              ListHeaderComponent={renderHeader}
+              ListEmptyComponent={renderEmpty}
+              contentContainerStyle={styles.flatListContent}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
+              }
+            />
+          )}
+        </KeyboardAvoidingView>
       </View>
       {selectedEntry && (
         <PaymentConfirmationPopup

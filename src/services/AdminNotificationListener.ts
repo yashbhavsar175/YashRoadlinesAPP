@@ -7,6 +7,11 @@ class AdminNotificationListener {
   private subscription: any = null;
   private isListening = false;
   private shownNotifications = new Set<string>(); // Track shown notifications to prevent duplicates
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private baseReconnectDelay = 1000; // Start with 1 second
+  private maxReconnectDelay = 30000; // Max 30 seconds
 
   async start() {
     if (this.isListening) {
@@ -53,10 +58,20 @@ class AdminNotificationListener {
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
             this.isListening = true;
+            this.reconnectAttempts = 0; // Reset on successful connection
             console.log('✅ Admin notification listener subscribed successfully');
           } else if (status === 'CHANNEL_ERROR') {
             console.error('❌ Admin notification listener subscription error');
             this.isListening = false;
+            this.handleReconnection();
+          } else if (status === 'CLOSED') {
+            console.warn('⚠️ Admin notification channel closed');
+            this.isListening = false;
+            this.handleReconnection();
+          } else if (status === 'TIMED_OUT') {
+            console.warn('⏱️ Admin notification subscription timed out');
+            this.isListening = false;
+            this.handleReconnection();
           }
         });
 
@@ -123,18 +138,73 @@ class AdminNotificationListener {
     }
   }
 
+  private handleReconnection() {
+    // Clear any existing reconnection timeout
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('❌ Max reconnection attempts reached. Stopping reconnection.');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    
+    // Exponential backoff: delay = baseDelay * 2^(attempts-1)
+    const delay = Math.min(
+      this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+      this.maxReconnectDelay
+    );
+
+    console.log(`🔄 Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`);
+
+    this.reconnectTimeout = setTimeout(async () => {
+      try {
+        // Clean up old subscription
+        if (this.subscription) {
+          await supabase.removeChannel(this.subscription);
+          this.subscription = null;
+        }
+        
+        // Attempt to restart
+        this.isListening = false;
+        await this.start();
+      } catch (error) {
+        console.error('❌ Reconnection attempt failed:', error);
+        this.handleReconnection(); // Try again
+      }
+    }, delay);
+  }
+
   stop() {
+    // Clear reconnection timeout
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
     if (this.subscription) {
       console.log('🛑 Stopping admin notification listener...');
       supabase.removeChannel(this.subscription);
       this.subscription = null;
       this.isListening = false;
+      this.reconnectAttempts = 0;
       console.log('✅ Admin notification listener stopped');
     }
   }
 
   isActive() {
     return this.isListening;
+  }
+
+  // Manual reconnect method for external use
+  async reconnect() {
+    console.log('🔄 Manual reconnection requested...');
+    this.reconnectAttempts = 0;
+    await this.stop();
+    await this.start();
   }
 }
 

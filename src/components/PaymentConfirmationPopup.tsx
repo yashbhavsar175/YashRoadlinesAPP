@@ -45,6 +45,8 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
   // Initialize state when modal opens
   useEffect(() => {
     if (visible && deliveryRecord) {
+      console.log('📱 PaymentConfirmationPopup: Opening for record', deliveryRecord.id);
+      
       // Pre-fill with original amount
       setConfirmedAmount(deliveryRecord.amount.toString());
       
@@ -57,18 +59,13 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
         setBiltyPhoto(null);
         setSignaturePhoto(null);
       }
-      // Debugging log to confirm modal visibility state
-      console.log(
-        'PaymentConfirmationPopup: Modal visibility changed to',
-        visible,
-        'for record', deliveryRecord.id
-      );
     }
   }, [visible, deliveryRecord, readOnly]);
 
   // Reset state when modal closes
   useEffect(() => {
     if (!visible) {
+      console.log('📱 PaymentConfirmationPopup: Closing, resetting state');
       setConfirmedAmount('');
       setBiltyPhoto(null);
       setSignaturePhoto(null);
@@ -83,6 +80,8 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
    */
   const handleCapturePhoto = async (type: 'bilty' | 'signature') => {
     try {
+      console.log(`📸 Starting photo capture for ${type}`);
+      
       // Show action sheet to choose camera or library
       const photoManager = PhotoManager;
       
@@ -94,6 +93,8 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
         maxWidth: 1920,
       });
 
+      console.log(`✅ Photo captured successfully for ${type}`);
+
       // Update state with captured photo
       if (type === 'bilty') {
         setBiltyPhoto(photoData);
@@ -101,10 +102,13 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
         setSignaturePhoto(photoData);
       }
     } catch (error) {
+      console.error(`❌ Photo capture error for ${type}:`, error);
       // Use AlertContext for all error messages (Requirement 10.6)
       if (error instanceof Error) {
         if (error.message !== 'Photo capture cancelled') {
           showAlert(error.message);
+        } else {
+          console.log('📸 Photo capture cancelled by user');
         }
       } else {
         showAlert('Failed to capture photo');
@@ -198,21 +202,26 @@ console.log('PaymentConfirmationPopup RENDER - visible:', visible, '| record:', 
 
   return (
     <Modal
-  visible={visible}
-  transparent={true}
-  animationType="fade"
-  onRequestClose={onCancel}
-  statusBarTranslucent={true}
->
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onCancel}
+      statusBarTranslucent={true}
+      hardwareAccelerated={true}
+      onDismiss={() => {
+        console.log('📱 Modal dismissed');
+      }}
+    >
       {/* Removed temporary debug log and background colors */}
-  <View style={styles.modalOverlay}>
-         <View style={styles.keyboardAvoidingView}>
-      <View style={styles.modalContainer}>
-        <ScrollView 
+      <View style={styles.modalOverlay}>
+        <View style={styles.keyboardAvoidingView}>
+          <View style={styles.modalContainer}>
+            <ScrollView 
               style={styles.scrollView}
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
             >
               {/* Header */}
               <View style={styles.header}>

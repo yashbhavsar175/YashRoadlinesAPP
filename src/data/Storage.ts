@@ -3853,34 +3853,53 @@ export const saveDeliveryRecord = async (
   }
 ): Promise<boolean> => {
   try {
+    console.log('🔄 saveDeliveryRecord: Starting save operation...');
+    
     // Validate required fields
     if (!record.billty_no || record.billty_no.trim() === '') {
-      console.error('Billty No is required');
+      console.error('❌ Billty No is required');
       return false;
     }
     if (!record.consignee_name || record.consignee_name.trim() === '') {
-      console.error('Consignee Name is required');
+      console.error('❌ Consignee Name is required');
       return false;
     }
     if (!record.item_description || record.item_description.trim() === '') {
-      console.error('Item Description is required');
+      console.error('❌ Item Description is required');
       return false;
     }
     if (!record.amount || record.amount <= 0) {
-      console.error('Amount must be a positive number');
+      console.error('❌ Amount must be a positive number');
       return false;
     }
 
+    console.log('✅ Validation passed');
+    console.log('🌐 Checking online status...');
     const online = await isOnline();
+    console.log(`📡 Online status: ${online}`);
 
-    // Get Mumbai agency ID
-    const agency = await getAgencyByName('Mumbai');
+    // Get Mumbai agency ID with timeout
+    console.log('🔍 Looking for Mumbai agency...');
+    const agency = await Promise.race([
+      getAgencyByName('Mumbai'),
+      new Promise<null>((resolve) => setTimeout(() => {
+        console.warn('⏱️ Agency lookup timeout after 5 seconds');
+        resolve(null);
+      }, 5000))
+    ]);
+    
     if (!agency) {
-      console.error('Mumbai agency not found');
+      console.error('❌ Mumbai agency not found in database. Please ensure Mumbai agency exists.');
+      console.error('💡 You can create it manually in Supabase or run ensureMumbaiAgency() utility.');
       return false;
     }
+    
+    console.log('✅ Mumbai agency found:', agency.id);
+
+    console.log('✅ Mumbai agency found:', agency.id);
 
     // Prepare delivery record data for agency_entries table
+    console.log('📝 Preparing delivery data...');
     const deliveryData = {
       agency_id: agency.id,
       agency_name: 'Mumbai',
@@ -3900,12 +3919,18 @@ export const saveDeliveryRecord = async (
       delivery_status: 'yes' as 'yes',
     };
 
+    console.log('✅ Delivery data prepared');
+
     // Handle update vs create
     const isUpdate = !!record.id && !record.id.startsWith('temp_');
+    console.log(`📊 Operation type: ${isUpdate ? 'UPDATE' : 'CREATE'}`);
 
     if (online) {
+      console.log('🌐 Online mode - saving to Supabase...');
+      console.log('🌐 Online mode - saving to Supabase...');
       if (isUpdate) {
         // Update existing record in agency_entries table
+        console.log('🔄 Updating existing record...');
         const { data, error } = await supabase
           .from('agency_entries')
           .update(deliveryData)
@@ -3913,7 +3938,12 @@ export const saveDeliveryRecord = async (
           .select()
           .single();
         
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Supabase update error:', error);
+          throw error;
+        }
+        
+        console.log('✅ Record updated in Supabase');
         
         // Update local storage - both DELIVERY_RECORDS and AGENCY_ENTRIES
         await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, data);
@@ -3932,16 +3962,23 @@ export const saveDeliveryRecord = async (
         }
         
         await logHistory('update', 'agency_entries', data.id, deliveryData);
+        console.log('✅ Local cache updated');
         return true;
       } else {
         // Create new record in agency_entries table
+        console.log('➕ Creating new record in Supabase...');
         const { data, error } = await supabase
           .from('agency_entries')
           .insert([deliveryData])
           .select()
           .single();
         
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Supabase insert error:', error);
+          throw error;
+        }
+        
+        console.log('✅ Record created in Supabase:', data.id);
         
         // Save to local storage - both DELIVERY_RECORDS and AGENCY_ENTRIES
         await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, data);
@@ -3957,10 +3994,12 @@ export const saveDeliveryRecord = async (
         }
         
         await logHistory('add', 'agency_entries', data.id, deliveryData);
+        console.log('✅ Local cache updated');
         return true;
       }
     } else {
       // Offline mode
+      console.log('📴 Offline mode - saving locally...');
       const tempId = record.id || `temp_${Date.now()}`;
       const currentDate = new Date().toISOString();
       const offlineData = {
@@ -3996,10 +4035,15 @@ export const saveDeliveryRecord = async (
         office_id: record.office_id || undefined,
       });
       
+      console.log('✅ Saved offline, queued for sync');
       return true;
     }
   } catch (error) {
-    console.error('Error saving delivery record:', error);
+    console.error('❌ Error saving delivery record:', error);
+    if (error instanceof Error) {
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error stack:', error.stack);
+    }
     return false;
   }
 };
