@@ -73,3 +73,13 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.env
+firebase-credentials.json
+firebase-secret*.js
+service-account*.json
+*-credentials.json
