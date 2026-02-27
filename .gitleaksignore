@@ -1,0 +1,10 @@
+# Gitleaks ignore file
+# Add false positives here
+
+# Example files that are safe
+.env.example
+.env.template
+firebase-secret-formatter.example.js
+
+# Supabase anon keys are safe for client-side use
+src/supabase.ts:supabaseAnonKey
