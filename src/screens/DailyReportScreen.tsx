@@ -72,7 +72,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useOffice } from '../context/OfficeContext';
 
 import DeviceNotificationService from '../services/DeviceNotificationService';
-import NotificationService from '../services/NotificationService';
 
 const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 
@@ -337,12 +336,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         };
         
         const detailedMessage = `DELETED: ${deleteDetails.type} - ₹${deleteDetails.amount} | "${deleteDetails.description}" | Time: ${deleteDetails.time} | Deleted by: ${userName} | Date: ${deleteDetails.deletedAt}`;
-        
-        // Send database notification
-        await NotificationService.notifyDelete(
-          getEntryCategory(item.storageKey),
-          detailedMessage
-        );
         
         // Send device notification with full details
         await DeviceNotificationService.notifyAdminEntryDeleted(
@@ -1523,11 +1516,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
               const detailedMessage = `BULK DELETE by ${userName} at ${new Date().toLocaleString()}\n${successCount} transactions deleted:\n${deleteSummary}`;
               
               try {
-                await NotificationService.notifyDelete(
-                  'general_entry', // Default category for mixed deletions
-                  detailedMessage
-                );
-                
                 // Send device notification to admin with summary
                 await DeviceNotificationService.notifyAdminEntryUpdated(
                   `${successCount} transactions bulk deleted from Daily Report`,
@@ -1607,11 +1595,6 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                   const detailedMessage = `DELETED: ${deleteDetails.type} - ₹${deleteDetails.amount} | Person: ${deleteDetails.personName} | "${deleteDetails.description}" | Original Time: ${deleteDetails.time} | Deleted by: ${userName} | Deleted at: ${deleteDetails.deletedAt}`;
                   
                   try {
-                    await NotificationService.notifyDelete(
-                      getEntryCategory(storageKey),
-                      detailedMessage
-                    );
-                    
                     // Send detailed device notification to admin
                     await DeviceNotificationService.notifyAdminEntryUpdated(
                       `${deleteDetails.type} Deleted: ${label}`,
@@ -2249,7 +2232,10 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             data={transactions}
             renderItem={renderItem}
             keyExtractor={keyExtractor}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[
+              styles.listContent,
+              selectionMode && { paddingBottom: 100 } // Extra padding when buttons are visible
+            ]}
             ListEmptyComponent={renderEmptyState}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />

@@ -1,7 +1,7 @@
 // App.tsx
 import 'react-native-url-polyfill/auto';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions, Platform } from 'react-native';
+import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions, Platform, AppStateStatus } from 'react-native';
 import { NavigationContainer, CommonActions, NavigationContainerRef, NavigationState } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 // Create navigation reference
@@ -16,7 +16,6 @@ import { supabase } from './src/supabase';
 import { getProfile, initializeSupabaseStorage, getSyncStatus, syncAllDataFixed } from './src/data/Storage';
 import NotificationService from './src/services/NotificationService';
 import PushNotificationService from './src/services/PushNotificationService';
-import DeviceNotificationService from './src/services/DeviceNotificationService';
 import NotificationListener from './src/services/NotificationListener';
 import PushNotification from 'react-native-push-notification';
 import SplashScreen from './src/screens/SplashScreen';
@@ -64,6 +63,7 @@ import { AlertProvider } from './src/context/AlertContext';
 import { UserAccessProvider } from './src/context/UserAccessContext';
 import { OfficeProvider } from './src/context/OfficeContext';
 import AuthLogoutService from './src/services/AuthLogoutService';
+import { LoginRequestListener } from './src/services/LoginRequestListener';
 
 // Define the root navigator's param list and export it for usage across screens
 type RootStackParamList = {
@@ -534,16 +534,34 @@ function App(): React.JSX.Element {
     const [isNavigationReady, setIsNavigationReady] = useState(false);
     const [initialNavigationState, setInitialNavigationState] = useState<InitialState | undefined>();
     const NAVIGATION_STATE_KEY = 'NAVIGATION_STATE_KEY';
+    const APP_CLOSE_TIME_KEY = 'APP_CLOSE_TIME_KEY';
     
     // Load persisted navigation state on mount
     useEffect(() => {
       const restoreNavigationState = async () => {
         try {
-          const savedStateString = await AsyncStorage.getItem(NAVIGATION_STATE_KEY);
-          if (savedStateString) {
-            const state = JSON.parse(savedStateString);
-            setInitialNavigationState(state);
-            console.log('✅ Navigation state restored');
+          // Check when app was last closed
+          const closeTimeString = await AsyncStorage.getItem(APP_CLOSE_TIME_KEY);
+          const closeTime = closeTimeString ? parseInt(closeTimeString) : 0;
+          const timeSinceClose = Date.now() - closeTime;
+          
+          console.log('🕐 APP LAUNCH CHECK:');
+          console.log('   Last close time:', closeTime ? new Date(closeTime).toLocaleTimeString() : 'Never');
+          console.log('   Time since close:', timeSinceClose, 'ms');
+          
+          // Only restore navigation state if app was closed recently (< 3 seconds)
+          // This means it's a quick restart, not a fresh launch
+          if (closeTime > 0 && timeSinceClose < 3000) {
+            const savedStateString = await AsyncStorage.getItem(NAVIGATION_STATE_KEY);
+            if (savedStateString) {
+              const state = JSON.parse(savedStateString);
+              setInitialNavigationState(state);
+              console.log('✅ Navigation state restored (quick restart)');
+            }
+          } else {
+            console.log('🏠 Fresh launch detected - starting from Home');
+            // Clear old navigation state
+            await AsyncStorage.removeItem(NAVIGATION_STATE_KEY);
           }
         } catch (error) {
           console.warn('⚠️ Failed to restore navigation state:', error);
@@ -653,6 +671,11 @@ function App(): React.JSX.Element {
             // DeviceNotificationService is auto-initialized via constructor
             console.log('📱 DeviceNotificationService ready');
             
+            // Start AdminNotificationListener for admin users
+            const AdminNotificationListener = (await import('./src/services/AdminNotificationListener')).default;
+            await AdminNotificationListener.start();
+            console.log('✅ AdminNotificationListener started');
+            
             // Fix notification channels and configuration
             try {
               const NotificationFixer = await import('./src/services/NotificationFixer');
@@ -723,13 +746,79 @@ function App(): React.JSX.Element {
       };
     }, []);
   
+    // Track if app was truly closed or just backgrounded
+    const appStateRef = useRef(AppState.currentState);
+    const wasInBackgroundRef = useRef(false);
+  
     useEffect(() => {
-      const handleAppStateChange = async (nextAppState: string) => {
+      console.log('🚀 APP LAUNCH: Initial setup, wasInBackgroundRef =', wasInBackgroundRef.current);
+      
+      const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+        const previousState = appStateRef.current;
+        console.log('📱 APP STATE CHANGE:', previousState, '→', nextAppState);
+        
+        // Track state transitions
+        if (previousState === 'active' && (nextAppState === 'background' || nextAppState === 'inactive')) {
+          // App going to background - save timestamp
+          const timestamp = Date.now();
+          wasInBackgroundRef.current = true;
+          await AsyncStorage.setItem('app_background_time', timestamp.toString());
+          console.log('⏸️ APP GOING TO BACKGROUND: Saved timestamp', timestamp, 'wasInBackgroundRef =', wasInBackgroundRef.current);
+        }
+        
+        // When app is completely closed (not just backgrounded)
+        if (nextAppState === 'background' || nextAppState === 'inactive') {
+          // Save close time for detecting fresh launches
+          await AsyncStorage.setItem(APP_CLOSE_TIME_KEY, Date.now().toString());
+          console.log('💾 Saved app close time');
+        }
+        
         if (nextAppState === 'active') {
+          console.log('▶️ APP BECOMING ACTIVE: wasInBackgroundRef =', wasInBackgroundRef.current);
+          
+          // Check if this is a fresh app launch or resume from background
+          const backgroundTime = await AsyncStorage.getItem('app_background_time');
+          const timeSinceBackground = backgroundTime ? Date.now() - parseInt(backgroundTime) : 0;
+          
+          console.log('⏱️ TIME CHECK: backgroundTime =', backgroundTime, 'timeSinceBackground =', timeSinceBackground, 'ms');
+          
+          // If more than 5 seconds since background, treat as fresh launch
+          // OR if wasInBackgroundRef is false (fresh launch)
+          if (!wasInBackgroundRef.current || timeSinceBackground > 5000) {
+            console.log('🔄 FRESH LAUNCH DETECTED: Clearing navigation state and going to Home');
+            console.log('   Reason:', !wasInBackgroundRef.current ? 'wasInBackgroundRef is false' : `timeSinceBackground (${timeSinceBackground}ms) > 5000ms`);
+            
+            // Clear navigation state for fresh launch
+            await AsyncStorage.removeItem(NAVIGATION_STATE_KEY);
+            console.log('✅ Navigation state cleared from AsyncStorage');
+            
+            if (navigationRef.current?.isReady()) {
+              navigationRef.current.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'Home' }],
+                })
+              );
+              console.log('✅ Navigation reset to Home screen');
+            } else {
+              console.log('⚠️ Navigation ref not ready');
+            }
+          } else {
+            console.log('↩️ RESUME FROM BACKGROUND: Staying on current screen');
+            console.log('   timeSinceBackground =', timeSinceBackground, 'ms (< 5000ms)');
+          }
+          
+          // Reset flag when app becomes active
+          wasInBackgroundRef.current = false;
+          await AsyncStorage.removeItem('app_background_time');
+          console.log('🧹 Cleaned up: wasInBackgroundRef = false, background_time removed');
+          
           await syncAllDataFixed();
           await checkSyncStatus();
           await checkActiveUser();
         }
+        
+        appStateRef.current = nextAppState;
       };
       const subscription = AppState.addEventListener('change', handleAppStateChange);
       return () => subscription?.remove();
@@ -834,6 +923,7 @@ function App(): React.JSX.Element {
         <OfficeProvider>
           <UserAccessProvider>
             <AlertProvider>
+              <LoginRequestListener />
               {isNavigationReady && (
                 <NavigationContainer
                   ref={navigationRef as React.Ref<NavigationContainerRef<RootStackParamList>>}
@@ -902,16 +992,63 @@ function App(): React.JSX.Element {
                 <Stack.Screen 
                   name="MumbaiDelivery" 
                   component={MumbaiDeliveryNavigator} 
-                  options={{ 
-                    title: 'Mumbai Delivery',
-                    headerShown: true,
-                    headerStyle: {
-                      backgroundColor: Colors.primary,
-                    },
-                    headerTintColor: Colors.surface,
-                    headerTitleStyle: {
-                      fontWeight: 'bold',
-                    },
+                  options={({ navigation }) => {
+                    const statusBarHeight = Platform.OS === 'android' ? 40 : 0; // Match CommonHeader status bar height
+                    return {
+                      headerShown: true,
+                      header: () => (
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          backgroundColor: Colors.primary,
+                          paddingHorizontal: 12,
+                          height: 70 + statusBarHeight,
+                          paddingTop: 10+statusBarHeight,
+                          elevation: 4,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.2,
+                          shadowRadius: 4,
+                        }}>
+                          <TouchableOpacity 
+                            onPress={() => navigation.goBack()}
+                            style={{
+                              width: 40,
+                              height: 40,
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                              marginRight: 8,
+                            }}
+                          >
+                            <Text style={{
+                              color: Colors.surface,
+                              fontSize: 28,
+                              fontWeight: 'bold',
+                              lineHeight: 32,
+                            }}>{'<'}</Text>
+                          </TouchableOpacity>
+                          
+                          <View style={{
+                            flex: 1,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingHorizontal: 8,
+                          }}>
+                            <Text style={{
+                              color: Colors.surface,
+                              fontWeight: '700',
+                              fontSize: 18,
+                              textAlign: 'center',
+                            }} numberOfLines={1}>Mumbai Delivery</Text>
+                          </View>
+                          
+                          <View style={{
+                            width: 40,
+                            marginLeft: 8,
+                          }} />
+                        </View>
+                      ),
+                    };
                   }} 
                 />
                 <Stack.Screen name="BackdatedEntry" component={BackdatedEntryScreen} options={{ title: 'Backdated Entry' }} />

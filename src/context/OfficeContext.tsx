@@ -62,13 +62,11 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
       // Use cache if valid and not expired
       if (cachedData && cacheAge < CACHE_DURATION_MS) {
         performanceMetrics.current.cacheHits++;
-        console.log('🎯 OfficeContext: Using cached office list (age: ' + Math.round(cacheAge / 1000) + 's)');
         return JSON.parse(cachedData);
       }
       
       // Cache miss or expired - fetch from database
       performanceMetrics.current.cacheMisses++;
-      console.log('🔄 OfficeContext: Cache miss, fetching from database');
       
       const offices = await getOffices();
       
@@ -92,7 +90,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
     try {
       await AsyncStorage.removeItem(OFFICE_CACHE_KEY);
       await AsyncStorage.removeItem(OFFICE_CACHE_TIMESTAMP_KEY);
-      console.log('🗑️ OfficeContext: Office cache invalidated');
     } catch (error) {
       console.error('❌ OfficeContext: Error invalidating cache:', error);
     }
@@ -106,14 +103,14 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
     const startTime = performance.now();
     
     try {
-      console.log('🏢 OfficeContext: Starting initialization...');
+
       setIsLoading(true);
       setError(null);
 
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.log('⚠️ OfficeContext: No authenticated user found');
+  
         setIsLoading(false);
         return;
       }
@@ -121,10 +118,9 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
       // Load available offices with caching
       const offices = await loadOfficesWithCache();
       setAvailableOffices(offices);
-      console.log(`📋 OfficeContext: Loaded ${offices.length} offices`);
+
 
       if (offices.length === 0) {
-        console.log('⚠️ OfficeContext: No offices available');
         setError('No offices available. Please contact administrator.');
         setIsLoading(false);
         return;
@@ -132,7 +128,7 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
 
       // Get user's assigned office
       const assignedOfficeId = await getUserOfficeAssignment(user.id);
-      console.log(`👤 OfficeContext: User assigned office ID: ${assignedOfficeId}`);
+
 
       // Check if user is admin (admins can switch offices)
       const { data: profile } = await supabase
@@ -143,7 +139,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
 
       const isAdmin = profile?.is_admin === true;
       setCanSwitchOffice(isAdmin);
-      console.log(`🔑 OfficeContext: User is admin: ${isAdmin}`);
 
       // Determine which office to set as current
       let officeToSet: Office | null = null;
@@ -151,7 +146,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
       if (isAdmin) {
         // For admin, try to load last selected office from AsyncStorage
         const savedOfficeId = await AsyncStorage.getItem(OFFICE_STORAGE_KEY);
-        console.log(`💾 OfficeContext: Saved office ID from storage: ${savedOfficeId}`);
 
         if (savedOfficeId) {
           officeToSet = offices.find(o => o.id === savedOfficeId) || null;
@@ -160,7 +154,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
         // If no saved office or saved office not found, use first available office
         if (!officeToSet && offices.length > 0) {
           officeToSet = offices[0];
-          console.log(`🏢 OfficeContext: Using first available office: ${officeToSet.name}`);
         }
       } else {
         // For regular users, use their assigned office
@@ -168,11 +161,9 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
           officeToSet = offices.find(o => o.id === assignedOfficeId) || null;
           
           if (!officeToSet) {
-            console.error('❌ OfficeContext: Assigned office not found in available offices');
             setError('Your assigned office could not be found. Please contact administrator.');
           }
         } else {
-          console.log('⚠️ OfficeContext: User has no assigned office');
           setError('You have not been assigned to an office. Please contact administrator.');
         }
       }
@@ -181,7 +172,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
         setCurrentOffice(officeToSet);
         // Save to AsyncStorage for persistence
         await AsyncStorage.setItem(OFFICE_STORAGE_KEY, officeToSet.id);
-        console.log(`✅ OfficeContext: Current office set to: ${officeToSet.name}`);
       }
 
     } catch (err) {
@@ -191,7 +181,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
       setIsLoading(false);
       const endTime = performance.now();
       performanceMetrics.current.initTime = endTime - startTime;
-      console.log(`🏁 OfficeContext: Initialization completed in ${Math.round(performanceMetrics.current.initTime)}ms`);
     }
   };
 
@@ -203,12 +192,10 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
     const startTime = performance.now();
     
     try {
-      console.log(`🔄 OfficeContext: Switching to office: ${officeId}`);
       setIsLoading(true);
       setError(null);
 
       if (!canSwitchOffice) {
-        console.error('❌ OfficeContext: User does not have permission to switch offices');
         setError('You do not have permission to switch offices.');
         setIsLoading(false);
         return;
@@ -218,7 +205,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
       const office = availableOffices.find(o => o.id === officeId);
       
       if (!office) {
-        console.error(`❌ OfficeContext: Office not found: ${officeId}`);
         setError('Selected office not found.');
         setIsLoading(false);
         return;
@@ -232,7 +218,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
       
       const endTime = performance.now();
       performanceMetrics.current.switchTime = endTime - startTime;
-      console.log(`✅ OfficeContext: Successfully switched to: ${office.name} in ${Math.round(performanceMetrics.current.switchTime)}ms`);
       
       // Note: Data reload will be handled by screens listening to currentOffice changes
       // via useEffect hooks that depend on currentOffice
@@ -250,7 +235,6 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
    */
   const refreshOffices = async () => {
     try {
-      console.log('🔄 OfficeContext: Refreshing office list...');
       setError(null);
 
       // Invalidate cache to force fresh fetch
@@ -258,20 +242,16 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
 
       const offices = await loadOfficesWithCache();
       setAvailableOffices(offices);
-      console.log(`✅ OfficeContext: Refreshed ${offices.length} offices`);
 
       // If current office is no longer in the list, reset to first available
       if (currentOffice && !offices.find(o => o.id === currentOffice.id)) {
-        console.log('⚠️ OfficeContext: Current office no longer available, resetting...');
         if (offices.length > 0) {
           const newOffice = offices[0];
           setCurrentOffice(newOffice);
           await AsyncStorage.setItem(OFFICE_STORAGE_KEY, newOffice.id);
-          console.log(`✅ OfficeContext: Reset to: ${newOffice.name}`);
         } else {
           setCurrentOffice(null);
           await AsyncStorage.removeItem(OFFICE_STORAGE_KEY);
-          console.log('⚠️ OfficeContext: No offices available after refresh');
         }
       }
 
@@ -307,16 +287,9 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
     initializeOfficeContext();
   }, []);
 
-  // Log performance metrics periodically (development only)
+  // Performance metrics disabled
   useEffect(() => {
-    if (__DEV__) {
-      const interval = setInterval(() => {
-        const metrics = getPerformanceMetrics();
-        console.log('📊 OfficeContext Performance Metrics:', metrics);
-      }, 60000); // Log every minute
-
-      return () => clearInterval(interval);
-    }
+    // Disabled to reduce console spam
   }, []);
 
   const contextValue: OfficeContextType = {

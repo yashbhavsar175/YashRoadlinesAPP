@@ -33,7 +33,6 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
 
   const refreshPermissions = async () => {
     try {
-      console.log('🔄 UserAccessContext: Starting permission refresh...');
       setIsLoading(true);
       const accessData = await UserAccessHelper.refreshUserAccess();
       
@@ -49,14 +48,7 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
       
       setLastUpdated(Date.now()); // Update timestamp when permissions change
       
-      console.log('✅ UserAccessContext: Permissions refreshed', {
-        isAdmin: accessData.isAdmin,
-        userEmail: accessData.userEmail,
-        screenCount: Object.keys(accessData.screenAccess).length,
-        assignedOfficeId: accessData.assignedOfficeId,
-        assignedOfficeName: accessData.assignedOfficeName,
-        canAccessMultipleOffices: canSwitch
-      });
+
     } catch (error) {
       console.error('🔴 UserAccessContext: Error refreshing permissions:', error);
       // Reset to safe defaults on error
@@ -68,7 +60,6 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
       setCanAccessMultipleOffices(false);
     } finally {
       setIsLoading(false);
-      console.log('🏁 UserAccessContext: Permission refresh completed');
     }
   };
 

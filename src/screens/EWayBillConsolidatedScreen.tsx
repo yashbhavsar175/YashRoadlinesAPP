@@ -1055,6 +1055,52 @@ export default function EWayBillConsolidatedScreen() {
         startInLoadingState
         allowFileAccess={true}
         allowUniversalAccessFromFileURLs={true}
+        scalesPageToFit={false}
+        setSupportMultipleWindows={false}
+        showsHorizontalScrollIndicator={true}
+        showsVerticalScrollIndicator={true}
+        injectedJavaScript={`
+          (function() {
+            try {
+              // Inject responsive viewport meta tag with 100% zoom
+              var meta = document.querySelector('meta[name="viewport"]');
+              if (!meta) {
+                meta = document.createElement('meta');
+                meta.name = 'viewport';
+                document.head.appendChild(meta);
+              }
+              
+              // 60% zoom with full zoom controls
+              meta.content = 'width=device-width, initial-scale=0.6, minimum-scale=0.1, maximum-scale=5.0, user-scalable=yes';
+              
+              // Add minimal responsive CSS
+              var style = document.createElement('style');
+              style.textContent = \`
+                html, body { 
+                  width: 100% !important;
+                  overflow-x: auto !important;
+                  -webkit-text-size-adjust: 100% !important;
+                }
+                body > * {
+                  max-width: 100% !important;
+                }
+                img { 
+                  max-width: 100% !important; 
+                  height: auto !important; 
+                }
+                table {
+                  max-width: 100% !important;
+                }
+              \`;
+              document.head.appendChild(style);
+              
+              console.log('✅ Responsive viewport injected with 60% zoom');
+            } catch(e) {
+              console.error('Viewport injection error:', e);
+            }
+          })();
+          true;
+        `}
       />
 
       {loading && (

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Alert, StatusBar, Platform, Keyboard, KeyboardAvoidingView, ScrollView } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAlert } from '../context/AlertContext';
 import { NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
@@ -7,6 +8,8 @@ import { saveAgencyMajuri, getAgencyMajuri, AgencyMajuri, getAgencies, Agency, s
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import NotificationService from '../services/NotificationService';
+import DeviceNotificationService from '../services/DeviceNotificationService';
+import { supabase } from '../supabase';
 // ✨ Optimized: Using common components
 import { CommonHeader, CommonInput, LoadingSpinner, EmptyState, Dropdown } from '../components';
 import { useOffice } from '../context/OfficeContext';
@@ -89,8 +92,25 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
     const success = await saveAgencyMajuri(newMajuriEntry);
 
     if (success) {
+      // Get current user info for notifications from AsyncStorage
+      const userDataString = await AsyncStorage.getItem('user_profile');
+      const userData = userDataString ? JSON.parse(userDataString) : null;
+      const userName = userData?.name || 'User';
+      
       // Send notification to admin
       await NotificationService.notifyAdd('agency_majuri', `New majuri entry: ₹${amount} for ${selectedAgency}`);
+      
+      // Send device notification to admin
+      await DeviceNotificationService.notifyAdminEntryAdded(
+        'Majuri Entry',
+        userName,
+        {
+          agency: selectedAgency,
+          amount: amount,
+          description: description.trim(),
+          office: getCurrentOfficeId()
+        }
+      );
       
       showAlert('Majuri saved successfully');
       setMajuriAmount('');
@@ -138,9 +158,9 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
 
       <ScrollView 
         style={{ flex: 1 }}
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
       >
 
       <View style={[GlobalStyles.card, { paddingBottom: 48 }]}>
@@ -192,6 +212,8 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
           renderItem={renderMajuriEntryItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          scrollEnabled={false}
+          nestedScrollEnabled={true}
         />
       ) : (
         <EmptyState
@@ -286,7 +308,7 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   listContent: {
-    paddingBottom: 20,
+    paddingBottom: 100,
     paddingHorizontal: 4,
   },
   bottomBackButton: {

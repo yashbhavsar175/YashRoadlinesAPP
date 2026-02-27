@@ -1,5 +1,6 @@
 // PhotoManager.ts
 import { launchCamera, launchImageLibrary, ImagePickerResponse, Asset } from 'react-native-image-picker';
+import { PermissionsAndroid, Platform, Alert } from 'react-native';
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PhotoData } from '../data/Storage';
@@ -46,6 +47,45 @@ export interface SyncResult {
  */
 class PhotoManagerService {
   /**
+   * Request camera permission on Android
+   * @returns Promise<boolean> - true if permission granted
+   */
+  private async requestCameraPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      return true; // iOS handles permissions automatically
+    }
+
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        {
+          title: 'Camera Permission',
+          message: 'This app needs access to your camera to take photos of delivery documents.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        }
+      );
+
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('✅ Camera permission granted');
+        return true;
+      } else {
+        console.log('❌ Camera permission denied');
+        Alert.alert(
+          'Permission Required',
+          'Camera permission is required to take photos. Please enable it in app settings.',
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+    } catch (err) {
+      console.error('❌ Error requesting camera permission:', err);
+      return false;
+    }
+  }
+
+  /**
    * Capture a photo using the device camera or photo library
    * @param options - Capture options including source, quality, and dimensions
    * @returns Promise<PhotoData> - Photo data object with URI and metadata
@@ -54,9 +94,17 @@ class PhotoManagerService {
   async capturePhoto(options: CaptureOptions): Promise<PhotoData> {
     const { source, quality = 0.7, maxWidth = 1920, maxHeight = 1920 } = options;
 
+    // Request camera permission if using camera
+    if (source === 'camera') {
+      const hasPermission = await this.requestCameraPermission();
+      if (!hasPermission) {
+        throw new Error('Camera permission denied');
+      }
+    }
+
     const imagePickerOptions = {
       mediaType: 'photo' as const,
-      quality: quality,
+      quality: quality as 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1,
       maxWidth: maxWidth,
       maxHeight: maxHeight,
       includeBase64: false,
@@ -533,7 +581,7 @@ class PhotoManagerService {
       
       if (online) {
         const { data, error } = await supabase
-          .from('mumbai_deliveries')
+          .from('agency_entries')
           .select('office_id')
           .eq('id', deliveryRecordId)
           .single();
@@ -545,7 +593,7 @@ class PhotoManagerService {
 
       // Fallback to offline storage
       const { OFFLINE_KEYS } = await import('../data/Storage');
-      const offlineData = await AsyncStorage.getItem(OFFLINE_KEYS.DELIVERY_RECORDS);
+      const offlineData = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
       
       if (offlineData) {
         const records = JSON.parse(offlineData);

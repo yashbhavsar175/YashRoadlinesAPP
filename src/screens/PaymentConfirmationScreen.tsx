@@ -1,4 +1,3 @@
-// PaymentConfirmationScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -10,20 +9,22 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { NavigationProp } from '@react-navigation/native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { MumbaiDeliveryTabParamList } from '../navigation/MumbaiDeliveryNavigator';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import { DeliveryRecord, PaymentConfirmation, getDeliveryRecords } from '../data/Storage';
+import { DeliveryRecord, PaymentConfirmation, getDeliveryRecords, deleteTransactionByIdImproved, OFFLINE_KEYS } from '../data/Storage';
 import { useOffice } from '../context/OfficeContext';
 import { useAlert } from '../context/AlertContext';
 import { CommonHeader } from '../components';
 import PaymentConfirmationPopup from '../components/PaymentConfirmationPopup';
 import { isLegacyRecord, getLegacyRecordTooltip } from '../utils/legacyRecordHelper';
 import { logError, logInfo } from '../utils/ErrorLogger';
+import NotificationService from '../services/NotificationService';
 
 type PaymentConfirmationScreenNavigationProp = NavigationProp<
   MumbaiDeliveryTabParamList,
@@ -85,25 +86,16 @@ function PaymentConfirmationScreen({
  const handleTap = (record: DeliveryRecord) => {
   const now = Date.now();
   const lastTap = lastTapRef.current[record.id] || 0;
-  const diff = now - lastTap;
-  
-  console.log('TAP detected:', record.id, '| diff:', diff, 'ms | threshold:', DOUBLE_TAP_DELAY);
   
   if (now - lastTap < DOUBLE_TAP_DELAY) {
     lastTapRef.current[record.id] = 0;
-    console.log('DOUBLE TAP! Setting selectedRecord and popupVisible=true');
     setSelectedRecord(record);
     setPopupVisible(true);
-    console.log('State set done. selectedRecord:', record.id, 'popupVisible: true');
   } else {
     lastTapRef.current[record.id] = now;
-    console.log('Single tap, waiting for second tap...');
   }
 };
 useEffect(() => {
-  console.log('=== STATE CHANGE ===');
-  console.log('popupVisible:', popupVisible);
-  console.log('selectedRecord:', selectedRecord?.id || 'null');
 }, [popupVisible, selectedRecord]);
   const handleConfirmPayment = async (confirmation: PaymentConfirmation) => {
     try {
@@ -166,6 +158,49 @@ useEffect(() => {
     setSelectedRecord(null);
   };
 
+  const handleDeleteEntry = (record: DeliveryRecord) => {
+    const isConfirmed = record.confirmation_status === 'confirmed';
+    
+    const title = isConfirmed ? "Delete Confirmed Payment?" : "Confirm Delete";
+    const message = isConfirmed 
+      ? "This payment has been confirmed with photos. Deleting it will also remove the credit entry from Daily Report. Are you sure?"
+      : "Are you sure you want to permanently delete this delivery record?";
+
+    Alert.alert(
+      title,
+      message,
+      [
+        { 
+          text: "Cancel", 
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const success = await deleteTransactionByIdImproved(record.id, OFFLINE_KEYS.AGENCY_ENTRIES);
+              
+              if (success) {
+                await NotificationService.notifyDelete(
+                  'mumbai_delivery', 
+                  `Deleted Mumbai delivery: Billty ${record.billty_no} - ₹${record.amount}`
+                );
+
+                await loadDeliveryRecords();
+                showAlert('Entry deleted successfully!');
+              } else {
+                showAlert('Failed to delete entry');
+              }
+            } catch (error) {
+              showAlert('Error deleting entry');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const pendingRecords = deliveryRecords.filter(
     (r) => r.confirmation_status === 'pending' && r.billty_no && r.billty_no.trim() !== ''
   );
@@ -177,8 +212,6 @@ useEffect(() => {
     <GestureHandlerRootView style={GlobalStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
-      <CommonHeader title="Payment Confirmation" onBackPress={goBack} />
-
       <ScrollView
         contentContainerStyle={styles.scrollViewContent}
         refreshControl={
@@ -186,8 +219,6 @@ useEffect(() => {
         }
       >
         <View style={GlobalStyles.card}>
-          <Text style={GlobalStyles.title}>Delivery Records</Text>
-
           {loading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
@@ -209,10 +240,10 @@ useEffect(() => {
               {/* Table Header */}
               <View style={styles.tableHeader}>
                 <Text style={[styles.tableHeaderText, styles.indexColumn]}>No.</Text>
-                <Text style={[styles.tableHeaderText, styles.billtyColumn]}>Billty No</Text>
-                <Text style={[styles.tableHeaderText, styles.consigneeColumn]}>Consignee</Text>
-                <Text style={[styles.tableHeaderText, styles.itemColumn]}>Item</Text>
-                <Text style={[styles.tableHeaderText, styles.amountColumn]}>Amount</Text>
+                <Text style={[styles.tableHeaderText, styles.billtyColumn]} numberOfLines={1}>Billty</Text>
+                <Text style={[styles.tableHeaderText, styles.consigneeColumn]} numberOfLines={1}>Consignee</Text>
+                <Text style={[styles.tableHeaderText, styles.itemColumn]} numberOfLines={1}>Item</Text>
+                <Text style={[styles.tableHeaderText, styles.amountColumn]} numberOfLines={1}>Amount</Text>
               </View>
 
               <Text style={styles.sectionTitle}>
@@ -220,34 +251,44 @@ useEffect(() => {
               </Text>
 
               {pendingRecords.map((record, index) => (
-                <TouchableOpacity
+                <LongPressGestureHandler
                   key={record.id}
-                  onPress={() => handleTap(record)}
-                  activeOpacity={0.7}
+                  onHandlerStateChange={({ nativeEvent }) => {
+                    if (nativeEvent.state === State.ACTIVE) {
+                      console.log('🔴 Long press detected on pending record:', record.id);
+                      handleDeleteEntry(record);
+                    }
+                  }}
+                  minDurationMs={800}
                 >
-                  <View style={styles.tableRow}>
-                    <Text style={[styles.tableCell, styles.indexColumn]}>{index + 1}</Text>
-                    <View style={styles.billtyColumnContainer}>
-                      <Text style={[styles.tableCell, styles.billtyColumn]} numberOfLines={1}>
-                        {record.billty_no || 'N/A'}
+                  <TouchableOpacity
+                    onPress={() => handleTap(record)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.tableRow}>
+                      <Text style={[styles.tableCell, styles.indexColumn]}>{index + 1}</Text>
+                      <View style={styles.billtyColumnContainer}>
+                        <Text style={[styles.tableCell, styles.billtyColumn]} numberOfLines={1}>
+                          {record.billty_no || 'N/A'}
+                        </Text>
+                        {isLegacyRecord(record) && (
+                          <View style={styles.legacyBadge}>
+                            <Text style={styles.legacyBadgeText}>LEGACY</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[styles.tableCell, styles.consigneeColumn]} numberOfLines={1}>
+                        {record.consignee_name || 'N/A'}
                       </Text>
-                      {isLegacyRecord(record) && (
-                        <View style={styles.legacyBadge}>
-                          <Text style={styles.legacyBadgeText}>LEGACY</Text>
-                        </View>
-                      )}
+                      <Text style={[styles.tableCell, styles.itemColumn]} numberOfLines={2}>
+                        {record.item_description || record.description || 'N/A'}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.amountColumn]}>
+                        ₹{record.amount.toFixed(2)}
+                      </Text>
                     </View>
-                    <Text style={[styles.tableCell, styles.consigneeColumn]} numberOfLines={1}>
-                      {record.consignee_name || 'N/A'}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.itemColumn]} numberOfLines={2}>
-                      {record.item_description || record.description || 'N/A'}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.amountColumn]}>
-                      ₹{record.amount.toFixed(2)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                </LongPressGestureHandler>
               ))}
 
               {confirmedRecords.length > 0 && (
@@ -259,37 +300,47 @@ useEffect(() => {
               </Text>
 
               {confirmedRecords.map((record, index) => (
-                <TouchableOpacity
+                <LongPressGestureHandler
                   key={record.id}
-                  onPress={() => handleTap(record)}
-                  activeOpacity={0.7}
+                  onHandlerStateChange={({ nativeEvent }) => {
+                    if (nativeEvent.state === State.ACTIVE) {
+                      console.log('🔴 Long press detected on confirmed record:', record.id);
+                      handleDeleteEntry(record);
+                    }
+                  }}
+                  minDurationMs={800}
                 >
-                  <View style={[styles.tableRow, styles.confirmedRow]}>
-                    <View style={styles.checkmarkContainer}>
-                      <Icon name="checkmark-circle" size={20} color={Colors.success} />
-                    </View>
-                    <Text style={[styles.tableCell, styles.indexColumn]}>{index + 1}</Text>
-                    <View style={styles.billtyColumnContainer}>
-                      <Text style={[styles.tableCell, styles.billtyColumn]} numberOfLines={1}>
-                        {record.billty_no || 'N/A'}
+                  <TouchableOpacity
+                    onPress={() => handleTap(record)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.tableRow, styles.confirmedRow]}>
+                      <Text style={[styles.tableCell, styles.indexColumn]}>{index + 1}</Text>
+                      <View style={styles.billtyColumnContainer}>
+                        <Text style={[styles.tableCell, styles.billtyColumn]} numberOfLines={1}>
+                          {record.billty_no || 'N/A'}
+                        </Text>
+                        {isLegacyRecord(record) && (
+                          <View style={styles.legacyBadge}>
+                            <Text style={styles.legacyBadgeText}>LEGACY</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[styles.tableCell, styles.consigneeColumn]} numberOfLines={1}>
+                        {record.consignee_name || 'N/A'}
                       </Text>
-                      {isLegacyRecord(record) && (
-                        <View style={styles.legacyBadge}>
-                          <Text style={styles.legacyBadgeText}>LEGACY</Text>
-                        </View>
-                      )}
+                      <Text style={[styles.tableCell, styles.itemColumn]} numberOfLines={2}>
+                        {record.item_description || record.description || 'N/A'}
+                      </Text>
+                      <View style={styles.amountWithCheckContainer}>
+                        <Icon name="checkmark-circle" size={14} color={Colors.success} style={{ marginRight: 4 }} />
+                        <Text style={[styles.tableCell, styles.amountColumn]}>
+                          ₹{record.confirmed_amount?.toFixed(2) || record.amount.toFixed(2)}
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={[styles.tableCell, styles.consigneeColumn]} numberOfLines={1}>
-                      {record.consignee_name || 'N/A'}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.itemColumn]} numberOfLines={2}>
-                      {record.item_description || record.description || 'N/A'}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.amountColumn]}>
-                      ₹{record.confirmed_amount?.toFixed(2) || record.amount.toFixed(2)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                </LongPressGestureHandler>
               ))}
             </View>
           )}
@@ -347,45 +398,52 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: 'row',
     backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     borderRadius: 8,
     marginBottom: 12,
   },
   tableHeaderText: {
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: '700',
     color: Colors.white,
-    textAlign: 'center',
+    textAlign: 'left',
+    paddingHorizontal: 2,
   },
   indexColumn: {
-    width: 40,
+    flex: 1,
+    minWidth: 40,
   },
   billtyColumn: {
-    flex: 1.5,
+    flex: 1,
+    minWidth: 60,
   },
   consigneeColumn: {
-    flex: 2,
+    flex: 1,
+    minWidth: 70,
   },
   itemColumn: {
-    flex: 2,
+    flex: 1,
+    minWidth: 50,
   },
   amountColumn: {
     flex: 1,
+    minWidth: 65,
   },
   tableRow: {
     flexDirection: 'row',
     backgroundColor: Colors.white,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     alignItems: 'center',
   },
   tableCell: {
-    fontSize: 13,
+    fontSize: 10,
     color: Colors.textPrimary,
-    textAlign: 'center',
+    textAlign: 'left',
+    paddingHorizontal: 2,
   },
   confirmedRow: {
     backgroundColor: '#f0f9f4',
@@ -397,6 +455,14 @@ const styles = StyleSheet.create({
     top: '50%',
     transform: [{ translateY: -10 }],
     zIndex: 1,
+  },
+  amountWithCheckContainer: {
+    flex: 1,
+    minWidth: 65,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 2,
   },
   sectionTitle: {
     fontSize: 16,
@@ -412,9 +478,11 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   billtyColumnContainer: {
-    flex: 1.5,
+    flex: 1,
+    minWidth: 60,
     flexDirection: 'column',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    paddingHorizontal: 2,
   },
   legacyBadge: {
     backgroundColor: '#FFA500',

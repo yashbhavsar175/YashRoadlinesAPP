@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Edge Function</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: monospace;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            background: #d1fae5;
+            border: 1px solid #10b981;
+            color: #065f46;
+        }
+        .error {
+            background: #fee2e2;
+            border: 1px solid #ef4444;
+            color: #991b1b;
+        }
+        .info {
+            background: #dbeafe;
+            border: 1px solid #3b82f6;
+            color: #1e40af;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Edge Function Tester</h1>
+        <p class="subtitle">Test your Supabase Edge Function deployment</p>
+
+        <div class="input-group">
+            <label>Supabase Project URL</label>
+            <input type="text" id="supabaseUrl" placeholder="https://xxxxx.supabase.co" />
+        </div>
+
+        <div class="input-group">
+            <label>Supabase Anon Key</label>
+            <input type="text" id="supabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." />
+        </div>
+
+        <div class="input-group">
+            <label>Test Payload (JSON)</label>
+            <textarea id="payload">{"action": "test"}</textarea>
+        </div>
+
+        <button onclick="testFunction()">🚀 Test Function</button>
+        <button onclick="testPushNotification()">📱 Test Push Notification</button>
+        <button onclick="clearResult()">🗑️ Clear</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function testFunction() {
+            const url = document.getElementById('supabaseUrl').value.trim();
+            const key = document.getElementById('supabaseKey').value.trim();
+            const payloadText = document.getElementById('payload').value.trim();
+
+            if (!url || !key) {
+                showResult('❌ Please enter Supabase URL and Anon Key', 'error');
+                return;
+            }
+
+            let payload;
+            try {
+                payload = JSON.parse(payloadText);
+            } catch (e) {
+                showResult('❌ Invalid JSON payload: ' + e.message, 'error');
+                return;
+            }
+
+            showResult('⏳ Testing edge function...', 'info');
+
+            try {
+                const response = await fetch(`${url}/functions/v1/quick-processor`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${key}`,
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult(
+                        '✅ SUCCESS!\n\n' +
+                        'Status: ' + response.status + '\n' +
+                        'Response:\n' + JSON.stringify(data, null, 2),
+                        'success'
+                    );
+                } else {
+                    showResult(
+                        '❌ ERROR\n\n' +
+                        'Status: ' + response.status + '\n' +
+                        'Response:\n' + JSON.stringify(data, null, 2),
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('❌ Network Error: ' + error.message, 'error');
+            }
+        }
+
+        async function testPushNotification() {
+            const url = document.getElementById('supabaseUrl').value.trim();
+            const key = document.getElementById('supabaseKey').value.trim();
+
+            if (!url || !key) {
+                showResult('❌ Please enter Supabase URL and Anon Key', 'error');
+                return;
+            }
+
+            const payload = {
+                action: 'send_push',
+                title: 'Test Notification',
+                body: 'This is a test notification from the edge function tester',
+                data: {
+                    type: 'test',
+                    screen: 'Test',
+                    userName: 'Tester'
+                },
+                target_email: 'yashbhavsar175@gmail.com'
+            };
+
+            showResult('⏳ Sending test push notification...', 'info');
+
+            try {
+                const response = await fetch(`${url}/functions/v1/quick-processor`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${key}`,
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult(
+                        '✅ PUSH NOTIFICATION SENT!\n\n' +
+                        'Status: ' + response.status + '\n' +
+                        'Response:\n' + JSON.stringify(data, null, 2) + '\n\n' +
+                        '📱 Check your admin device for the notification!',
+                        'success'
+                    );
+                } else {
+                    showResult(
+                        '❌ PUSH FAILED\n\n' +
+                        'Status: ' + response.status + '\n' +
+                        'Response:\n' + JSON.stringify(data, null, 2) + '\n\n' +
+                        '💡 Check Supabase Edge Function logs for details',
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('❌ Network Error: ' + error.message, 'error');
+            }
+        }
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = message;
+            resultDiv.className = 'result ' + type;
+        }
+
+        function clearResult() {
+            document.getElementById('result').textContent = '';
+            document.getElementById('result').className = '';
+        }
+
+        // Save values to localStorage
+        document.getElementById('supabaseUrl').addEventListener('change', (e) => {
+            localStorage.setItem('supabaseUrl', e.target.value);
+        });
+        document.getElementById('supabaseKey').addEventListener('change', (e) => {
+            localStorage.setItem('supabaseKey', e.target.value);
+        });
+
+        // Load saved values
+        window.addEventListener('load', () => {
+            const savedUrl = localStorage.getItem('supabaseUrl');
+            const savedKey = localStorage.getItem('supabaseKey');
+            if (savedUrl) document.getElementById('supabaseUrl').value = savedUrl;
+            if (savedKey) document.getElementById('supabaseKey').value = savedKey;
+        });
+    </script>
+</body>
+</html>

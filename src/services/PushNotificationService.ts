@@ -19,7 +19,6 @@ class PushNotificationService {
   private static instance: PushNotificationService;
   private isInitialized = false;
   private isAdmin = false;
-  private readonly ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 
   private constructor() {}
 
@@ -122,17 +121,35 @@ class PushNotificationService {
 
   private async checkAdminStatus() {
     try {
-      const userDataString = await AsyncStorage.getItem('user_profile');
-      if (userDataString) {
-        const userData = JSON.parse(userDataString);
-        this.isAdmin = userData.email === this.ADMIN_EMAIL;
-        console.log('👤 Admin status checked:', { 
-          email: userData.email, 
-          isAdmin: this.isAdmin 
-        });
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        this.isAdmin = false;
+        console.log('👤 No authenticated user found');
+        return;
       }
+
+      // Check is_admin flag from database
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('❌ Error fetching user profile:', error);
+        this.isAdmin = false;
+        return;
+      }
+
+      this.isAdmin = profile?.is_admin === true;
+      console.log('👤 Admin status checked:', { 
+        userId: user.id, 
+        isAdmin: this.isAdmin 
+      });
     } catch (error) {
       console.error('❌ Error checking admin status:', error);
+      this.isAdmin = false;
     }
   }
 

@@ -9,3 +9,4 @@ export { default as NotificationBell } from './NotificationBell';
 export { default as NotificationCard } from './NotificationCard';
 export { default as MajurHomeContent } from './MajurHomeContent';
 export { default as UppadJamaStatement } from './UppadJamaStatement';
+export { ResponsiveScrollView } from './ResponsiveScrollView';

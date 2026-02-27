@@ -20,7 +20,6 @@ class UnifiedNotificationManager {
   private isInitialized = false;
   private isAdmin = false;
   private currentUserId: string | null = null;
-  private readonly ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
   private realtimeSubscription: any = null;
 
   private constructor() {}
@@ -53,15 +52,31 @@ class UnifiedNotificationManager {
 
   private async loadUserInfo() {
     try {
-      const userProfile = await AsyncStorage.getItem('user_profile');
-      if (userProfile) {
-        const userData = JSON.parse(userProfile);
-        this.isAdmin = userData.email === this.ADMIN_EMAIL;
-        this.currentUserId = userData.id || userData.user_id;
-        console.log('👤 User loaded:', { isAdmin: this.isAdmin, userId: this.currentUserId });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        this.isAdmin = false;
+        return;
       }
+
+      // Check is_admin flag from database
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('❌ Error fetching user profile:', error);
+        this.isAdmin = false;
+        return;
+      }
+
+      this.isAdmin = profile?.is_admin === true;
+      this.currentUserId = user.id;
+      console.log('👤 User loaded:', { isAdmin: this.isAdmin, userId: this.currentUserId });
     } catch (error) {
       console.error('❌ Error loading user info:', error);
+      this.isAdmin = false;
     }
   }
 

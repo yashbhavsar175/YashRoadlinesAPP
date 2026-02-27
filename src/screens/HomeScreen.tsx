@@ -138,9 +138,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
   // Helper function to check if user has access to specific screen
   const hasScreenAccess = useCallback((screenName: string): boolean => {
-    const result = contextIsAdmin || contextHasScreenAccess(screenName);
-    console.log(`🔍 Screen Access Check: ${screenName} = ${result} (admin: ${contextIsAdmin}, context: ${contextHasScreenAccess(screenName)})`);
-    return result;
+    return contextIsAdmin || contextHasScreenAccess(screenName);
   }, [contextIsAdmin, contextHasScreenAccess]);
 
   const fetchUserProfile = useCallback(async () => {
@@ -182,26 +180,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
       // Use context admin status instead of local state
       setUserRole(contextIsAdmin ? 'Admin' : 'User');
-
-      console.log('🔧 DEBUG: User profile loaded:', {
-        userId: user.id,
-        userEmail: user.email,
-        displayName: profile?.full_name || user.email,
-        userType: profile?.user_type || 'normal',
-        isAdmin: profile?.is_admin || false,
-        screenAccess: profile?.screen_access || []
-      });
-      
-      // Additional debug for majur users
-      if (profile?.user_type === 'majur') {
-        console.log('🎯 MAJUR USER DETECTED:', {
-          userId: user.id,
-          email: user.email,
-          fullName: profile.full_name,
-          userType: profile.user_type,
-          isActive: profile.is_active
-        });
-      }
     } catch (e) {
       console.error("Error fetching user profile:", e);
       setUserInitial('?');
@@ -248,20 +226,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       
       // Get current office ID for filtering
       const officeId = getCurrentOfficeId();
-      console.log('HomeScreen - loadMajurData - Current office ID:', officeId);
       
-      // पहले sync करें - Solution 1
-      console.log('HomeScreen - loadMajurData - Starting data sync...');
+      // Sync data first
       await syncAllDataFixed();
-      console.log('HomeScreen - loadMajurData - Data sync completed');
       
       // Load both majuri and uppad/jama entries with office filter
       const allMajuri: AgencyMajuri[] = await getAgencyMajuri(officeId || undefined);
       const allUppadJama: UppadJamaEntry[] = await getUppadJamaEntries(officeId || undefined);
-      
-      console.log('HomeScreen - loadMajurData - Total majuri entries for office:', allMajuri.length);
-      console.log('HomeScreen - loadMajurData - Total uppad/jama entries for office:', allUppadJama.length);
-      console.log('HomeScreen - loadMajurData - Recent uppad/jama sample:', allUppadJama.slice(0, 3));
       
       // Get current date and set time to start of day
       const sevenDaysAgo = new Date();
@@ -280,9 +251,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         return itemDate >= sevenDaysAgo && 
                (!item.description || !item.description.includes('Admin Panel'));
       });
-      
-      console.log('HomeScreen - After filtering - Recent uppad/jama count:', recentUppadJama.length);
-      console.log('HomeScreen - Recent uppad/jama entries:', recentUppadJama);
       
       // Convert majuri entries to combined format
       const majuriCombined = recentMajuri.map(item => ({
@@ -449,19 +417,31 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       
       const loadData = async () => {
         try {
-          console.log('🔄 HomeScreen: Starting data load...');
-          
           // Always refresh permissions when screen comes into focus
           await refreshPermissions();
           
           // Load user profile
           await fetchUserProfile();
           
+          // Run migration check for legacy delivery records (only once per session)
+          if (!hasInitializedRef.current) {
+            try {
+              const { checkMigrationNeeded, migrateDeliveryRecords } = await import('../utils/migrateDeliveryRecords');
+              const needsMigration = await checkMigrationNeeded();
+              if (needsMigration) {
+                const result = await migrateDeliveryRecords();
+                if (!result.success) {
+                  console.error('❌ Migration failed:', result.error);
+                }
+              }
+            } catch (migrationError) {
+              console.error('❌ Migration check failed:', migrationError);
+            }
+          }
+          
           if (userType === 'majur') {
             await loadMajurData();
           }
-          
-          console.log('✅ HomeScreen: Data load completed');
         } catch (error) {
           console.error('❌ HomeScreen: Error loading data:', error);
         }
@@ -478,20 +458,17 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
   // Watch for permission changes and force re-render
   useEffect(() => {
-    console.log('🔄 HomeScreen: Permissions updated, re-rendering UI...', {
-      lastUpdated,
-      isAdmin: contextIsAdmin,
-      screenAccessCount: Object.keys(screenAccess).length
-    });
+    // Trigger re-render when permissions change
   }, [lastUpdated, contextIsAdmin, screenAccess]);
+
+  // Update userRole when contextIsAdmin changes
+  useEffect(() => {
+    setUserRole(contextIsAdmin ? 'Admin' : 'User');
+  }, [contextIsAdmin]);
 
   // Reload data when office changes (for majur users)
   useEffect(() => {
     if (userType === 'majur' && currentOffice) {
-      console.log('🏢 HomeScreen: Office changed, reloading majur data...', {
-        officeId: currentOffice.id,
-        officeName: currentOffice.name
-      });
       loadMajurData();
     }
   }, [currentOffice, userType, loadMajurData]);
@@ -500,15 +477,12 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   useEffect(() => {
     if (userType !== 'majur') return;
 
-    console.log('HomeScreen - Setting up real-time subscriptions for majur dashboard');
-
     // Set up real-time subscription for majuri data
     const majuriChannel = supabase
       .channel('agency_majuri_changes')
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'agency_majuri' }, 
         (payload) => {
-          console.log('Majuri data changed, refreshing...', payload);
           loadMajurData();
         }
       )
@@ -520,7 +494,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       .on('broadcast', 
         { event: 'refresh-dashboard' },
         (payload) => {
-          console.log('HomeScreen - Received broadcast refresh signal:', payload);
           // Force refresh majur dashboard
           loadMajurData().catch(error => {
             console.error('Error refreshing after broadcast:', error);
@@ -540,7 +513,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           filter: 'entry_type=eq.credit' // Only listen to jama (credit) entries
         },
         (payload) => {
-          console.log('Jama (credit) entry added, refreshing majur dashboard...', payload);
           // Force a fresh data load only for jama entries
           loadMajurData().catch(error => {
             console.error('Error refreshing after Jama entry:', error);
@@ -552,12 +524,10 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           console.error('Error subscribing to Uppad/Jama changes:', err);
           return;
         }
-        console.log('Uppad/Jama subscription status:', status);
       });
 
     // Cleanup subscriptions on unmount
     return () => {
-      console.log('HomeScreen - Cleaning up real-time subscriptions');
       supabase.removeChannel(majuriChannel);
       supabase.removeChannel(broadcastChannel);
       supabase.removeChannel(uppadJamaChannel);
@@ -607,13 +577,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     },
     appBarTitle: {
       color: BWColors.surface,
-      fontSize: 24,
+      fontSize: 20,
       fontWeight: '800',
       letterSpacing: -0.5,
     },
     appBarSubtitle: {
       color: 'rgba(255, 255, 255, 0.8)',
-      fontSize: 14,
+      fontSize: 12,
       marginTop: 4,
       fontWeight: '400',
     },
@@ -635,9 +605,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       flex: 1,
     },
     avatar: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       backgroundColor: BWColors.surface,
       justifyContent: 'center',
       alignItems: 'center',
@@ -647,7 +617,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     avatarText: {
       color: BWColors.primary,
       fontWeight: '800',
-      fontSize: 20,
+      fontSize: 16,
     },
     scrollViewContent: {
       padding: 20,
@@ -1167,7 +1137,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
               if (error) throw error;
               replace('Login');
             } catch (error: any) {
-              console.error("Logout error:", error.message);
               Alert.alert("Failed to logout", error.message || "An unknown error occurred.");
             }
           },
@@ -1211,16 +1180,16 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={BWColors.primary} />
       <View style={styles.appBar}>
-        <View>
-          <Text style={styles.appBarTitle}>Yash Roadlines</Text>
+        <View style={{ flex: 1, marginRight: 12 }}>
+          <Text style={styles.appBarTitle} numberOfLines={1}>Yash Roadlines</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={styles.appBarSubtitle}>
+            <Text style={styles.appBarSubtitle} numberOfLines={1}>
               {userName ? `${userName} • ${userRole}` : userRole}
               {currentOffice && ` • ${currentOffice.name}`}
             </Text>
           </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 0 }}>
           {/* Notification Bell for Admin */}
           {contextIsAdmin && (
             <NotificationBell
@@ -1332,6 +1301,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         renderItem={renderDateSummary}
         keyExtractor={(item) => item.date}
         contentContainerStyle={styles.dateSummaryContent}
+        nestedScrollEnabled={true}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Icon name="calendar-outline" size={48} color={BWColors.textTertiary} />
@@ -1361,16 +1331,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             const symbol = isPositive ? '+' : '-';
             const symbolColor = isPositive ? '#2E7D32' : '#D32F2F';
             
-            // Debug log for symbol logic
-            if (item.type === 'uppad_jama') {
-              console.log('HomeScreen - Symbol debug:', {
-                name: item.name,
-                type: item.type,
-                entry_type: item.entry_type,
-                isPositive: isPositive,
-                symbol: symbol
-              });
-            }
             
             return (
               <React.Fragment key={item.id}>
@@ -1764,7 +1724,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 {/* Page Management - Admin Only */}
                 {contextIsAdmin && (
                   <TouchableOpacity onPress={() => {
-                  console.log('🔧 DEBUG: Page Management clicked');
                   setIsProfileMenuVisible(false);
                   navigate('PageManagement');
                 }} style={styles.menuItem}>

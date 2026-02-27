@@ -57,7 +57,6 @@ class NotificationService {
   private static instance: NotificationService;
   private isInitialized = false;
   private currentUser: any = null;
-  private readonly ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 
   private constructor() {}
 
@@ -96,9 +95,20 @@ class NotificationService {
         }
       }
 
-      // Don't send notification if current user is admin
-      if (this.currentUser?.email === this.ADMIN_EMAIL) {
-        return;
+      // Check if current user is admin from database
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single();
+
+        // Don't send notification if current user is admin
+        if (profile?.is_admin === true) {
+          console.log('🚫 Current user is admin, skipping notification');
+          return;
+        }
       }
 
       const notification = {

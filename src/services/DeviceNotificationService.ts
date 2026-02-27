@@ -98,13 +98,45 @@ class DeviceNotificationService {
 
   async sendAdminDeviceNotification(data: DeviceNotificationData) {
     try {
-      console.log('🔔 [1/4] Starting admin notification flow:', data.title);
-      console.log('   - Data:', JSON.stringify(data, null, 2));
+      console.log('📱 [DeviceNotification] Sending notification:', data.title);
+      console.log('📱 [DeviceNotification] Data:', JSON.stringify(data, null, 2));
       
-      // First try server push (works when app is closed and shows in status bar)
-      let serverPushSuccess = false;
+      // STEP 1: Insert into admin_notifications table (for realtime listener)
       try {
-        console.log('📡 [2/4] Attempting server push via PushGateway...');
+        console.log('💾 [DeviceNotification] Attempting database insert...');
+        const { data: insertedNotification, error: dbError } = await supabase
+          .from('admin_notifications')
+          .insert({
+            title: data.title,
+            message: data.message,
+            type: data.type,
+            severity: 'info',
+            user_name: data.userName,
+            user_id: data.userName, // Using userName as fallback for user_id
+            metadata: {
+              screen: data.screen,
+              details: data.details
+            },
+            is_read: false
+          })
+          .select()
+          .single();
+
+        if (dbError) {
+          console.error('❌ [DeviceNotification] Database insert error:', dbError);
+          console.error('❌ [DeviceNotification] Error details:', JSON.stringify(dbError, null, 2));
+        } else {
+          console.log('✅ [DeviceNotification] Notification saved to database!');
+          console.log('✅ [DeviceNotification] Inserted notification:', JSON.stringify(insertedNotification, null, 2));
+          console.log('🔔 [DeviceNotification] AdminNotificationListener will handle the notification display');
+        }
+      } catch (dbErr) {
+        console.error('❌ [DeviceNotification] Database error:', dbErr);
+      }
+      
+      // STEP 2: Server push (for when admin app is closed)
+      try {
+        console.log('📤 [DeviceNotification] Sending server push to admin...');
         const result = await PushGateway.sendPushToAdmin({
           title: data.title,
           body: data.message,
@@ -112,35 +144,15 @@ class DeviceNotificationService {
             type: data.type,
             screen: data.screen,
             userName: data.userName,
-            details: data.details,
+            details: JSON.stringify(data.details), // Convert to string for FCM
           },
         });
-        
-        console.log('📡 [3/4] Server push result:', result);
-        
-        if (result.ok) {
-          serverPushSuccess = true;
-          console.log('✅ [4/4] Server push sent successfully!');
-        } else {
-          console.warn('⚠️ [4/4] Server push failed. See PushGateway logs for details.');
-        }
+        console.log('📤 [DeviceNotification] Server push result:', result);
       } catch (e) {
-        console.error('❌ [DeviceNotificationService] Server push exception:', e);
-      }
-
-      // Fallback to local notification if server push failed
-      if (!serverPushSuccess) {
-        console.log('🔄 Using local notification as fallback...');
-        PushNotification.localNotification({
-          channelId: 'admin-notifications',
-          id: Math.floor(Math.random() * 1000000).toString(),
-          title: `(Local) ${data.title}`,
-          message: data.message,
-          // ... (rest of the properties)
-        });
+        console.error('❌ [DeviceNotification] Server push failed:', e);
       }
     } catch (error) {
-      console.error('❌ [DeviceNotificationService] Main error:', error);
+      console.error('❌ Notification error:', error);
     }
   }
 

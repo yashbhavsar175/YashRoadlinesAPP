@@ -9,6 +9,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import ReactNativeBiometrics from 'react-native-biometrics';
 import { listAllProfiles, listProfilesExceptCurrent, setUserActive, updateUserType, createProfileIfMissing, getProfile, UserProfile, savePerson, getPersons, Person, saveUppadJamaEntry, syncAllDataFixed, getOffices } from '../data/Storage'; // Added getOffices
 import Dropdown from '../components/Dropdown'; // Added Dropdown import
+import { migrateAllDataToPremDarwaja, checkMigrationNeeded } from '../utils/migrateDataToOffice';
 
 type AdminPanelScreenNavigationProp = NavigationProp<RootStackParamList, 'AdminPanel'>;
 
@@ -55,6 +56,11 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
   // Offices state
   const [offices, setOffices] = useState<any[]>([]);
   const [officesLoading, setOfficesLoading] = useState<boolean>(false);
+  
+  // Migration state
+  const [expandMigrationSection, setExpandMigrationSection] = useState<boolean>(false);
+  const [migrationLoading, setMigrationLoading] = useState<boolean>(false);
+  const [migrationStatus, setMigrationStatus] = useState<string>('');
 
   const toggleUserSection = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -951,6 +957,127 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                 )}
               </View>
             </>
+          )}
+        </View>
+
+        {/* Data Migration Section */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setExpandMigrationSection(prev => !prev);
+            }} 
+            style={styles.sectionHeader}
+          >
+            <View style={styles.sectionHeaderLeft}>
+              <Icon name="cloud-upload-outline" size={20} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+              <Text style={styles.sectionTitle}>Data Migration</Text>
+            </View>
+            <Icon name={expandMigrationSection ? 'chevron-up' : 'chevron-down'} size={22} color={Colors.textSecondary} />
+          </TouchableOpacity>
+
+          {expandMigrationSection && (
+            <View style={GlobalStyles.card}>
+              <Text style={GlobalStyles.bodyText}>
+                Migrate all legacy data (with null office_id) to Prem Darwaja office.
+              </Text>
+              <Text style={[GlobalStyles.bodyText, { marginTop: 8, fontStyle: 'italic', color: Colors.textSecondary }]}>
+                This will update all old records to be visible when "Prem Darwaja" office is selected.
+              </Text>
+              
+              {migrationStatus ? (
+                <View style={[GlobalStyles.card, { marginTop: 12, backgroundColor: '#F0F8FF' }]}>
+                  <Text style={[GlobalStyles.bodyText, { fontWeight: '600' }]}>Migration Status:</Text>
+                  <Text style={[GlobalStyles.bodyText, { marginTop: 4 }]}>{migrationStatus}</Text>
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                onPress={async () => {
+                  setMigrationLoading(true);
+                  setMigrationStatus('Checking migration status...');
+                  try {
+                    const result = await checkMigrationNeeded();
+                    const { total, details } = result;
+                    
+                    if (total === 0) {
+                      setMigrationStatus('✅ No records need migration. All data is already assigned to offices.');
+                    } else {
+                      let statusText = `📊 Found ${total} records that need migration:\n\n`;
+                      Object.entries(details).forEach(([table, count]) => {
+                        if (count > 0) {
+                          statusText += `• ${table}: ${count} records\n`;
+                        }
+                      });
+                      setMigrationStatus(statusText);
+                    }
+                  } catch (error: any) {
+                    console.error('Error checking migration:', error);
+                    setMigrationStatus('❌ Error checking migration status: ' + error.message);
+                  } finally {
+                    setMigrationLoading(false);
+                  }
+                }}
+                disabled={migrationLoading}
+                style={[GlobalStyles.buttonPrimary, { marginTop: 12, backgroundColor: Colors.accent }, migrationLoading && styles.disabledButton]}
+              >
+                <Text style={GlobalStyles.buttonPrimaryText}>
+                  {migrationLoading ? 'Checking...' : '🔍 Check Migration Status'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={async () => {
+                  Alert.alert(
+                    'Confirm Migration',
+                    'This will migrate all legacy data (null office_id) to Prem Darwaja office. This action cannot be undone. Continue?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Migrate',
+                        style: 'default',
+                        onPress: async () => {
+                          setMigrationLoading(true);
+                          setMigrationStatus('🔄 Migration in progress...');
+                          try {
+                            const result = await migrateAllDataToPremDarwaja();
+                            
+                            if (result.success) {
+                              let successText = `✅ Migration completed successfully!\n\n`;
+                              successText += `Office: ${result.officeName}\n`;
+                              successText += `Total records updated: ${result.totalUpdated}\n\n`;
+                              successText += `Details:\n`;
+                              Object.entries(result.details).forEach(([table, info]: [string, any]) => {
+                                if (info.success && info.count > 0) {
+                                  successText += `• ${table}: ${info.count} records\n`;
+                                }
+                              });
+                              setMigrationStatus(successText);
+                              Alert.alert('Success', 'Data migration completed! All legacy data is now assigned to Prem Darwaja office.');
+                            } else {
+                              setMigrationStatus(`❌ Migration failed: ${result.error}`);
+                              Alert.alert('Error', result.error || 'Migration failed');
+                            }
+                          } catch (error: any) {
+                            console.error('Error during migration:', error);
+                            setMigrationStatus('❌ Migration error: ' + error.message);
+                            Alert.alert('Error', 'Migration failed: ' + error.message);
+                          } finally {
+                            setMigrationLoading(false);
+                          }
+                        }
+                      }
+                    ]
+                  );
+                }}
+                disabled={migrationLoading}
+                style={[GlobalStyles.buttonPrimary, { marginTop: 12, backgroundColor: Colors.warning }, migrationLoading && styles.disabledButton]}
+              >
+                <Text style={GlobalStyles.buttonPrimaryText}>
+                  {migrationLoading ? 'Migrating...' : '🚀 Run Migration'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 

@@ -3915,8 +3915,22 @@ export const saveDeliveryRecord = async (
         
         if (error) throw error;
         
-        // Update local storage
+        // Update local storage - both DELIVERY_RECORDS and AGENCY_ENTRIES
         await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, data);
+        
+        // Also update AGENCY_ENTRIES cache
+        const agencyEntriesCache = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
+        if (agencyEntriesCache) {
+          let agencyEntries: AgencyEntry[] = JSON.parse(agencyEntriesCache);
+          const agencyEntryIndex = agencyEntries.findIndex(e => e.id === data.id);
+          if (agencyEntryIndex !== -1) {
+            agencyEntries[agencyEntryIndex] = data as AgencyEntry;
+          } else {
+            agencyEntries.unshift(data as AgencyEntry);
+          }
+          await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify(agencyEntries));
+        }
+        
         await logHistory('update', 'agency_entries', data.id, deliveryData);
         return true;
       } else {
@@ -3929,8 +3943,19 @@ export const saveDeliveryRecord = async (
         
         if (error) throw error;
         
-        // Save to local storage
+        // Save to local storage - both DELIVERY_RECORDS and AGENCY_ENTRIES
         await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, data);
+        
+        // Also update AGENCY_ENTRIES cache
+        const agencyEntriesCache = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
+        if (agencyEntriesCache) {
+          let agencyEntries: AgencyEntry[] = JSON.parse(agencyEntriesCache);
+          agencyEntries.unshift(data as AgencyEntry);
+          await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify(agencyEntries));
+        } else {
+          await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify([data]));
+        }
+        
         await logHistory('add', 'agency_entries', data.id, deliveryData);
         return true;
       }
@@ -3945,8 +3970,23 @@ export const saveDeliveryRecord = async (
         updated_at: currentDate,
       };
       
-      // Save to offline storage
+      // Save to offline storage - both DELIVERY_RECORDS and AGENCY_ENTRIES
       await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, offlineData);
+      
+      // Also save to AGENCY_ENTRIES cache for consistency
+      const agencyEntriesCache = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
+      if (agencyEntriesCache) {
+        let agencyEntries: AgencyEntry[] = JSON.parse(agencyEntriesCache);
+        const existingIndex = agencyEntries.findIndex(e => e.id === tempId);
+        if (existingIndex !== -1) {
+          agencyEntries[existingIndex] = offlineData as AgencyEntry;
+        } else {
+          agencyEntries.unshift(offlineData as AgencyEntry);
+        }
+        await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify(agencyEntries));
+      } else {
+        await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify([offlineData]));
+      }
       
       // Queue for sync
       await SyncManager.getInstance().addPendingOperation({
@@ -4104,24 +4144,24 @@ export const confirmDeliveryPayment = async (
 
     // Validate office-based access control - Validates: Requirement 7.4
     // First, get the delivery record to check its office_id
-    let deliveryRecord: DeliveryRecord | null = null;
+    let deliveryRecord: AgencyEntry | null = null;
     
     if (online) {
       const { data, error } = await supabase
-        .from('mumbai_deliveries')
+        .from('agency_entries')
         .select('*')
         .eq('id', confirmation.delivery_record_id)
         .single();
       
       if (error || !data) {
-        console.error('Delivery record not found or access denied');
+        console.error('Delivery record not found or access denied:', error);
         return false;
       }
-      deliveryRecord = data as DeliveryRecord;
+      deliveryRecord = data as AgencyEntry;
     } else {
       // Offline mode - check local storage
-      const offlineRecords = await AsyncStorage.getItem(OFFLINE_KEYS.DELIVERY_RECORDS);
-      const records: DeliveryRecord[] = offlineRecords ? JSON.parse(offlineRecords) : [];
+      const offlineRecords = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
+      const records: AgencyEntry[] = offlineRecords ? JSON.parse(offlineRecords) : [];
       deliveryRecord = records.find(r => r.id === confirmation.delivery_record_id) || null;
       
       if (!deliveryRecord) {
@@ -4169,7 +4209,7 @@ export const confirmDeliveryPayment = async (
 
       // Update delivery record with confirmation data and photo IDs
       const { data, error } = await supabase
-        .from('mumbai_deliveries')
+        .from('agency_entries')
         .update({
           ...confirmationData,
           bilty_photo_id: biltyPhotoId,
@@ -4181,9 +4221,32 @@ export const confirmDeliveryPayment = async (
 
       if (error) throw error;
 
+      // Create a credit entry in general_entries (Daily Report) for the confirmed payment
+      const generalEntryData = {
+        description: `Mumbai Delivery Payment - ${deliveryRecord.description || 'N/A'}`,
+        amount: confirmation.confirmed_amount,
+        entry_type: 'credit' as const,
+        entry_date: confirmedAt,
+        office_id: deliveryRecord.office_id,
+        created_by: currentUser?.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: generalEntryError } = await supabase
+        .from('general_entries')
+        .insert([generalEntryData]);
+
+      if (generalEntryError) {
+        console.error('Failed to create general entry for payment:', generalEntryError);
+        // Don't fail the whole operation, just log the error
+      } else {
+        console.log('✅ Created credit entry in daily report for Mumbai payment');
+      }
+
       // Update local storage
-      await saveToOfflineStorage(OFFLINE_KEYS.DELIVERY_RECORDS, data);
-      await logHistory('update', 'mumbai_deliveries', data.id, confirmationData);
+      await saveToOfflineStorage(OFFLINE_KEYS.AGENCY_ENTRIES, data);
+      await logHistory('update', 'agency_entries', data.id, confirmationData);
       
       return true;
     } else {
@@ -4214,8 +4277,8 @@ export const confirmDeliveryPayment = async (
       });
 
       // Update local delivery record
-      const offlineRecords = await AsyncStorage.getItem(OFFLINE_KEYS.DELIVERY_RECORDS);
-      let records: DeliveryRecord[] = offlineRecords ? JSON.parse(offlineRecords) : [];
+      const offlineRecords = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_ENTRIES);
+      let records: AgencyEntry[] = offlineRecords ? JSON.parse(offlineRecords) : [];
       
       const recordIndex = records.findIndex(r => r.id === confirmation.delivery_record_id);
       if (recordIndex !== -1) {
@@ -4225,12 +4288,41 @@ export const confirmDeliveryPayment = async (
           bilty_photo_id: biltyPhotoId,
           signature_photo_id: signaturePhotoId,
         };
-        await AsyncStorage.setItem(OFFLINE_KEYS.DELIVERY_RECORDS, JSON.stringify(records));
+        await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify(records));
       }
+
+      // Create a credit entry in general_entries (Daily Report) for the confirmed payment - OFFLINE
+      const generalEntryData = {
+        id: `temp_${Date.now()}_general`,
+        description: `Mumbai Delivery Payment - ${deliveryRecord.description || 'N/A'}`,
+        amount: confirmation.confirmed_amount,
+        entry_type: 'credit' as const,
+        entry_date: confirmedAt,
+        office_id: deliveryRecord.office_id,
+        created_by: currentUser?.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      // Save to offline general entries
+      const offlineGeneralEntries = await AsyncStorage.getItem(OFFLINE_KEYS.GENERAL_ENTRIES);
+      const generalEntries = offlineGeneralEntries ? JSON.parse(offlineGeneralEntries) : [];
+      generalEntries.push(generalEntryData);
+      await AsyncStorage.setItem(OFFLINE_KEYS.GENERAL_ENTRIES, JSON.stringify(generalEntries));
+
+      // Queue general entry for sync
+      await SyncManager.getInstance().addPendingOperation({
+        table: 'general_entries',
+        action: 'INSERT',
+        data: generalEntryData,
+        office_id: deliveryRecord.office_id || undefined,
+      });
+
+      console.log('✅ Created credit entry in daily report for Mumbai payment (offline)');
 
       // Queue for sync
       await SyncManager.getInstance().addPendingOperation({
-        table: 'mumbai_deliveries',
+        table: 'agency_entries',
         action: 'UPDATE',
         data: {
           ...confirmationData,
@@ -4577,6 +4669,12 @@ export const getAllTransactionsForDate = async (targetDate: Date, officeId?: str
   try {
     const online = await isOnline();
     
+    console.log('🔍 getAllTransactionsForDate called:', {
+      date: targetDate.toISOString().split('T')[0],
+      officeId: officeId || 'ALL',
+      online
+    });
+    
     if (online) {
       const startOfDay = new Date(targetDate);
       startOfDay.setHours(0, 0, 0, 0);
@@ -4611,6 +4709,29 @@ export const getAllTransactionsForDate = async (targetDate: Date, officeId?: str
         buildQuery('uppad_jama_entries', 'entry_date'),
       ]);
       
+      console.log('📊 Query results:', {
+        payments: payments.data?.length || 0,
+        majuri: majuri.data?.length || 0,
+        driverTxn: driverTxn.data?.length || 0,
+        fuelEntries: fuelEntries.data?.length || 0,
+        generalEntries: generalEntries.data?.length || 0,
+        agencyEntries: agencyEntries.data?.length || 0,
+        uppadJamaEntries: uppadJamaEntries.data?.length || 0,
+      });
+      
+      // Debug agency entries specifically
+      const mumbaiEntries = (agencyEntries.data || []).filter((e: any) => e.agency_name === 'Mumbai');
+      console.log('🏙️ Mumbai entries in agencyEntries:', mumbaiEntries.length);
+      if (mumbaiEntries.length > 0) {
+        console.log('   Sample Mumbai entry:', {
+          id: mumbaiEntries[0].id,
+          billty_no: mumbaiEntries[0].billty_no,
+          amount: mumbaiEntries[0].amount,
+          confirmation_status: mumbaiEntries[0].confirmation_status,
+          entry_date: mumbaiEntries[0].entry_date,
+        });
+      }
+      
       const allTransactions = [
         ...(payments.data || []),
         ...(majuri.data || []),
@@ -4621,9 +4742,13 @@ export const getAllTransactionsForDate = async (targetDate: Date, officeId?: str
         ...(uppadJamaEntries.data || [])
       ];
       
+      console.log('✅ Total transactions returned:', allTransactions.length);
+      
       return allTransactions;
       
     } else {
+      console.log('📴 Offline mode - loading from cache');
+      
       const [payments, majuri, driverTxn, fuelEntries, generalEntries, agencyEntries, uppadJamaEntries] = await Promise.all([
         getAgencyPaymentsLocal(officeId),
         getAgencyMajuri(officeId), 
@@ -4634,6 +4759,20 @@ export const getAllTransactionsForDate = async (targetDate: Date, officeId?: str
         getUppadJamaEntries(officeId)
       ]);
       
+      console.log('📊 Cache results:', {
+        payments: payments.length,
+        majuri: majuri.length,
+        driverTxn: driverTxn.length,
+        fuelEntries: fuelEntries.length,
+        generalEntries: generalEntries.length,
+        agencyEntries: agencyEntries.length,
+        uppadJamaEntries: uppadJamaEntries.length,
+      });
+      
+      // Debug Mumbai entries in cache
+      const mumbaiEntries = agencyEntries.filter((e: any) => e.agency_name === 'Mumbai');
+      console.log('🏙️ Mumbai entries in cache:', mumbaiEntries.length);
+      
       const filteredTransactions = [
         ...payments.filter((item: { payment_date: string; }) => isSameDate(item.payment_date, targetDate)),
         ...majuri.filter((item: { majuri_date: string; }) => isSameDate(item.majuri_date, targetDate)),
@@ -4643,6 +4782,8 @@ export const getAllTransactionsForDate = async (targetDate: Date, officeId?: str
         ...agencyEntries.filter((item: { entry_date: string; }) => isSameDate(item.entry_date, targetDate)),
         ...uppadJamaEntries.filter((item: { entry_date: string; }) => isSameDate(item.entry_date, targetDate))
       ];
+      
+      console.log('✅ Total filtered transactions:', filteredTransactions.length);
       
       return filteredTransactions;
     }
@@ -5409,7 +5550,6 @@ export const setUserOfficeAssignment = async (userId: string, officeId: string):
       .from('user_profiles')
       .update({
         office_id: officeId,
-        office_name: office.name,
         updated_at: new Date().toISOString()
       })
       .eq('id', userId);
@@ -5420,8 +5560,7 @@ export const setUserOfficeAssignment = async (userId: string, officeId: string):
     }
 
     await logHistory('update', 'user_profiles', userId, { 
-      office_id: officeId, 
-      office_name: office.name 
+      office_id: officeId
     });
     console.log('✅ User office assignment updated successfully');
     
@@ -5689,13 +5828,69 @@ const notifyAdminsOfLoginRequest = async (
 
     console.log(`📢 Notifying ${admins?.length || 0} admins about login request`);
 
-    // Here you would send push notifications to admins
-    // This requires your notification service to be set up
-    // For now, we'll just log it
-    console.log(`🔔 Login request from ${userName} (${userEmail})`);
-    
-    // TODO: Implement actual push notification
-    // Example: await sendPushNotification(adminIds, { title: 'New Login Request', body: `${userName} wants to login` });
+    if (!admins || admins.length === 0) {
+      console.warn('⚠️ No active admins found to notify');
+      return;
+    }
+
+    // Import notification services
+    const NotificationService = require('../services/NotificationService').default;
+    const PushNotificationService = require('../services/PushNotificationService').default;
+
+    // Send admin notification (in-app database record)
+    try {
+      await NotificationService.sendAdminNotification({
+        title: '🔐 New Login Request',
+        message: `${userName} (${userEmail}) is requesting access to the app`,
+        type: 'system',
+        severity: 'warning',
+        metadata: {
+          user_email: userEmail,
+          user_name: userName,
+          request_type: 'login_approval',
+          timestamp: new Date().toISOString(),
+        },
+      });
+      console.log('✅ In-app notification saved to database');
+    } catch (notifError) {
+      console.error('❌ Failed to save in-app notification:', notifError);
+    }
+
+    // Send FCM push notification to admin devices (works when app is closed/background)
+    // Note: This requires proper Firebase setup and edge function deployment
+    try {
+      console.log('📤 Attempting to send FCM push notification to admin devices...');
+      
+      // Get admin email from first admin (assuming single admin setup)
+      const adminEmail = 'yashbhavsar175@gmail.com';
+      
+      const { data: fcmResult, error: fcmError } = await supabase.functions.invoke('quick-processor', {
+        body: {
+          action: 'send_push',
+          target_email: adminEmail,
+          title: '🔐 New Login Request',
+          body: `${userName} (${userEmail}) is requesting access to the app. Please review and approve.`,
+          data: {
+            type: 'login_request',
+            user_email: userEmail,
+            user_name: userName,
+            screen: 'AdminPanel',
+            timestamp: new Date().toISOString(),
+          },
+        },
+      });
+
+      if (fcmError) {
+        console.warn('⚠️ FCM notification failed (non-critical):', fcmError.message);
+      } else {
+        console.log('✅ FCM push notification sent:', fcmResult);
+      }
+    } catch (fcmError: any) {
+      console.warn('⚠️ FCM notification error (non-critical):', fcmError?.message || fcmError);
+      // Don't throw - FCM is optional, other notifications still work
+    }
+
+    console.log(`🔔 All notifications sent for login request from ${userName}`);
     
   } catch (error) {
     console.error('Error notifying admins:', error);

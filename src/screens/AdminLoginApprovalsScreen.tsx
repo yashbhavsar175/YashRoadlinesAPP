@@ -93,6 +93,9 @@ function AdminLoginApprovalsScreen({ navigation }: AdminLoginApprovalsScreenProp
   }, [fetchLoginRequests]);
 
   const handleApprove = async (requestId: string) => {
+    console.log('🔐 Approve button clicked for request:', requestId);
+    console.log('OTP input:', otpInput);
+    
     if (!otpInput.trim() || otpInput.length !== 6) {
       Alert.alert('Invalid OTP', 'Please enter a 6-digit OTP code');
       return;
@@ -101,6 +104,8 @@ function AdminLoginApprovalsScreen({ navigation }: AdminLoginApprovalsScreenProp
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+
+      console.log('📝 Updating login request with OTP:', otpInput.trim());
 
       const { error } = await supabase
         .from('login_requests')
@@ -113,14 +118,18 @@ function AdminLoginApprovalsScreen({ navigation }: AdminLoginApprovalsScreenProp
         })
         .eq('id', requestId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Database update error:', error);
+        throw error;
+      }
 
+      console.log('✅ Login request approved successfully');
       Alert.alert('Success', 'Login request approved! User can now login with the OTP.');
       setSelectedRequest(null);
       setOtpInput('');
       fetchLoginRequests();
     } catch (error) {
-      console.error('Error approving request:', error);
+      console.error('❌ Error approving request:', error);
       Alert.alert('Error', 'Failed to approve login request');
     }
   };

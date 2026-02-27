@@ -20,18 +20,11 @@ class PushGateway {
   // Register or refresh the device token for the current logged-in user
   async registerDeviceToken(token: string, platform: PlatformType) {
     try {
-      console.log('📱 [PushGateway] Starting registerDeviceToken...');
-      console.log('📱 [PushGateway] Token:', token.substring(0, 20) + '...');
-      console.log('📱 [PushGateway] Platform:', platform);
-      
       const { data: auth } = await supabase.auth.getUser();
       const user = auth?.user;
       if (!user) {
-        console.log('⚠️ [PushGateway] No authenticated user; skip token register');
         return { ok: false, reason: 'no-user' };
       }
-
-      console.log('📱 [PushGateway] User authenticated:', user.email);
 
       // Call edge function to register token securely using service role
       const { data, error } = await supabase.functions.invoke('quick-processor', {
@@ -39,13 +32,10 @@ class PushGateway {
       });
 
       if (error) {
-        console.warn('❌ [PushGateway] register_token error', error);
         return { ok: false, error };
       }
-      console.log('✅ [PushGateway] Token registered successfully');
       return { ok: true, data };
     } catch (e) {
-      console.warn('❌ [PushGateway] registerDeviceToken exception', e);
       return { ok: false, error: e } as any;
     }
   }
@@ -53,27 +43,29 @@ class PushGateway {
   // Send a push to target devices (admin) via edge function
   async sendPushToAdmin(payload: ServerPushPayload) {
       try {
-        console.log('📡 [PushGateway] Starting sendPushToAdmin...');
+        console.log('🚀 [PushGateway] Sending push to admin:', payload.title);
+        
         const body = {
           action: 'send_push',
           title: payload.title,
           body: payload.body,
           data: payload.data || {},
-          target_email: payload.target_email || 'yashbhavsar175@gmail.com', // Always target admin
+          target_email: payload.target_email || 'yashbhavsar175@gmail.com',
         };
-        console.log('   - Target:', body.target_email);
-        console.log('   - Request Body:', JSON.stringify(body, null, 2));
+        
+        console.log('📦 [PushGateway] Request body:', JSON.stringify(body, null, 2));
         
         const { data, error } = await supabase.functions.invoke('quick-processor', { body });
         
         if (error) {
-          console.warn('❌ [PushGateway] Edge function returned error:', error);
+          console.error('❌ [PushGateway] Edge function error:', error);
           return { ok: false, error };
         }
-        console.log('✅ [PushGateway] Edge function returned success:', data);
+        
+        console.log('✅ [PushGateway] Push sent successfully:', data);
         return { ok: true, data };
       } catch (e) {
-        console.error('❌ [PushGateway] Exception during invoke:', e);
+        console.error('❌ [PushGateway] Exception:', e);
         return { ok: false, error: e } as any;
       }
   }

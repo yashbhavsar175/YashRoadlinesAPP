@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, FlatList, Text, TextInput, TouchableOpacity, StatusBar, Platform, Alert, Keyboard } from 'react-native';
+import { View, StyleSheet, FlatList, Text, TextInput, TouchableOpacity, StatusBar, Platform, Alert, Keyboard, ScrollView, KeyboardAvoidingView } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { saveAgencyPayment, getAgencies, Agency, AgencyPayment, getAgencyPaymentsLocal } from '../data/Storage';
@@ -8,6 +9,8 @@ import { useOffice } from '../context/OfficeContext';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import NotificationService from '../services/NotificationService';
+import DeviceNotificationService from '../services/DeviceNotificationService';
+import { supabase } from '../supabase';
 import { CommonHeader, CommonInput, LoadingSpinner, EmptyState, Dropdown } from '../components';
 
 type PaidSectionScreenNavigationProp = NavigationProp<RootStackParamList, 'PaidSection'>;
@@ -106,8 +109,25 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
       const success = await saveAgencyPayment(newPaymentEntry);
 
       if (success) {
+        // Get current user info for notifications from AsyncStorage
+        const userDataString = await AsyncStorage.getItem('user_profile');
+        const userData = userDataString ? JSON.parse(userDataString) : null;
+        const userName = userData?.name || 'User';
+        
         // Send notification to admin
         await NotificationService.notifyAdd('agency_payment', `New payment: ₹${amount} for ${selectedAgency} - Bill #${billNo.trim()}`);
+        
+        // Send device notification to admin
+        await DeviceNotificationService.notifyAdminEntryAdded(
+          'Agency Payment',
+          userName,
+          {
+            agency: selectedAgency,
+            amount: amount,
+            billNo: billNo.trim(),
+            office: getCurrentOfficeId()
+          }
+        );
         
         showAlert('Payment saved successfully');
         setBillNo('');
@@ -157,74 +177,86 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
   );
 
   return (
-    <View style={GlobalStyles.container}>
+    <KeyboardAvoidingView 
+      style={GlobalStyles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
       <CommonHeader title="Paid Section" onBackPress={goBack} />
 
-      <View style={GlobalStyles.card}>
-        <View style={styles.cardContent}>
-          <Text style={GlobalStyles.title}>Record Agency Payment</Text>
-          <Text style={styles.dateText}>Date: {currentDate}</Text>
-          <Text style={styles.inputLabel}>Select Agency <Text style={styles.requiredStar}>*</Text></Text>
-          <Dropdown
-            options={agencyOptions}
-            selectedValue={selectedAgency}
-            onValueChange={setSelectedAgency}
-            placeholder={agencyOptions.length > 0 ? "Select Agency" : "No Agencies Available"}
-          />
-          <CommonInput
-            label="Bill No."
-            required
-            placeholder="Bill No."
-            value={billNo}
-            onChangeText={setBillNo}
-          />
-          <CommonInput
-            label="Paid Amount"
-            required
-            placeholder="Paid Amount"
-            value={paidAmount}
-            onChangeText={setPaidAmount}
-            keyboardType="numeric"
-          />
-          <TouchableOpacity onPress={handleSavePayment} disabled={saving} style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}>
-            <Text style={GlobalStyles.buttonPrimaryText}>{saving ? "Saving..." : "Save Paid Entry"}</Text>
-          </TouchableOpacity>
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 100 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={true}
+      >
+        <View style={GlobalStyles.card}>
+          <View style={styles.cardContent}>
+            <Text style={GlobalStyles.title}>Record Agency Payment</Text>
+            <Text style={styles.dateText}>Date: {currentDate}</Text>
+            <Text style={styles.inputLabel}>Select Agency <Text style={styles.requiredStar}>*</Text></Text>
+            <Dropdown
+              options={agencyOptions}
+              selectedValue={selectedAgency}
+              onValueChange={setSelectedAgency}
+              placeholder={agencyOptions.length > 0 ? "Select Agency" : "No Agencies Available"}
+            />
+            <CommonInput
+              label="Bill No."
+              required
+              placeholder="Bill No."
+              value={billNo}
+              onChangeText={setBillNo}
+            />
+            <CommonInput
+              label="Paid Amount"
+              required
+              placeholder="Paid Amount"
+              value={paidAmount}
+              onChangeText={setPaidAmount}
+              keyboardType="numeric"
+            />
+            <TouchableOpacity onPress={handleSavePayment} disabled={saving} style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}>
+              <Text style={GlobalStyles.buttonPrimaryText}>{saving ? "Saving..." : "Save Paid Entry"}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      <Text style={styles.listSectionTitle}>Recent Paid Entries</Text>
-      {loading ? (
-        <LoadingSpinner message="Loading entries..." />
-      ) : displayedEntries.length > 0 ? (
-        <FlatList
-          data={displayedEntries}
-          renderItem={renderPaidEntryItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          style={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-        />
-      ) : (
-        <EmptyState
-          icon="cash-outline"
-          title="No Entries Yet"
-          message="No paid entries added yet. Add your first payment above."
-        />
-      )}
-      
-      <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
-        <Text style={GlobalStyles.buttonPrimaryText}>Go Back</Text>
-      </TouchableOpacity>
-
-    </View>
+        <Text style={styles.listSectionTitle}>Recent Paid Entries</Text>
+        
+        {loading ? (
+          <LoadingSpinner message="Loading entries..." />
+        ) : displayedEntries.length > 0 ? (
+          <FlatList
+            data={displayedEntries}
+            renderItem={renderPaidEntryItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            scrollEnabled={false}
+            nestedScrollEnabled={true}
+          />
+        ) : (
+          <EmptyState
+            icon="cash-outline"
+            title="No Entries Yet"
+            message="No paid entries added yet. Add your first payment above."
+          />
+        )}
+        
+        <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
+          <Text style={GlobalStyles.buttonPrimaryText}>Go Back</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   cardContent: {
     padding: 0,
+    paddingBottom: 16,
   },
   dateText: {
     textAlign: 'center',
@@ -252,7 +284,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
-    marginHorizontal: 16,
+    marginHorizontal: 4,
   },
   entryHeader: {
     flexDirection: 'row',
@@ -297,17 +329,14 @@ const styles = StyleSheet.create({
     color: Colors.success,
   },
   listContent: {
-    paddingBottom: 16,
+    paddingBottom: 20,
     paddingTop: 4,
-  },
-  listContainer: {
-    flex: 1,
+    paddingHorizontal: 4,
   },
   bottomBackButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.textSecondary,
     margin: 16,
     marginTop: 8,
-    borderRadius: 8,
   },
   disabledButton: {
     backgroundColor: Colors.textSecondary,

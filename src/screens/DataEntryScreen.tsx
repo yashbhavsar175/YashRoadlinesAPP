@@ -388,15 +388,6 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
               <Text style={GlobalStyles.buttonPrimaryText}>Save Delivery</Text>
             )}
           </TouchableOpacity>
-
-          {/* Navigate to Payment Confirmation Screen - Validates: Requirement 9.2 */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('PaymentConfirmation')}
-            style={[GlobalStyles.buttonPrimary, styles.secondaryButton, styles.confirmationButton]}
-          >
-            <Icon name="checkmark-circle-outline" size={20} color={Colors.surface} style={styles.buttonIcon} />
-            <Text style={GlobalStyles.buttonPrimaryText}>View Confirmations</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Recent Entries Preview (Optional) */}
@@ -442,12 +433,6 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     marginTop: 12,
-  },
-  confirmationButton: {
-    backgroundColor: Colors.success,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   buttonIcon: {
     marginRight: 8,

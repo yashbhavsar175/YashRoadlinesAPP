@@ -50,18 +50,47 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
         await supabase.auth.signOut();
         screen = 'Login';
       } else if (session) {
-        const biometricEnabled = await BiometricAuthService.isBiometricAuthEnabled();
-        screen = biometricEnabled ? 'BiometricAuth' : 'Home';
+        // Check if user is admin or has completed approval process
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('is_admin')
+          .eq('id', session.user.id)
+          .single();
+
+        const isAdmin = profile?.is_admin === true;
+
+        if (!isAdmin) {
+          // For non-admin users, check if they have a completed login
+          // If they have a session but no completed approval, sign them out
+          const loginRequestId = await AsyncStorage.getItem('login_request_id');
+          const waitingForAdmin = await AsyncStorage.getItem('waiting_for_admin');
+          
+          if (waitingForAdmin === 'true' || loginRequestId) {
+            // User was waiting for approval, don't auto-login
+            await supabase.auth.signOut();
+            await AsyncStorage.removeItem('login_request_id');
+            await AsyncStorage.removeItem('waiting_for_admin');
+            screen = 'Login';
+          } else {
+            // User has completed approval process
+            const biometricEnabled = await BiometricAuthService.isBiometricAuthEnabled();
+            screen = biometricEnabled ? 'BiometricAuth' : 'Home';
+          }
+        } else {
+          // Admin user - allow direct login
+          const biometricEnabled = await BiometricAuthService.isBiometricAuthEnabled();
+          screen = biometricEnabled ? 'BiometricAuth' : 'Home';
+        }
       } else {
         screen = 'Login';
       }
-    } catch {
+    } catch (error) {
+      console.error('Error checking session:', error);
       if (session) {
-        const biometricEnabled = await BiometricAuthService.isBiometricAuthEnabled();
-        screen = biometricEnabled ? 'BiometricAuth' : 'Home';
-      } else {
-        screen = 'Login';
+        // Fallback: sign out on error to be safe
+        await supabase.auth.signOut();
       }
+      screen = 'Login';
     }
 
     navigation.dispatch(

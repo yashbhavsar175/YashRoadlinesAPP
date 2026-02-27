@@ -1,6 +1,7 @@
 // ActivityNotificationService.ts - Centralized service for all user activity notifications
 import NotificationService from './NotificationService';
 import PushNotificationService from './PushNotificationService';
+import DeviceNotificationService from './DeviceNotificationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface ActivityData {
@@ -32,7 +33,6 @@ class ActivityNotificationService {
       const userDataString = await AsyncStorage.getItem('user_profile');
       if (userDataString) {
         this.currentUser = JSON.parse(userDataString);
-        console.log('👤 ActivityNotificationService: User loaded:', this.currentUser.name);
       }
     } catch (error) {
       console.error('❌ Error initializing ActivityNotificationService:', error);
@@ -74,10 +74,14 @@ class ActivityNotificationService {
         activityData.details
       );
 
-      console.log('✅ Activity notification sent:', { 
-        category: activityData.category, 
-        action: activityData.action,
-        user: userName 
+      // Send device notification (shows in status bar)
+      await DeviceNotificationService.sendAdminDeviceNotification({
+        title,
+        message,
+        type: activityData.action,
+        screen: activityData.category,
+        userName,
+        details: activityData
       });
 
     } catch (error) {

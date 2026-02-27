@@ -316,10 +316,17 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
         <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
 
         <View style={styles.header}>
+          {/* Left: Back Button */}
           <TouchableOpacity onPress={goBack} style={styles.backButton}>
             <Text style={styles.backButtonText}>{'<'}</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Agency Entry</Text>
+          
+          {/* Center: Title */}
+          <View style={styles.titleContainer}>
+            <Text style={styles.headerTitle} numberOfLines={1}>Agency Entry</Text>
+          </View>
+          
+          {/* Right: Spacer */}
           <View style={styles.headerSpacer} />
         </View>
         
@@ -482,36 +489,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     height: 56 + (Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0),
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  headerTitle: {
-    color: Colors.surface,
-    fontWeight: 'bold',
-    fontSize: 20,
-    flex: 1,
-    textAlign: 'center',
-    marginRight: 32,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   backButton: {
-    padding: 8,
-    marginLeft: -8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   backButtonText: {
     color: Colors.surface,
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
+    lineHeight: 32,
+  },
+  titleContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  headerTitle: {
+    color: Colors.surface,
+    fontWeight: '700',
+    fontSize: 18,
+    textAlign: 'center',
   },
   headerSpacer: {
-    width: 32,
+    width: 40,
+    marginLeft: 8,
   },
   listContent: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     flexGrow: 1,
+    paddingBottom: 20,
   },
   cardContent: {
     padding: 0,

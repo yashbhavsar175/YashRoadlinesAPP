@@ -273,7 +273,7 @@ const CashVerificationScreen: React.FC = () => {
         style={styles.keyboardContainer} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16, paddingBottom: 120 }}>
           <View style={styles.contentHeader}>
             <Text style={styles.title}>🔍 Cash Verification</Text>
             <Text style={styles.subtitle}>Enter actual cash amount received</Text>
@@ -355,10 +355,6 @@ const styles = StyleSheet.create({
   },
   keyboardContainer: {
     flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    padding: 20,
   },
   contentHeader: {
     alignItems: 'center',

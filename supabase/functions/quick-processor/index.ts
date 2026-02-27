@@ -282,9 +282,15 @@ Deno.serve(async (req) => {
 
     // ===== PUSH: SEND NOTIFICATION TO ADMIN VIA FCM =====
     if (action === 'send_push') {
+      console.log('📱 [FCM] Starting push notification send...');
       // Accept multiple secret names to be flexible with dashboard naming
       const serverKey = Deno.env.get('FCM_SERVER_KEY') || Deno.env.get('FCM_SERVER') || Deno.env.get('FIREBASE_SERVER_KEY');
-      const saJsonRaw = Deno.env.get('FIREBASE_SA_JSON') || Deno.env.get('FIREBASE_SA');
+      const saJsonRaw = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_JSON') || Deno.env.get('FIREBASE_SA_JSON') || Deno.env.get('FIREBASE_SA');
+      
+      console.log('🔍 [FCM] Checking secrets:', {
+        hasServerKey: !!serverKey,
+        hasServiceAccount: !!saJsonRaw,
+      });
 
       // Helper: base64url
       function base64url(input: Uint8Array | string) {
@@ -366,20 +372,35 @@ Deno.serve(async (req) => {
   return tokenJson.access_token as string;
       }
 
-      if (!serverKey && !saJsonRaw) return serverError('Missing FCM server key or service account JSON');
+      if (!serverKey && !saJsonRaw) {
+        console.error('❌ [FCM] No FCM credentials found');
+        return serverError('Missing FCM server key or service account JSON');
+      }
 
-  const svc = getServiceClient();
-  const targetEmail = ((body.target_email as string) || Deno.env.get('ADMIN_EMAIL') || Deno.env.get('ADMIN') || '').toLowerCase();
-      if (!targetEmail) return badRequest('No target admin email configured');
+      const svc = getServiceClient();
+      const targetEmail = ((body.target_email as string) || Deno.env.get('ADMIN_EMAIL') || Deno.env.get('ADMIN') || '').toLowerCase();
+      if (!targetEmail) {
+        console.error('❌ [FCM] No target email');
+        return badRequest('No target admin email configured');
+      }
+      
+      console.log(`🎯 [FCM] Target email: ${targetEmail}`);
 
       const { data: tokens, error: tErr } = await svc
         .from('device_tokens')
         .select('token')
         .eq('email', targetEmail)
         .limit(200);
-      if (tErr) return serverError(tErr.message || 'DB error');
+      if (tErr) {
+        console.error('❌ [FCM] Database error:', tErr);
+        return serverError(tErr.message || 'DB error');
+      }
       const registrationTokens = (tokens || []).map((t: any) => t.token).filter(Boolean);
-      if (!registrationTokens.length) return json({ ok: false, reason: 'no-tokens' });
+      console.log(`📱 [FCM] Found ${registrationTokens.length} device token(s)`);
+      if (!registrationTokens.length) {
+        console.warn('⚠️ [FCM] No device tokens found for target email');
+        return json({ ok: false, reason: 'no-tokens' });
+      }
 
       const title = (body.title || '').toString();
       const message = (body.body || '').toString();
@@ -394,42 +415,62 @@ Deno.serve(async (req) => {
 
       // If service account JSON provided, use HTTP v1 for FCM (more secure)
       if (saJsonRaw) {
+        console.log('🔑 Using Firebase Service Account for FCM V1 API');
         let sa: any;
         try {
           sa = JSON.parse(saJsonRaw);
         } catch (e) {
-          return serverError('Invalid FIREBASE_SA_JSON');
+          console.error('❌ Failed to parse service account JSON:', e);
+          return serverError(`Invalid FIREBASE_SERVICE_ACCOUNT_JSON: ${(e as Error).message}`);
         }
         const projectId = sa.project_id;
-        if (!projectId) return serverError('Service account JSON missing project_id');
+        if (!projectId) {
+          console.error('❌ Service account JSON missing project_id');
+          return serverError('Service account JSON missing project_id');
+        }
+        console.log(`✅ Project ID: ${projectId}`);
 
         // get access token
         let accessToken: string;
         try {
+          console.log('🔐 Getting OAuth2 access token...');
           accessToken = await getAccessTokenFromServiceAccount(sa);
+          console.log('✅ Access token obtained');
         } catch (e) {
+          console.error('❌ Failed to get access token:', e);
           return serverError(`Failed to get access token: ${(e as Error).message}`);
         }
 
         const results: any[] = [];
+        console.log(`📤 Sending to ${registrationTokens.length} device(s)`);
         for (const reg of registrationTokens) {
           const msg = {
             message: {
               token: reg,
               notification: { title: title || '', body: message || '' },
-              data: Object.fromEntries(Object.entries(data || {})),
+              data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)])),
             },
           };
-          const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify(msg),
-          });
-          const bodyText = await res.text().catch(() => '');
-          results.push({ status: res.status, body: bodyText });
+          try {
+            const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify(msg),
+            });
+            const bodyText = await res.text().catch(() => '');
+            if (res.ok) {
+              console.log(`✅ Notification sent successfully to device`);
+            } else {
+              console.error(`❌ FCM error ${res.status}:`, bodyText);
+            }
+            results.push({ status: res.status, body: bodyText, ok: res.ok });
+          } catch (e) {
+            console.error('❌ Failed to send to device:', e);
+            results.push({ error: (e as Error).message, ok: false });
+          }
         }
         return json({ ok: true, results });
       }

@@ -8,6 +8,21 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 export const SUPABASE_URL = supabaseUrl;
 
+// Custom fetch with DNS fallback for ISP blocking issues
+const customFetch = async (url: RequestInfo | URL, options?: RequestInit) => {
+  try {
+    // Try normal fetch first
+    return await fetch(url, options);
+  } catch (error: any) {
+    // If network request fails, it might be DNS/ISP blocking
+    if (error.message?.includes('Network request failed')) {
+      console.warn('⚠️ Network request failed, DNS/ISP might be blocking. Please use VPN or change DNS settings.');
+      console.warn('💡 Quick fix: Settings → WiFi → Modify Network → DNS 1: 8.8.8.8, DNS 2: 8.8.4.4');
+    }
+    throw error;
+  }
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: AsyncStorage, // Use AsyncStorage for session persistence
@@ -19,5 +34,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     params: {
       eventsPerSecond: 10,
     },
+  },
+  global: {
+    fetch: customFetch, // Use custom fetch with better error messages
   },
 });

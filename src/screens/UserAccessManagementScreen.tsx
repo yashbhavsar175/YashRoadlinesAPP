@@ -294,7 +294,12 @@ const UserAccessManagementScreen: React.FC = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('*')
+        .select(`
+          *,
+          offices:office_id (
+            name
+          )
+        `)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -303,8 +308,14 @@ const UserAccessManagementScreen: React.FC = () => {
         return;
       }
 
-      setUsers(data || []);
-      console.log('🔍 Debug: Users loaded with office assignments:', data?.map(u => ({
+      // Map the data to include office_name from the joined offices table
+      const usersWithOffice = (data || []).map(user => ({
+        ...user,
+        office_name: user.offices?.name || null
+      }));
+
+      setUsers(usersWithOffice);
+      console.log('🔍 Debug: Users loaded with office assignments:', usersWithOffice.map(u => ({
         name: u.full_name,
         id: u.id,
         office_name: u.office_name,
@@ -396,7 +407,7 @@ const UserAccessManagementScreen: React.FC = () => {
       if (success) {
         const selectedOffice = offices.find(o => o.id === officeId);
         
-        // Update local state
+        // Update local state (office_name is for display only, not in DB)
         setUsers(prev => prev.map(u => 
           u.id === selectedUserForOffice.id 
             ? { ...u, office_id: officeId, office_name: selectedOffice?.name }

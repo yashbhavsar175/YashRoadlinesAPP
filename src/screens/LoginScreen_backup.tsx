@@ -1,4 +1,4 @@
-// Updated LoginScreen.tsx with enhanced OTP security & UX and Waiting Screen
+// Updated LoginScreen.tsx with enhanced OTP security & UX
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -54,6 +54,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
   const [loginRequestId, setLoginRequestId] = useState<string | null>(null);
   const [waitingForAdmin, setWaitingForAdmin] = useState<boolean>(false);
   const [signedInUserId, setSignedInUserId] = useState<string | null>(null);
+  const [debugMode, setDebugMode] = useState<boolean>(__DEV__); // Enable debug mode in development
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cleanup polling on unmount
@@ -72,7 +73,6 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
   const [attemptsLeft, setAttemptsLeft] = useState<number>(OTP_MAX_ATTEMPTS);
   const [lockUntil, setLockUntil] = useState<number>(0); // epoch ms
   const [resendSeconds, setResendSeconds] = useState<number>(0);
-  const [otpSending, setOtpSending] = useState<boolean>(false);
   const resendTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const keyAttempts = (uid: string) => `otp_attempts:${uid}`;
@@ -229,10 +229,6 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
           };
           await AsyncStorage.setItem('user_profile', JSON.stringify(userProfile));
           
-          // Clear any pending approval flags
-          await AsyncStorage.removeItem('waiting_for_admin');
-          await AsyncStorage.removeItem('login_request_id');
-          
           // Initialize NotificationService
           const NotificationService = require('../services/NotificationService').default;
           const NotificationSetup = require('../services/NotificationSetup').default;
@@ -261,13 +257,13 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       setLoginRequestId(requestId);
       setSignedInUserId(data.user.id);
       setWaitingForAdmin(true);
-      
-      // Save state to AsyncStorage to prevent auto-login on app refresh
-      await AsyncStorage.setItem('waiting_for_admin', 'true');
-      await AsyncStorage.setItem('login_request_id', requestId);
-      
-      console.log('🔔 Waiting for admin approval - showing waiting screen');
-      console.log('State:', { waitingForAdmin: true, otpPhase: false, loginRequestId: requestId });
+      setOtpPhase(true);
+
+      Alert.alert(
+        'Waiting for Admin Approval 🔔',
+        'Your login request has been sent to the admin. Please wait for approval and enter the OTP code provided by the admin.',
+        [{ text: 'OK' }]
+      );
 
       // Start polling for admin approval
       startPollingForApproval(requestId);
@@ -286,24 +282,14 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       clearInterval(pollingIntervalRef.current);
     }
 
-    console.log('🔄 Starting polling for request:', requestId);
-
     // Poll every 3 seconds
     pollingIntervalRef.current = setInterval(async () => {
       try {
-        console.log('🔍 Polling for approval status...');
         const status = await checkLoginRequestStatus(requestId);
         
-        console.log('📊 Status received:', status);
-        
-        if (!status) {
-          console.warn('⚠️ No status returned');
-          return;
-        }
+        if (!status) return;
 
         if (status.status === 'approved' && status.otp) {
-          console.log('✅ Request approved! OTP:', status.otp);
-          
           // Stop polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
@@ -311,14 +297,11 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
           }
           
           setWaitingForAdmin(false);
-          setOtpPhase(true);
           Alert.alert(
             'Login Approved! ✅',
             'Admin has approved your login request. Please enter the OTP code provided by the admin.'
           );
         } else if (status.status === 'rejected') {
-          console.log('❌ Request rejected');
-          
           // Stop polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
@@ -336,8 +319,6 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
             ]
           );
         } else if (status.status === 'expired') {
-          console.log('⏰ Request expired');
-          
           // Stop polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
@@ -354,11 +335,9 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
               },
             ]
           );
-        } else {
-          console.log('⏳ Still pending, status:', status.status);
         }
       } catch (error) {
-        console.error('❌ Error polling for approval:', error);
+        console.error('Error polling for approval:', error);
       }
     }, 3000);
   };
@@ -420,11 +399,6 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       setOtpPhase(false);
       setOtpInput('');
       setWaitingForAdmin(false);
-      
-      // Clear waiting flags from AsyncStorage
-      await AsyncStorage.removeItem('waiting_for_admin');
-      await AsyncStorage.removeItem('login_request_id');
-      
       navigation.replace('Home');
     } catch (e) {
       console.error('Verify OTP error:', e);
@@ -433,20 +407,155 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       setLoading(false);
     }
   };
+  // Add this method to your LoginScreen.tsx component
 
-  const handleResendOtp = async () => {
-    // Resend OTP logic here (if needed)
-    Alert.alert('Info', 'Please wait for admin approval first.');
+  const handleComprehensiveDebug = async () => {
+    try {
+      console.log('🔍 Starting comprehensive debug...');
+      const debugResult = await comprehensiveEdgeFunctionDebug();
+
+      const healthEmojis = {
+        healthy: '✅',
+        degraded: '⚠️',
+        critical: '❌'
+      };
+
+      const healthIcon = healthEmojis[debugResult.summary.overallHealth];
+
+      Alert.alert(
+        `System Health ${healthIcon}`,
+        `Overall Status: ${debugResult.summary.overallHealth.toUpperCase()}\n\n` +
+        `Authentication: ${debugResult.summary.authentication ? '✅' : '❌'}\n` +
+        `Edge Function: ${debugResult.summary.edgeFunction ? '✅' : '❌'}\n` +
+        `Email Service: ${debugResult.summary.emailService ? '✅' : '❌'}\n\n` +
+        `Check console for detailed results.`,
+        [
+          { text: 'OK' },
+          {
+            text: 'Test OTP Delivery',
+            onPress: () => handleTestOtpDelivery()
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('Debug failed:', error);
+      Alert.alert('Debug Error', getErrorMessage(error));
+    }
+  };
+
+  const handleTestOtpDelivery = async () => {
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter an email address first');
+      return;
+    }
+
+    try {
+      console.log('🧪 Testing OTP delivery...');
+      setOtpSending(true);
+
+      const testResult = await deliverOtpWithDetailedDebug({
+        email: email.trim(),
+        code: '123456' // Test OTP
+      });
+
+      console.log('🎯 Test result:', testResult);
+
+      Alert.alert(
+        testResult.success ? 'OTP Test Successful! ✅' : 'OTP Test Failed ❌',
+        testResult.success
+          ? `Test OTP sent successfully via ${testResult.method}\n\nCheck your email for the test message.`
+          : `Failed via ${testResult.method}\n\nError: ${testResult.error}\n\nCheck console for debug details.`,
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      console.error('Test OTP delivery failed:', error); // Cast to any
+      Alert.alert('Test Failed', getErrorMessage(error));
+    } finally {
+      setOtpSending(false);
+    }
+  };
+  const handleResendOtp = async () => { // Renamed to avoid redeclaration
+    if (!signedInUserId) return;
+    // Cooldown check
+    if (resendSeconds > 0) return;
+    setOtpSending(true);
+    try {
+      const otpResult = await generateAndStoreOtp(signedInUserId);
+
+      if (!otpResult) {
+        Alert.alert('OTP Error', 'Could not generate new OTP. Try again later.');
+        return;
+      }
+
+      console.log('🔄 Resending OTP to:', email.trim());
+      if (__DEV__) {
+        console.log('OTP generation request processed');
+      }
+
+      const deliveryResult = await deliverOtpAlternative({
+        email: email.trim(),
+        code: otpResult.code
+      });
+
+      if (deliveryResult.success) {
+        Alert.alert(
+          'OTP Resent! 📧',
+          'New verification code sent to your email.\n\nIf not found, check your Spam/Junk folder.'
+        );
+        console.log('✅ OTP resent successfully');
+        // Start cooldown
+        const nextAt = Date.now() + RESEND_COOLDOWN_SEC * 1000;
+        try { await AsyncStorage.setItem(keyResendAt(signedInUserId), `${nextAt}`); } catch { }
+        startResendTimer(RESEND_COOLDOWN_SEC);
+      } else {
+        // Handle specific error types
+        const errorType = deliveryResult.error || 'UNKNOWN_ERROR';
+        
+        if (errorType.startsWith('RATE_LIMIT:')) {
+          const waitSeconds = parseInt(errorType.split(':')[1] || '60', 10);
+          Alert.alert(
+            'Too Many Requests ⏳',
+            `Please wait ${waitSeconds} seconds before requesting another OTP.\n\nThis is a security measure to prevent abuse.`
+          );
+          // Start a longer cooldown
+          const nextAt = Date.now() + waitSeconds * 1000;
+          try { await AsyncStorage.setItem(keyResendAt(signedInUserId), `${nextAt}`); } catch { }
+          startResendTimer(waitSeconds);
+        } else if (errorType.startsWith('HTTP_ERROR:')) {
+          const statusCode = errorType.split(':')[1];
+          Alert.alert(
+            'Service Error ⚠️',
+            `Email service returned error code ${statusCode}.\n\nPlease try again in a few moments or contact support if this continues.`
+          );
+        } else if (errorType === 'NETWORK_ERROR') {
+          Alert.alert(
+            'Network Error 📡',
+            'Could not connect to email service.\n\nPlease check your internet connection and try again.'
+          );
+        } else {
+          Alert.alert(
+            'Resend Failed ❌',
+            'Could not resend OTP. Please try again or contact support.\n\nIf you already received an OTP, you can enter it below.'
+          );
+        }
+        console.log('⚠️ OTP resend failed:', errorType);
+      }
+
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      Alert.alert('Error', 'Failed to resend OTP. Please try again.');
+    } finally {
+      setOtpSending(false);
+    }
   };
 
   const handleCancelOtp = async () => {
     setOtpPhase(false);
     setOtpInput('');
     setSignedInUserId(null);
-    setWaitingForAdmin(false);
     try { await AsyncStorage.removeItem('otp_pending'); } catch { }
-    try { await AsyncStorage.removeItem('waiting_for_admin'); } catch { }
-    try { await AsyncStorage.removeItem('login_request_id'); } catch { }
     try {
       if (signedInUserId) {
         await AsyncStorage.multiRemove([
@@ -458,6 +567,96 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
     } catch { }
     clearResendTimer();
     await supabase.auth.signOut();
+  };
+
+  // Debug function for testing Edge Function
+  const handleDebugEdgeFunction = async () => {
+    console.log('🔍 Running manual Edge Function debug...');
+    await debugEdgeFunctionStatus();
+    Alert.alert('Debug', 'Check console for Edge Function debug information.');
+  };
+  const handleAdvancedDebug = async () => {
+    try {
+      console.log('🔍 Starting advanced debug...');
+
+      // First import the new debug functions
+      const { debugEdgeFunctionDetailed } = require('../data/Storage');
+      const debugResult = await debugEdgeFunctionDetailed();
+
+      console.log('📊 Debug Results:', debugResult);
+
+      const recommendationsText = debugResult.recommendations.join('\n• ');
+
+      Alert.alert(
+        debugResult.success ? 'Debug Results ✅' : 'Issues Found ⚠️',
+        `Overall Status: ${debugResult.success ? 'HEALTHY' : 'NEEDS ATTENTION'}\n\nRecommendations:\n• ${recommendationsText}\n\nCheck console for detailed results.`,
+        [
+          { text: 'OK' },
+          {
+            text: 'Test Function',
+            onPress: () => handleTestEdgeFunctionWithLogs()
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('Advanced debug failed:', error);
+      Alert.alert('Debug Error', getErrorMessage(error));
+    }
+  };
+
+  const handleTestEdgeFunctionWithLogs = async () => {
+    try {
+      console.log('🧪 Testing Edge Function with logs...');
+
+      const { testEdgeFunctionWithLogs } = require('../data/Storage');
+      const testResult = await testEdgeFunctionWithLogs();
+
+      console.log('📋 Test Logs:', testResult.logs);
+      console.log('🎯 Test Result:', testResult);
+
+      const logsText = testResult.logs.join('\n');
+
+      Alert.alert(
+        testResult.success ? 'Test Successful! 🎉' : 'Test Failed ❌',
+        `${testResult.success ? 'Edge Function is working!' : 'Edge Function has issues'}\n\nLogs:\n${logsText}`,
+        [
+          { text: 'OK' },
+          {
+            text: 'Validate Environment',
+            onPress: () => handleValidateEnvironment()
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('Function test failed:', error);
+      Alert.alert('Test Failed', getErrorMessage(error));
+    }
+  };
+
+  const handleValidateEnvironment = async () => {
+    try {
+      console.log('🔧 Validating environment...');
+
+      const { validateEdgeFunctionEnvironment } = require('../data/Storage');
+      const validation = await validateEdgeFunctionEnvironment();
+
+      console.log('🌍 Environment Validation:', validation);
+
+      const issuesText = validation.issues.length > 0
+        ? validation.issues.join('\n• ')
+        : 'No issues found';
+
+      Alert.alert(
+        validation.valid ? 'Environment Valid ✅' : 'Environment Issues ⚠️',
+        `Status: ${validation.valid ? 'READY' : 'NEEDS ATTENTION'}\n\n${validation.valid ? 'All systems ready!' : `Issues:\n• ${issuesText}`}\n\nCheck console for full environment details.`
+      );
+
+    } catch (error) {
+      console.error('Environment validation failed:', error);
+      Alert.alert('Validation Failed', getErrorMessage(error));
+    }
   };
 
   return (
@@ -472,40 +671,56 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
         </View>
 
         <View style={GlobalStyles.card}>
-          {/* Show waiting screen when waiting for admin approval */}
-          {waitingForAdmin ? (
-            <View style={styles.waitingContainer}>
-              <Icon name="time-outline" size={80} color={Colors.primary || '#007AFF'} />
-              <Text style={styles.waitingTitle}>Awaiting Admin Approval</Text>
-              <Text style={styles.waitingMessage}>
-                Your login request has been submitted successfully.
+          <Text style={GlobalStyles.title}>Account Login</Text>
+
+          <Text style={styles.inputLabel}>Email</Text>
+          <TextInput
+            style={GlobalStyles.input}
+            placeholder="Enter your email"
+            placeholderTextColor={Colors.placeholder}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+
+          <Text style={styles.inputLabel}>Password</Text>
+          <View style={styles.passwordInputWrapper}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Enter your password"
+              placeholderTextColor={Colors.placeholder}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!isPasswordVisible}
+            />
+            <TouchableOpacity
+              onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+              style={styles.eyeIcon}
+            >
+              <Icon
+                name={isPasswordVisible ? 'eye-outline' : 'eye-off-outline'}
+                size={24}
+                color={Colors.textSecondary}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {!otpPhase && (
+            <TouchableOpacity
+              onPress={handleLogin}
+              disabled={loading}
+              style={[GlobalStyles.buttonPrimary, loading && styles.disabledButton]}
+            >
+              <Text style={GlobalStyles.buttonPrimaryText}>
+                {loading ? 'Checking…' : 'Login'}
               </Text>
-              <Text style={styles.waitingMessage}>
-                Please wait while the administrator reviews and approves your access.
-              </Text>
-              <View style={styles.waitingInfoBox}>
-                <Icon name="information-circle-outline" size={24} color={Colors.primary || '#007AFF'} />
-                <Text style={styles.waitingInfoText}>
-                  You will be notified once your request is approved. The admin will provide you with an OTP code to complete the login process.
-                </Text>
-              </View>
-              <View style={styles.contactBox}>
-                <Text style={styles.contactLabel}>Need immediate assistance?</Text>
-                <Text style={styles.contactInfo}>Contact: Yash Bhavsar</Text>
-                <Text style={styles.contactEmail}>yashbhavsar175@gmail.com</Text>
-              </View>
-              <TouchableOpacity
-                onPress={handleCancelOtp}
-                style={[GlobalStyles.buttonSecondary, { marginTop: 20 }]}
-              >
-                <Text style={GlobalStyles.buttonSecondaryText}>Cancel Request</Text>
-              </TouchableOpacity>
-            </View>
-          ) : otpPhase ? (
-            /* OTP Entry Screen */
-            <View>
-              <Text style={GlobalStyles.title}>Enter OTP</Text>
-              <Text style={styles.inputLabel}>OTP Code</Text>
+            </TouchableOpacity>
+          )}
+
+          {otpPhase && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={styles.inputLabel}>Enter OTP</Text>
               <TextInput
                 style={GlobalStyles.input}
                 placeholder="6-digit OTP"
@@ -523,9 +738,9 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
                 <Text style={styles.helperText}>Attempts left: {attemptsLeft}</Text>
               )}
               <Text style={styles.helperTextSecondary}>
-                Enter the OTP code provided by the administrator.
+                Didn’t get the email? Check your Spam/Junk folder or tap Resend.
               </Text>
-              <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
                 <TouchableOpacity
                   onPress={handleVerifyOtp}
                   disabled={loading || (lockUntil && lockUntil > Date.now()) || otpInput.trim().length < 6}
@@ -535,59 +750,22 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
                     {loading ? 'Verifying…' : 'Verify OTP'}
                   </Text>
                 </TouchableOpacity>
-              </View>
-              <TouchableOpacity onPress={handleCancelOtp} style={[GlobalStyles.buttonTextOnly, { marginTop: 12 }]}>
-                <Text style={[GlobalStyles.linkText, { textAlign: 'center' }]}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            /* Login Form */
-            <>
-              <Text style={GlobalStyles.title}>Account Login</Text>
-
-              <Text style={styles.inputLabel}>Email</Text>
-              <TextInput
-                style={GlobalStyles.input}
-                placeholder="Enter your email"
-                placeholderTextColor={Colors.placeholder}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-
-              <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.passwordInputWrapper}>
-                <TextInput
-                  style={styles.passwordInput}
-                  placeholder="Enter your password"
-                  placeholderTextColor={Colors.placeholder}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!isPasswordVisible}
-                />
                 <TouchableOpacity
-                  onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                  style={styles.eyeIcon}
+                  onPress={handleResendOtp}
+                  disabled={otpSending || resendSeconds > 0}
+                  style={[GlobalStyles.buttonSecondary, { flex: 1 }]}
                 >
-                  <Icon
-                    name={isPasswordVisible ? 'eye-outline' : 'eye-off-outline'}
-                    size={24}
-                    color={Colors.textSecondary}
-                  />
+                  <Text style={GlobalStyles.buttonSecondaryText}>
+                    {otpSending ? 'Sending…' : (resendSeconds > 0 ? `Resend (${resendSeconds}s)` : 'Resend')}
+                  </Text>
                 </TouchableOpacity>
               </View>
-
-              <TouchableOpacity
-                onPress={handleLogin}
-                disabled={loading}
-                style={[GlobalStyles.buttonPrimary, loading && styles.disabledButton]}
-              >
-                <Text style={GlobalStyles.buttonPrimaryText}>
-                  {loading ? 'Checking…' : 'Login'}
-                </Text>
+              <TouchableOpacity onPress={handleCancelOtp} style={[GlobalStyles.buttonTextOnly, { marginTop: 8 }]}>
+                <Text style={[GlobalStyles.linkText, { textAlign: 'center' }]}>Cancel</Text>
               </TouchableOpacity>
-            </>
+
+
+            </View>
           )}
         </View>
       </ScrollView>
@@ -596,6 +774,95 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  scrollViewContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 40,
+    marginTop: Platform.OS === 'ios' ? 0 : 20,
+  },
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+  },
+  debugButton: {
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: Colors.textSecondary,
+    borderRadius: 4,
+  },
+  debugButtonText: {
+    fontSize: 12,
+    color: Colors.background,
+  },
+  inputLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    marginBottom: 8,
+    marginTop: 15,
+  },
+  passwordInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderColor: Colors.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    marginBottom: 16,
+    height: 55,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: Colors.textPrimary,
+  },
+  eyeIcon: {
+    padding: 10,
+  },
+  disabledButton: {
+    backgroundColor: Colors.textSecondary,
+    opacity: 0.8,
+    elevation: 1,
+    shadowOpacity: 0.1,
+  },
+  debugInfo: {
+    marginTop: 12,
+    padding: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 4,
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+  },
+  helperText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  helperTextSecondary: {
+    marginTop: 4,
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  lockText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#b00020',
+    fontWeight: '600',
+  },
+});
+
+const additionalStyles = StyleSheet.create({ // Renamed to avoid redeclaration
   scrollViewContent: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -644,85 +911,16 @@ const styles = StyleSheet.create({
     elevation: 1,
     shadowOpacity: 0.1,
   },
-  helperText: {
-    marginTop: 6,
+  debugInfo: {
+    marginTop: 12,
+    padding: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 4,
+  },
+  debugText: {
     fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  helperTextSecondary: {
-    marginTop: 4,
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  lockText: {
-    marginTop: 6,
-    fontSize: 12,
-    color: '#b00020',
-    fontWeight: '600',
-  },
-  // Waiting screen styles
-  waitingContainer: {
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  waitingTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginTop: 20,
-    marginBottom: 16,
+    color: '#666',
     textAlign: 'center',
-  },
-  waitingMessage: {
-    fontSize: 16,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 20,
-    lineHeight: 24,
-  },
-  waitingInfoBox: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
-  },
-  waitingInfoText: {
-    flex: 1,
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginLeft: 12,
-    lineHeight: 20,
-  },
-  contactBox: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 20,
-    width: '100%',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  contactLabel: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 12,
-    fontWeight: '600',
-  },
-  contactInfo: {
-    fontSize: 16,
-    color: Colors.textPrimary,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  contactEmail: {
-    fontSize: 14,
-    color: Colors.primary,
-    marginTop: 4,
   },
 });
 

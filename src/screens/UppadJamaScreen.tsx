@@ -89,7 +89,6 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
 
     const handleDataChange = (payload: any, eventType: string) => {
       if (!isMounted) return;
-      console.log(`Uppad/Jama entry ${eventType}:`, payload);
       if (activeTab === 'statement') {
         memoizedLoadEntries().catch(console.error);
       }
@@ -134,13 +133,12 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
                 console.error('Subscription error:', err);
                 if (retryCount < maxRetries) {
                   retryCount++;
-                  console.log(`Retrying subscription (${retryCount}/${maxRetries})...`);
                   setTimeout(() => {
                     if (isMounted) setupSubscription();
                   }, 1000 * retryCount);
                 }
               } else {
-                console.log('Successfully subscribed to Uppad/Jama changes');
+                // Successfully subscribed
               }
             });
         }
@@ -162,7 +160,6 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
     return () => {
       isMounted = false;
       if (channel) {
-        console.log('Cleaning up Uppad/Jama subscription');
         try {
           supabase.removeChannel(channel);
         } catch (err) {
@@ -281,15 +278,6 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         office_id: currentOffice?.id,
       });
 
-      console.log('UppadJamaScreen - Entry saved:', {
-        person_name: selectedPersonName,
-        amount: num,
-        entry_type: entryType,
-        description: description?.trim() || undefined,
-        office_id: currentOffice?.id,
-        success: success
-      });
-
       if (!success) {
         Alert.alert('Error ❌', 'Failed to save entry. Please try again.');
         return;
@@ -316,14 +304,11 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
       showAlert('Entry saved successfully!');
       
       // Sync with server
-      console.log('UppadJamaScreen - Starting data sync...');
       await syncAllDataFixed();
-      console.log('UppadJamaScreen - Data sync completed');
       
       // Manual broadcast to trigger refresh on majur dashboards - only for jama (credit) entries
       if (entryType === 'credit') {
         try {
-          console.log('UppadJamaScreen - Broadcasting refresh signal for jama entry...');
           const broadcastChannel = supabase.channel('majur-dashboard-refresh');
           await broadcastChannel.send({
             type: 'broadcast',
@@ -336,12 +321,9 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
               timestamp: new Date().toISOString()
             }
           });
-          console.log('UppadJamaScreen - Broadcast sent successfully for jama entry');
         } catch (broadcastError) {
           console.error('UppadJamaScreen - Broadcast failed:', broadcastError);
         }
-      } else {
-        console.log('UppadJamaScreen - Skipping broadcast for uppad (debit) entry');
       }
       
       // Reload data one more time after sync
@@ -389,7 +371,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollViewContent}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingVertical: 16, paddingBottom: 140 }}>
         {activeTab === 'entry' ? (
           <View style={GlobalStyles.card}>
             <Text style={GlobalStyles.title}>Uppad/Jama Entry</Text>
@@ -485,11 +467,6 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
 }
 
 const styles = StyleSheet.create({
-  scrollViewContent: {
-    paddingVertical: 20,
-    flexGrow: 1,
-    paddingBottom: 140,
-  },
   tabsRow: {
     flexDirection: 'row',
     marginHorizontal: 12,
