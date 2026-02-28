@@ -158,9 +158,6 @@ class DeviceNotificationService {
         console.error('❌ [DeviceNotification] Server push failed:', e);
       }
       */
-      } catch (e) {
-        console.error('❌ [DeviceNotification] Server push failed:', e);
-      }
     } catch (error) {
       console.error('❌ Notification error:', error);
     }

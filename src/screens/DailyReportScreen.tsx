@@ -589,22 +589,32 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         }
 
         // Process agency entries (Mumbai Delivery and other agency entries)
-        const processedAgencyEntries: TransactionItem[] = agencyEntries.map(item => {
-          const time = new Date(item.entry_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-          return {
-            id: item.id,
-            type: item.entry_type,
-            // Show description instead of "Agency Entry" heading
-            label: item.description || 'Agency Entry',
-            subLabel: `Agency: ${item.agency_name}`,
-            amount: item.amount,
-            time: time,
-            storageKey: OFFLINE_KEYS.AGENCY_ENTRIES,
-            edited: ('updated_at' in item && 'created_at' in item) && new Date(item.updated_at).getTime() > new Date(item.created_at).getTime(),
-            // Attach original item for proper permission checks and editing
-            originalTransactions: [item as any],
-          };
-        });
+        // Filter: Only show confirmed Mumbai deliveries in daily report
+        const processedAgencyEntries: TransactionItem[] = agencyEntries
+          .filter(item => {
+            // For Mumbai agency, only show confirmed entries
+            if (item.agency_name === 'Mumbai') {
+              return item.confirmation_status === 'confirmed';
+            }
+            // For other agencies, show all entries
+            return true;
+          })
+          .map(item => {
+            const time = new Date(item.entry_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            return {
+              id: item.id,
+              type: item.entry_type,
+              // Show description instead of "Agency Entry" heading
+              label: item.description || 'Agency Entry',
+              subLabel: `Agency: ${item.agency_name}`,
+              amount: item.amount,
+              time: time,
+              storageKey: OFFLINE_KEYS.AGENCY_ENTRIES,
+              edited: ('updated_at' in item && 'created_at' in item) && new Date(item.updated_at).getTime() > new Date(item.created_at).getTime(),
+              // Attach original item for proper permission checks and editing
+              originalTransactions: [item as any],
+            };
+          });
 
         const allProcessedTransactions = [...processedGroupedTransactions, ...processedOtherTransactions, ...processedAgencyEntries];
         
