@@ -21,9 +21,10 @@ const Tab = createMaterialTopTabNavigator<MumbaiDeliveryTabParamList>();
  * Provides tab navigation between Data Entry and Payment Confirmation screens
  * Validates: Requirement 9.1
  */
-function MumbaiDeliveryNavigator(): React.JSX.Element {
+function MumbaiDeliveryNavigator({ navigation }: any): React.JSX.Element {
   return (
     <Tab.Navigator
+      initialRouteName="DataEntry"
       screenOptions={{
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textSecondary,
@@ -44,6 +45,7 @@ function MumbaiDeliveryNavigator(): React.JSX.Element {
           borderBottomColor: Colors.border,
         },
         tabBarPressColor: Colors.primaryLight,
+        swipeEnabled: false, // Disable swipe gesture to prevent accidental navigation
       }}
     >
       <Tab.Screen

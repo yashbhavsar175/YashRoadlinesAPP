@@ -10,9 +10,10 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  BackHandler,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NavigationProp } from '@react-navigation/native';
+import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { MumbaiDeliveryTabParamList } from '../navigation/MumbaiDeliveryNavigator';

@@ -529,6 +529,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           let amount = 0;
           let storageKey = '';
           let dateKey = new Date().toISOString();
+          let shouldSkip = false; // Flag to skip duplicate entries
 
           if ('majuri_date' in item && 'agency_name' in item) {
             const majuriItem = item as AgencyMajuri;
@@ -564,14 +565,28 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             dateKey = uppadJamaItem.entry_date;
           } else if ('entry_type' in item) {
             const generalItem = item as GeneralEntry;
-            transactionType = generalItem.entry_type;
-            label = generalItem.description || 'General Entry';
-            // Show agency when available, otherwise show a short description preview
-            const agency = (generalItem as any).agency_name;
-            subLabel = agency ? `Agency: ${agency}` : `Desc: ${generalItem.description || 'N/A'}`;
-            amount = generalItem.amount;
-            storageKey = OFFLINE_KEYS.GENERAL_ENTRIES;
-            dateKey = generalItem.entry_date;
+            
+            // Skip duplicate Mumbai delivery payment entries (created by old code)
+            // These entries have "Mumbai Delivery Payment" in description
+            // Now confirmed Mumbai entries show directly from agency_entries table
+            const desc = (generalItem.description || '').toLowerCase();
+            if (desc.includes('mumbai delivery payment')) {
+              shouldSkip = true; // Mark for skipping
+            } else {
+              transactionType = generalItem.entry_type;
+              label = generalItem.description || 'General Entry';
+              // Show agency when available, otherwise show a short description preview
+              const agency = (generalItem as any).agency_name;
+              subLabel = agency ? `Agency: ${agency}` : `Desc: ${generalItem.description || 'N/A'}`;
+              amount = generalItem.amount;
+              storageKey = OFFLINE_KEYS.GENERAL_ENTRIES;
+              dateKey = generalItem.entry_date;
+            }
+          }
+
+          // Skip if marked as duplicate
+          if (shouldSkip) {
+            continue;
           }
 
           const time = new Date(dateKey).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -601,12 +616,21 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           })
           .map(item => {
             const time = new Date(item.entry_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            
+            // Special formatting for Mumbai deliveries
+            let label = item.description || 'Agency Entry';
+            let subLabel = `Agency: ${item.agency_name}`;
+            
+            if (item.agency_name === 'Mumbai' && item.confirmation_status === 'confirmed') {
+              label = `Mumbai Delivery Payment - ${item.billty_no || 'N/A'}`;
+              subLabel = item.consignee_name || 'No consignee name';
+            }
+            
             return {
               id: item.id,
               type: item.entry_type,
-              // Show description instead of "Agency Entry" heading
-              label: item.description || 'Agency Entry',
-              subLabel: `Agency: ${item.agency_name}`,
+              label: label,
+              subLabel: subLabel,
               amount: item.amount,
               time: time,
               storageKey: OFFLINE_KEYS.AGENCY_ENTRIES,
@@ -1212,7 +1236,19 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         });
       });
 
-      const processedOtherTransactions: TransactionItem[] = otherTransactions.map(item => {
+      const processedOtherTransactions: TransactionItem[] = otherTransactions
+        .filter(item => {
+          // Skip duplicate Mumbai delivery payment entries (created by old code)
+          if ('entry_type' in item && !(('person_name' in item) || ('driver_name' in item) || ('truck_number' in item))) {
+            const generalItem = item as GeneralEntry;
+            const desc = (generalItem.description || '').toLowerCase();
+            if (desc.includes('mumbai delivery payment')) {
+              return false; // Skip this duplicate entry
+            }
+          }
+          return true; // Keep all other entries
+        })
+        .map(item => {
         let transactionType: 'credit' | 'debit' = 'debit';
         let label = '';
         let subLabel = '';
@@ -1274,14 +1310,32 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         };
       });
       
-      const processedAgencyEntries: TransactionItem[] = agencyEntries.map(item => {
+      const processedAgencyEntries: TransactionItem[] = agencyEntries
+        .filter(item => {
+          // For Mumbai agency, only show confirmed entries
+          if (item.agency_name === 'Mumbai') {
+            return item.confirmation_status === 'confirmed';
+          }
+          // For other agencies, show all entries
+          return true;
+        })
+        .map(item => {
         const time = new Date(item.entry_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+        
+        // Special formatting for Mumbai deliveries
+        let label = item.description || 'Agency Entry';
+        let subLabel = `Agency: ${item.agency_name}`;
+        
+        if (item.agency_name === 'Mumbai' && item.confirmation_status === 'confirmed') {
+          label = `Mumbai Delivery Payment - ${item.billty_no || 'N/A'}`;
+          subLabel = item.consignee_name || 'No consignee name';
+        }
+        
         return {
           id: item.id,
           type: item.entry_type,
-          // Show description instead of "Agency Entry" heading
-          label: item.description || 'Agency Entry',
-          subLabel: `Agency: ${item.agency_name}`,
+          label: label,
+          subLabel: subLabel,
           amount: item.amount,
           time: time,
           storageKey: OFFLINE_KEYS.AGENCY_ENTRIES,

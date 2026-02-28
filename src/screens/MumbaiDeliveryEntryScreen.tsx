@@ -14,7 +14,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
-  Dimensions
+  Dimensions,
+  ScrollView
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
@@ -44,6 +45,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   // Form states
   const [description, setDescription] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
+  const [billtyNo, setBilltyNo] = useState<string>('');
+  const [consigneeName, setConsigneeName] = useState<string>('');
   const [date, setDate] = useState<Date>(new Date());
   const [saving, setSaving] = useState<boolean>(false);
   const [selectedEntry, setSelectedEntry] = useState<AgencyEntry | null>(null);
@@ -142,6 +145,14 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   };
 
   const handleSave = async () => {
+    if (!billtyNo.trim()) {
+      showAlert('Enter Billty No');
+      return;
+    }
+    if (!consigneeName.trim()) {
+      showAlert('Enter Consignee Name');
+      return;
+    }
     if (!description.trim()) {
       showAlert('Enter description');
       return;
@@ -160,6 +171,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
     try {
       const entryData = {
         agency_name: 'Mumbai',
+        billty_no: billtyNo.trim(),
+        consignee_name: consigneeName.trim(),
         description: description.trim(),
         amount: numericAmount,
         entry_type: 'credit' as 'credit', // Always credit for Mumbai delivery
@@ -175,7 +188,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         const userName = userData?.name || 'User';
         
         // Send notification to admin
-        await NotificationService.notifyAdd('mumbai_delivery', `New Mumbai delivery: ₹${numericAmount} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`);
+        await NotificationService.notifyAdd('mumbai_delivery', `New Mumbai delivery: ₹${numericAmount} - ${billtyNo.trim()}`);
 
         // Send device notification to admin
         await DeviceNotificationService.notifyAdminEntryAdded(
@@ -183,6 +196,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
           userName,
           {
             amount: numericAmount,
+            billty_no: billtyNo.trim(),
+            consignee_name: consigneeName.trim(),
             description: description.trim(),
             office: getCurrentOfficeId()
           }
@@ -192,6 +207,8 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         setTimeout(() => {
           showAlert('Mumbai delivery entry saved successfully!');
         }, 100);
+        setBilltyNo('');
+        setConsigneeName('');
         setDescription('');
         setAmount('');
         await loadData(false);
@@ -326,17 +343,14 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
     );
   };
 
-  const renderEntryItem = useCallback(({ item }: { item: AgencyEntry }) => {
+  const renderEntryItem = ({ item }: { item: AgencyEntry }) => {
     const deliveryText = item.delivery_status === 'yes' ? 'Delivered' : 'Not Delivered';
     const chipStyle = item.delivery_status === 'yes' ? styles.deliveredChip : styles.notDeliveredChip;
     const isConfirmed = item.confirmation_status === 'confirmed';
 
-    const longPressRef = React.useRef(null);
-    const doubleTapRef = React.useRef(null);
-
     return (
       <LongPressGestureHandler
-        ref={longPressRef}
+        key={item.id}
         onHandlerStateChange={({ nativeEvent }) => {
           if (nativeEvent.state === State.ACTIVE) {
             console.log('🔴 Long press detected on entry:', item.id);
@@ -346,16 +360,12 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         minDurationMs={800}
       >
         <TapGestureHandler
-          ref={doubleTapRef}
           numberOfTaps={2}
           onActivated={() => {
             console.log('🔵 Double tap detected on entry:', item.id);
-            // Allow viewing confirmed entries in read-only mode
-            // Allow confirming pending entries
             setSelectedEntry(item);
             setShowPaymentPopup(true);
           }}
-          waitFor={longPressRef}
         >
           <View style={[GlobalStyles.card, styles.entryCard, isConfirmed && styles.confirmedCard]}>
             <View style={styles.entryHeader}>
@@ -373,7 +383,15 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
               <Text style={styles.entryDate}>{new Date(item.entry_date).toLocaleDateString('en-IN')}</Text>
             </View>
             <View style={styles.entryContent}>
-              <Text style={styles.entryDescription}>{item.description}</Text>
+              <View style={styles.entryDetails}>
+                {item.billty_no && (
+                  <Text style={styles.entryBillty}>Billty: {item.billty_no}</Text>
+                )}
+                {item.consignee_name && (
+                  <Text style={styles.entryConsignee}>Consignee: {item.consignee_name}</Text>
+                )}
+                <Text style={styles.entryDescription}>{item.description}</Text>
+              </View>
               <Text style={styles.creditAmount}>
                 ₹{item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
               </Text>
@@ -394,7 +412,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         </TapGestureHandler>
       </LongPressGestureHandler>
     );
-  }, []);
+  };
   const handlePaymentConfirm = async (confirmation: PaymentConfirmation) => {
     try {
       if (!selectedEntry) return;
@@ -422,56 +440,75 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   };
   const renderHeader = () => (
     <>
-      <View style={GlobalStyles.card}>
+      <View style={[GlobalStyles.card, { marginBottom: 12 }]}>
         <View style={styles.cardContent}>
-          <Text style={[GlobalStyles.title, styles.cardTitle]}>Add Mumbai Delivery Entry</Text>
+          <Text style={[GlobalStyles.title, { fontSize: 16, marginBottom: 10 }]}>Mumbai Delivery</Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Description <Text style={styles.requiredStar}>*</Text></Text>
+          <View style={styles.compactRow}>
+            <View style={[styles.inputGroup, { flex: 1, marginRight: 6, marginBottom: 8 }]}>
+              <Text style={[styles.inputLabel, { fontSize: 12 }]}>Amount *</Text>
+              <TextInput
+                style={[GlobalStyles.input, styles.input, { paddingVertical: 8, fontSize: 14 }]}
+                value={amount}
+                onChangeText={setAmount}
+                placeholder="Amount"
+                placeholderTextColor={Colors.placeholder}
+                keyboardType="numeric"
+                returnKeyType="done"
+              />
+            </View>
+
+            <View style={[styles.inputGroup, { flex: 1, marginBottom: 8 }]}>
+              <Text style={[styles.inputLabel, { fontSize: 12 }]}>Billty No *</Text>
+              <TextInput
+                style={[GlobalStyles.input, styles.input, { paddingVertical: 8, fontSize: 14 }]}
+                value={billtyNo}
+                onChangeText={setBilltyNo}
+                placeholder="Billty"
+                placeholderTextColor={Colors.placeholder}
+              />
+            </View>
+          </View>
+
+          <View style={[styles.inputGroup, { marginBottom: 8 }]}>
+            <Text style={[styles.inputLabel, { fontSize: 12 }]}>Consignee *</Text>
             <TextInput
-              style={[GlobalStyles.input, styles.input]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Enter delivery description"
+              style={[GlobalStyles.input, styles.input, { paddingVertical: 8, fontSize: 14 }]}
+              value={consigneeName}
+              onChangeText={setConsigneeName}
+              placeholder="Consignee name"
               placeholderTextColor={Colors.placeholder}
-              multiline
-              numberOfLines={2}
-              onFocus={() => console.log('🎯 Mumbai - Description input focused')}
-              onBlur={() => console.log('🎯 Mumbai - Description input blurred')}
             />
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Amount <Text style={styles.requiredStar}>*</Text></Text>
+          <View style={[styles.inputGroup, { marginBottom: 8 }]}>
+            <Text style={[styles.inputLabel, { fontSize: 12 }]}>Description *</Text>
             <TextInput
-              style={[GlobalStyles.input, styles.input]}
-              value={amount}
-              onChangeText={setAmount}
-              placeholder="Enter amount"
+              style={[GlobalStyles.input, styles.input, { paddingVertical: 8, fontSize: 14, minHeight: 60 }]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Item description"
               placeholderTextColor={Colors.placeholder}
-              keyboardType="numeric"
-              onFocus={() => console.log('🎯 Mumbai - Amount input focused')}
-              onBlur={() => console.log('🎯 Mumbai - Amount input blurred')}
+              multiline
+              numberOfLines={2}
             />
           </View>
 
           <TouchableOpacity
             onPress={handleSave}
-            style={[GlobalStyles.buttonPrimary, styles.saveButton, saving && styles.disabledButton]}
+            style={[GlobalStyles.buttonPrimary, { paddingVertical: 10 }, saving && styles.disabledButton]}
             disabled={saving}
           >
             {saving ? (
               <ActivityIndicator size="small" color={Colors.surface} />
             ) : (
-              <Text style={GlobalStyles.buttonPrimaryText}>Save Mumbai Delivery Entry</Text>
+              <Text style={[GlobalStyles.buttonPrimaryText, { fontSize: 14 }]}>Save</Text>
             )}
           </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.recentEntriesSection}>
-        <Text style={styles.sectionTitle}>Recent Deliveries</Text>
-      </View>
+      <Text style={[styles.sectionTitle, { fontSize: 14, marginBottom: 8 }]}>Recent Deliveries</Text>
     </>
   );
 
@@ -487,44 +524,6 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={Colors.primary} translucent={false} />
 
-        <View 
-          style={styles.header}
-          onLayout={(event) => {
-            const { x, y, width, height } = event.nativeEvent.layout;
-            console.log('📐 Mumbai - Header Layout:', { x, y, width, height });
-          }}
-        >
-          {/* Left: Back Button */}
-          <TouchableOpacity 
-            onPress={() => {
-              console.log('🔙 Mumbai - Back button pressed');
-              goBack();
-            }} 
-            style={styles.backButton}
-            onLayout={(event) => {
-              const { x, y, width, height } = event.nativeEvent.layout;
-              console.log('📐 Mumbai - Back Button Layout:', { x, y, width, height, visible: width > 0 && height > 0 });
-            }}
-            activeOpacity={0.7}
-          >
-            <Text 
-              style={styles.backButtonText}
-              onLayout={(event) => {
-                const { x, y, width, height } = event.nativeEvent.layout;
-                console.log('📐 Mumbai - Back Button TEXT Layout:', { x, y, width, height });
-              }}
-            >{'<'}</Text>
-          </TouchableOpacity>
-          
-          {/* Center: Title */}
-          <View style={styles.titleContainer}>
-            <Text style={styles.headerTitle} numberOfLines={1}>Mumbai Delivery Entry</Text>
-          </View>
-          
-          {/* Right: Spacer */}
-          <View style={styles.headerSpacer} />
-        </View>
-
         <KeyboardAvoidingView 
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -536,19 +535,19 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
               <Text style={styles.loadingText}>Loading Mumbai delivery entries...</Text>
             </View>
           ) : (
-            <FlatList
-              data={recentEntries}
-              keyExtractor={(item) => item.id}
-              renderItem={renderEntryItem}
-              ListHeaderComponent={renderHeader}
-              ListEmptyComponent={renderEmpty}
-              contentContainerStyle={styles.flatListContent}
-              showsVerticalScrollIndicator={true}
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
               keyboardShouldPersistTaps="handled"
-              refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
-              }
-            />
+              showsVerticalScrollIndicator={true}
+            >
+              {renderHeader()}
+              {recentEntries.length > 0 ? (
+                recentEntries.map((item) => renderEntryItem({ item }))
+              ) : (
+                renderEmpty()
+              )}
+            </ScrollView>
           )}
         </KeyboardAvoidingView>
       </View>
@@ -625,6 +624,10 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     textAlign: 'center',
   },
+  compactRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
   inputGroup: {
     marginBottom: 12,
   },
@@ -699,12 +702,28 @@ const styles = StyleSheet.create({
   entryContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+  },
+  entryDetails: {
+    flex: 1,
+    marginRight: 12,
+  },
+  entryBillty: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
+    marginBottom: 2,
+  },
+  entryConsignee: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.textPrimary,
+    marginBottom: 2,
   },
   entryDescription: {
     flex: 1,
-    fontSize: 14,
-    color: Colors.textPrimary,
+    fontSize: 12,
+    color: Colors.textSecondary,
     marginRight: 12,
   },
   creditAmount: {

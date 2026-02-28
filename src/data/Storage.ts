@@ -4265,28 +4265,9 @@ export const confirmDeliveryPayment = async (
 
       if (error) throw error;
 
-      // Create a credit entry in general_entries (Daily Report) for the confirmed payment
-      const generalEntryData = {
-        description: `Mumbai Delivery Payment - ${deliveryRecord.description || 'N/A'}`,
-        amount: confirmation.confirmed_amount,
-        entry_type: 'credit' as const,
-        entry_date: confirmedAt,
-        office_id: deliveryRecord.office_id,
-        created_by: currentUser?.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error: generalEntryError } = await supabase
-        .from('general_entries')
-        .insert([generalEntryData]);
-
-      if (generalEntryError) {
-        console.error('Failed to create general entry for payment:', generalEntryError);
-        // Don't fail the whole operation, just log the error
-      } else {
-        console.log('✅ Created credit entry in daily report for Mumbai payment');
-      }
+      // NO LONGER NEEDED: Mumbai confirmed entries now show directly in daily report
+      // Previously created duplicate credit entry in general_entries
+      // Now the confirmed agency_entry itself appears in daily report
 
       // Update local storage
       await saveToOfflineStorage(OFFLINE_KEYS.AGENCY_ENTRIES, data);
@@ -4335,34 +4316,9 @@ export const confirmDeliveryPayment = async (
         await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify(records));
       }
 
-      // Create a credit entry in general_entries (Daily Report) for the confirmed payment - OFFLINE
-      const generalEntryData = {
-        id: `temp_${Date.now()}_general`,
-        description: `Mumbai Delivery Payment - ${deliveryRecord.description || 'N/A'}`,
-        amount: confirmation.confirmed_amount,
-        entry_type: 'credit' as const,
-        entry_date: confirmedAt,
-        office_id: deliveryRecord.office_id,
-        created_by: currentUser?.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      // Save to offline general entries
-      const offlineGeneralEntries = await AsyncStorage.getItem(OFFLINE_KEYS.GENERAL_ENTRIES);
-      const generalEntries = offlineGeneralEntries ? JSON.parse(offlineGeneralEntries) : [];
-      generalEntries.push(generalEntryData);
-      await AsyncStorage.setItem(OFFLINE_KEYS.GENERAL_ENTRIES, JSON.stringify(generalEntries));
-
-      // Queue general entry for sync
-      await SyncManager.getInstance().addPendingOperation({
-        table: 'general_entries',
-        action: 'INSERT',
-        data: generalEntryData,
-        office_id: deliveryRecord.office_id || undefined,
-      });
-
-      console.log('✅ Created credit entry in daily report for Mumbai payment (offline)');
+      // NO LONGER NEEDED: Mumbai confirmed entries now show directly in daily report
+      // Previously created duplicate credit entry in general_entries
+      // Now the confirmed agency_entry itself appears in daily report
 
       // Queue for sync
       await SyncManager.getInstance().addPendingOperation({

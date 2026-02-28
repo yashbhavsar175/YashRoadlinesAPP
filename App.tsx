@@ -46,6 +46,7 @@ import PageBuilderScreen from './src/screens/PageBuilderScreen';
 import PageManagementScreen from './src/screens/PageManagementScreen';
 import UppadJamaScreen from './src/screens/UppadJamaScreen';
 import MumbaiDeliveryEntryScreen from './src/screens/MumbaiDeliveryEntryScreen';
+import PaymentConfirmationScreen from './src/screens/PaymentConfirmationScreen';
 import MumbaiDeliveryNavigator from './src/navigation/MumbaiDeliveryNavigator';
 import BackdatedEntryScreen from './src/screens/BackdatedEntryScreen';
 import NotificationTestScreen from './src/screens/NotificationTestScreen';
@@ -1017,7 +1018,7 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="UppadJama" component={UppadJamaScreen} options={{ title: 'Uppad/Jama' }} />
                 <Stack.Screen 
                   name="MumbaiDelivery" 
-                  component={MumbaiDeliveryNavigator} 
+                  component={MumbaiDeliveryEntryScreen} 
                   options={({ navigation }) => {
                     const statusBarHeight = Platform.OS === 'android' ? 40 : 0; // Match CommonHeader status bar height
                     return {
@@ -1068,14 +1069,31 @@ function App(): React.JSX.Element {
                             }} numberOfLines={1}>Mumbai Delivery</Text>
                           </View>
                           
-                          <View style={{
-                            width: 40,
-                            marginLeft: 8,
-                          }} />
+                          <TouchableOpacity 
+                            onPress={() => navigation.navigate('PaymentConfirmation' as never)}
+                            style={{
+                              width: 40,
+                              height: 40,
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                              marginLeft: 8,
+                            }}
+                          >
+                            <Text style={{
+                              color: Colors.surface,
+                              fontSize: 24,
+                              fontWeight: 'bold',
+                            }}>✓</Text>
+                          </TouchableOpacity>
                         </View>
                       ),
                     };
                   }} 
+                />
+                <Stack.Screen 
+                  name="PaymentConfirmation" 
+                  component={PaymentConfirmationScreen} 
+                  options={{ title: 'Confirm Payment' }} 
                 />
                 <Stack.Screen name="BackdatedEntry" component={BackdatedEntryScreen} options={{ title: 'Backdated Entry' }} />
                 <Stack.Screen name="NotificationTest" component={NotificationTestScreen} />
