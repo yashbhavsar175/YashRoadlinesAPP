@@ -169,6 +169,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
 
     setSaving(true);
     try {
+      const currentOfficeId = getCurrentOfficeId();
       const entryData = {
         agency_name: 'Mumbai',
         billty_no: billtyNo.trim(),
@@ -178,9 +179,12 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         entry_type: 'credit' as 'credit', // Always credit for Mumbai delivery
         entry_date: date.toISOString(),
         delivery_status: 'yes' as 'yes', // Always yes for Mumbai delivery
+        office_id: currentOfficeId || undefined,
       };
 
+      console.log('💾 Saving Mumbai entry:', entryData);
       const success = await saveAgencyEntry(entryData);
+      console.log('💾 Save result:', success);
       if (success) {
         // Get current user info for notifications from AsyncStorage
         const userDataString = await AsyncStorage.getItem('user_profile');
@@ -444,30 +448,15 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         <View style={styles.cardContent}>
           <Text style={[GlobalStyles.title, { fontSize: 16, marginBottom: 10 }]}>Mumbai Delivery</Text>
 
-          <View style={styles.compactRow}>
-            <View style={[styles.inputGroup, { flex: 1, marginRight: 6, marginBottom: 8 }]}>
-              <Text style={[styles.inputLabel, { fontSize: 12 }]}>Amount *</Text>
-              <TextInput
-                style={[GlobalStyles.input, styles.input, { paddingVertical: 8, fontSize: 14 }]}
-                value={amount}
-                onChangeText={setAmount}
-                placeholder="Amount"
-                placeholderTextColor={Colors.placeholder}
-                keyboardType="numeric"
-                returnKeyType="done"
-              />
-            </View>
-
-            <View style={[styles.inputGroup, { flex: 1, marginBottom: 8 }]}>
-              <Text style={[styles.inputLabel, { fontSize: 12 }]}>Billty No *</Text>
-              <TextInput
-                style={[GlobalStyles.input, styles.input, { paddingVertical: 8, fontSize: 14 }]}
-                value={billtyNo}
-                onChangeText={setBilltyNo}
-                placeholder="Billty"
-                placeholderTextColor={Colors.placeholder}
-              />
-            </View>
+          <View style={[styles.inputGroup, { marginBottom: 8 }]}>
+            <Text style={[styles.inputLabel, { fontSize: 12 }]}>Billty No *</Text>
+            <TextInput
+              style={[GlobalStyles.input, styles.input, { paddingVertical: 8, fontSize: 14 }]}
+              value={billtyNo}
+              onChangeText={setBilltyNo}
+              placeholder="Billty"
+              placeholderTextColor={Colors.placeholder}
+            />
           </View>
 
           <View style={[styles.inputGroup, { marginBottom: 8 }]}>
@@ -491,6 +480,19 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
               placeholderTextColor={Colors.placeholder}
               multiline
               numberOfLines={2}
+            />
+          </View>
+
+          <View style={[styles.inputGroup, { marginBottom: 8 }]}>
+            <Text style={[styles.inputLabel, { fontSize: 12 }]}>Amount *</Text>
+            <TextInput
+              style={[GlobalStyles.input, styles.input, { paddingVertical: 8, fontSize: 14 }]}
+              value={amount}
+              onChangeText={setAmount}
+              placeholder="Amount"
+              placeholderTextColor={Colors.placeholder}
+              keyboardType="numeric"
+              returnKeyType="done"
             />
           </View>
 

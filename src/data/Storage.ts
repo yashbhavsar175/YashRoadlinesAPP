@@ -161,6 +161,7 @@ export interface AgencyEntry {
   signature_photo_id?: string;
   taken_from_godown?: boolean;
   payment_received?: boolean;
+  payment_type?: 'cash' | 'gpay_sapan' | 'gpay_yash';
 }
 
 export interface DeliveryRecord extends AgencyEntry {
@@ -181,6 +182,7 @@ export interface PaymentConfirmation {
   signature_photo: PhotoData;
   confirmed_at: string;
   confirmed_by?: string;
+  payment_type?: 'cash' | 'gpay_sapan' | 'gpay_yash';
 }
 
 export interface PhotoRecord {
@@ -3760,7 +3762,14 @@ export const saveAgencyEntry = async (entry: Omit<AgencyEntry, 'id' | 'created_a
       agency_id: agency?.id || null,
       office_id: entry.office_id || null,
       created_by: (await supabase.auth.getUser()).data.user?.id,
-      delivery_status: entry.delivery_status
+      delivery_status: entry.delivery_status,
+      billty_no: entry.billty_no || null,
+      consignee_name: entry.consignee_name || null,
+      item_description: entry.item_description || null,
+      confirmation_status: entry.confirmation_status || 'pending',
+      confirmed_at: entry.confirmed_at || null,
+      confirmed_amount: entry.confirmed_amount || null,
+      bilty_photo_id: entry.bilty_photo_id || null
     };
 
     if (online && agency?.id) {
@@ -4223,6 +4232,7 @@ export const confirmDeliveryPayment = async (
       payment_received: true,
       delivery_status: 'yes' as const, // Update legacy field for backward compatibility
       updated_at: new Date().toISOString(),
+      payment_type: confirmation.payment_type || 'cash',
     };
 
     if (online) {
@@ -4265,9 +4275,83 @@ export const confirmDeliveryPayment = async (
 
       if (error) throw error;
 
-      // NO LONGER NEEDED: Mumbai confirmed entries now show directly in daily report
-      // Previously created duplicate credit entry in general_entries
-      // Now the confirmed agency_entry itself appears in daily report
+      // Handle payment type logic
+      const paymentType = confirmation.payment_type || 'cash';
+      
+      if (paymentType === 'cash') {
+        // Cash payment: Create credit entry in general_entries (Daily Report)
+        const creditEntry = {
+          description: `Mumbai Delivery - ${deliveryRecord.billty_no}`,
+          amount: confirmation.confirmed_amount,
+          entry_type: 'credit' as const,
+          entry_date: confirmedAt,
+          office_id: deliveryRecord.office_id,
+          created_by: currentUser?.id,
+          // Store metadata for display formatting
+          metadata: JSON.stringify({
+            consignee_name: deliveryRecord.consignee_name,
+            item_description: deliveryRecord.item_description || deliveryRecord.description,
+            billty_no: deliveryRecord.billty_no,
+          }),
+        };
+        
+        const { error: creditError } = await supabase
+          .from('general_entries')
+          .insert([creditEntry]);
+        
+        if (creditError) {
+          console.error('Error creating credit entry for cash payment:', creditError);
+        }
+      } else if (paymentType === 'gpay_yash') {
+        // GPay Yash Roadlines: Create credit entry + debit entry for Yash Roadlines GPay
+        const creditEntry = {
+          description: `Mumbai Delivery - ${deliveryRecord.billty_no}`,
+          amount: confirmation.confirmed_amount,
+          entry_type: 'credit' as const,
+          entry_date: confirmedAt,
+          office_id: deliveryRecord.office_id,
+          created_by: currentUser?.id,
+          // Store metadata for display formatting
+          metadata: JSON.stringify({
+            consignee_name: deliveryRecord.consignee_name,
+            item_description: deliveryRecord.item_description || deliveryRecord.description,
+            billty_no: deliveryRecord.billty_no,
+          }),
+        };
+        
+        const { error: creditError } = await supabase
+          .from('general_entries')
+          .insert([creditEntry]);
+        
+        if (creditError) {
+          console.error('Error creating credit entry for GPay Yash payment:', creditError);
+        }
+        
+        // Create debit entry for Yash Roadlines GPay
+        const debitEntry = {
+          description: `Yash Roadlines GPay - Mumbai Delivery`,
+          amount: confirmation.confirmed_amount,
+          entry_type: 'debit' as const,
+          entry_date: confirmedAt,
+          office_id: deliveryRecord.office_id,
+          created_by: currentUser?.id,
+          // Store metadata for display formatting
+          metadata: JSON.stringify({
+            consignee_name: deliveryRecord.consignee_name,
+            item_description: deliveryRecord.item_description || deliveryRecord.description,
+            billty_no: deliveryRecord.billty_no,
+          }),
+        };
+        
+        const { error: debitError } = await supabase
+          .from('general_entries')
+          .insert([debitEntry]);
+        
+        if (debitError) {
+          console.error('Error creating debit entry for Yash Roadlines GPay:', debitError);
+        }
+      }
+      // else if paymentType === 'gpay_sapan': No entry in daily report, only confirmation
 
       // Update local storage
       await saveToOfflineStorage(OFFLINE_KEYS.AGENCY_ENTRIES, data);
@@ -4316,9 +4400,92 @@ export const confirmDeliveryPayment = async (
         await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_ENTRIES, JSON.stringify(records));
       }
 
-      // NO LONGER NEEDED: Mumbai confirmed entries now show directly in daily report
-      // Previously created duplicate credit entry in general_entries
-      // Now the confirmed agency_entry itself appears in daily report
+      // Handle payment type logic for offline mode
+      const paymentType = confirmation.payment_type || 'cash';
+      
+      if (paymentType === 'cash') {
+        // Cash payment: Create credit entry in general_entries (Daily Report)
+        const creditEntry = {
+          id: `temp_${Date.now()}_credit`,
+          description: `Mumbai Delivery - ${deliveryRecord.billty_no}`,
+          amount: confirmation.confirmed_amount,
+          entry_type: 'credit' as const,
+          entry_date: confirmedAt,
+          office_id: deliveryRecord.office_id,
+          created_by: currentUser?.id,
+          created_at: confirmedAt,
+          updated_at: confirmedAt,
+          // Store metadata for display formatting
+          metadata: JSON.stringify({
+            consignee_name: deliveryRecord.consignee_name,
+            item_description: deliveryRecord.item_description || deliveryRecord.description,
+            billty_no: deliveryRecord.billty_no,
+          }),
+        };
+        
+        await saveToOfflineStorage(OFFLINE_KEYS.GENERAL_ENTRIES, creditEntry);
+        await SyncManager.getInstance().addPendingOperation({
+          table: 'general_entries',
+          action: 'INSERT',
+          data: creditEntry,
+          office_id: deliveryRecord.office_id || undefined,
+        });
+      } else if (paymentType === 'gpay_yash') {
+        // GPay Yash Roadlines: Create credit entry + debit entry for Yash Roadlines GPay
+        const creditEntry = {
+          id: `temp_${Date.now()}_credit`,
+          description: `Mumbai Delivery - ${deliveryRecord.billty_no}`,
+          amount: confirmation.confirmed_amount,
+          entry_type: 'credit' as const,
+          entry_date: confirmedAt,
+          office_id: deliveryRecord.office_id,
+          created_by: currentUser?.id,
+          created_at: confirmedAt,
+          updated_at: confirmedAt,
+          // Store metadata for display formatting
+          metadata: JSON.stringify({
+            consignee_name: deliveryRecord.consignee_name,
+            item_description: deliveryRecord.item_description || deliveryRecord.description,
+            billty_no: deliveryRecord.billty_no,
+          }),
+        };
+        
+        await saveToOfflineStorage(OFFLINE_KEYS.GENERAL_ENTRIES, creditEntry);
+        await SyncManager.getInstance().addPendingOperation({
+          table: 'general_entries',
+          action: 'INSERT',
+          data: creditEntry,
+          office_id: deliveryRecord.office_id || undefined,
+        });
+        
+        // Create debit entry for Yash Roadlines GPay
+        const debitEntry = {
+          id: `temp_${Date.now()}_debit`,
+          description: `Yash Roadlines GPay - Mumbai Delivery`,
+          amount: confirmation.confirmed_amount,
+          entry_type: 'debit' as const,
+          entry_date: confirmedAt,
+          office_id: deliveryRecord.office_id,
+          created_by: currentUser?.id,
+          created_at: confirmedAt,
+          updated_at: confirmedAt,
+          // Store metadata for display formatting
+          metadata: JSON.stringify({
+            consignee_name: deliveryRecord.consignee_name,
+            item_description: deliveryRecord.item_description || deliveryRecord.description,
+            billty_no: deliveryRecord.billty_no,
+          }),
+        };
+        
+        await saveToOfflineStorage(OFFLINE_KEYS.GENERAL_ENTRIES, debitEntry);
+        await SyncManager.getInstance().addPendingOperation({
+          table: 'general_entries',
+          action: 'INSERT',
+          data: debitEntry,
+          office_id: deliveryRecord.office_id || undefined,
+        });
+      }
+      // else if paymentType === 'gpay_sapan': No entry in daily report, only confirmation
 
       // Queue for sync
       await SyncManager.getInstance().addPendingOperation({

@@ -287,6 +287,16 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   const [netBalance, setNetBalance] = useState<number>(0); // This will be credit - debit + cash adjustment
   const [manageCashAdjustment, setManageCashAdjustment] = useState<number>(0);
   
+  // Debug: Log when transactions state changes
+  useEffect(() => {
+    console.log('🔄 Transactions state changed:', transactions.length, 'items');
+    if (transactions.length > 0) {
+      console.log('📊 Current transactions in state:', JSON.stringify(transactions, null, 2));
+    } else {
+      console.log('⚠️ Transactions state is empty!');
+    }
+  }, [transactions]);
+  
   // User & Auth State
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -442,7 +452,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     const loadData = async (forceClearCache = false) => {
       console.log('🔄 Loading data for date:', selectedDate.toISOString().split('T')[0]);
       try {
-        // Clear cache if requested to get fresh data
+        // Clear cache if requested to get fresh data (e.g., from handleRefresh)
         if (forceClearCache) {
           console.log('🧹 Clearing cache for fresh data...');
           await clearAllCache();
@@ -464,7 +474,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         console.log('🏢 Loading transactions for office:', currentOfficeId, currentOffice?.name);
         const allTransactions = await getAllTransactionsForDate(selectedDate, currentOfficeId || undefined);
         console.log('📊 AUTO REFRESH: Raw transactions loaded:', allTransactions.length, 'items');
-        console.log('📊 AUTO REFRESH: Raw transactions details:', allTransactions);
+        console.log('📊 AUTO REFRESH: Raw transactions details:', JSON.stringify(allTransactions, null, 2));
         
         const groupedPayments = new Map<string, { amount: number; count: number; date: string; transactions: AgencyPayment[] }>();
         const agencyEntries: AgencyEntry[] = [];
@@ -575,9 +585,75 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             } else {
               transactionType = generalItem.entry_type;
               label = generalItem.description || 'General Entry';
-              // Show agency when available, otherwise show a short description preview
-              const agency = (generalItem as any).agency_name;
-              subLabel = agency ? `Agency: ${agency}` : `Desc: ${generalItem.description || 'N/A'}`;
+              
+              // IMPORTANT: Check for "Yash Roadlines GPay" FIRST before "Mumbai Delivery"
+              // because "Yash Roadlines GPay - Mumbai Delivery" contains both strings
+              if (desc.includes('yash roadlines gpay') && (generalItem as any).metadata) {
+                // Special formatting for Yash Roadlines GPay entries
+                try {
+                  console.log('🔍 Yash Roadlines GPay entry found (with metadata):', generalItem);
+                  const metadata = JSON.parse((generalItem as any).metadata);
+                  console.log('📦 Parsed metadata:', metadata);
+                  label = generalItem.description || 'Yash Roadlines GPay';
+                  // Show billty_no in subLabel as per requirement
+                  subLabel = `Billty No: ${metadata.billty_no || 'N/A'}`;
+                  console.log('✅ Formatted label:', label, 'subLabel:', subLabel);
+                } catch (e) {
+                  // Fallback to default formatting
+                  console.error('❌ Error parsing Yash Roadlines GPay metadata:', e);
+                  label = generalItem.description || 'Yash Roadlines GPay';
+                  subLabel = 'Billty details';
+                }
+              } else if (desc.includes('yash roadlines gpay')) {
+                // Handle Yash Roadlines GPay entries without metadata (old format)
+                console.log('🔍 Yash Roadlines GPay entry found (without metadata):', generalItem);
+                // Try to extract billty_no from description
+                const parts = generalItem.description.split(' - ');
+                if (parts.length >= 3) {
+                  // Format: "Yash Roadlines GPay - Mumbai Delivery - 1234"
+                  label = `${parts[0]} - ${parts[1]}`; // "Yash Roadlines GPay - Mumbai Delivery"
+                  subLabel = `Billty No: ${parts[2]}`; // "1234"
+                  console.log('✅ Formatted from parts - label:', label, 'subLabel:', subLabel);
+                } else {
+                  label = generalItem.description || 'Yash Roadlines GPay';
+                  subLabel = 'Billty details';
+                  console.log('⚠️ Could not parse parts, using fallback');
+                }
+              } else if (desc.includes('mumbai delivery') && (generalItem as any).metadata) {
+                // Special formatting for Mumbai Delivery entries with metadata
+                try {
+                  const metadata = JSON.parse((generalItem as any).metadata);
+                  // Description already has "Mumbai Delivery - billty_no" format
+                  // Just use it as is for the label
+                  label = generalItem.description || 'Mumbai Delivery';
+                  subLabel = `${metadata.consignee_name || 'N/A'} | ${metadata.item_description || 'N/A'}`;
+                } catch (e) {
+                  // Fallback to default formatting
+                  const agency = (generalItem as any).agency_name;
+                  subLabel = agency ? `Agency: ${agency}` : `Desc: ${generalItem.description || 'N/A'}`;
+                }
+              } else if (desc.includes('mumbai delivery')) {
+                // Handle old format: "Mumbai Delivery - billty - consignee"
+                // Parse and convert to new format
+                const parts = generalItem.description.split(' - ');
+                if (parts.length >= 3) {
+                  // parts[0] = "Mumbai Delivery"
+                  // parts[1] = billty_no
+                  // parts[2] = consignee_name
+                  label = `Mumbai Delivery - ${parts[1]}`;
+                  subLabel = `${parts[2]} | Item details`;
+                } else {
+                  // Fallback if parsing fails
+                  label = generalItem.description || 'General Entry';
+                  const agency = (generalItem as any).agency_name;
+                  subLabel = agency ? `Agency: ${agency}` : `Desc: ${generalItem.description || 'N/A'}`;
+                }
+              } else {
+                // Show agency when available, otherwise show a short description preview
+                const agency = (generalItem as any).agency_name;
+                subLabel = agency ? `Agency: ${agency}` : `Desc: ${generalItem.description || 'N/A'}`;
+              }
+              
               amount = generalItem.amount;
               storageKey = OFFLINE_KEYS.GENERAL_ENTRIES;
               dateKey = generalItem.entry_date;
@@ -604,12 +680,26 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         }
 
         // Process agency entries (Mumbai Delivery and other agency entries)
-        // Filter: Only show confirmed Mumbai deliveries in daily report
+        // Mumbai entries are shown via general_entries (created during confirmation)
+        // But for backward compatibility, show Mumbai entries from agency_entries
+        // if they don't have a corresponding general_entry
         const processedAgencyEntries: TransactionItem[] = agencyEntries
           .filter(item => {
-            // For Mumbai agency, only show confirmed entries
+            // For Mumbai entries, only skip if we're sure they're in general_entries
+            // (i.e., they have metadata or were created after the redesign)
             if (item.agency_name === 'Mumbai') {
-              return item.confirmation_status === 'confirmed';
+              // Skip pending entries - they shouldn't show in daily report
+              if (item.confirmation_status === 'pending') {
+                return false;
+              }
+              // For confirmed entries, check if there's a corresponding general_entry
+              // If payment_type exists, it means it was created with new system
+              // and should have a general_entry
+              if (item.confirmation_status === 'confirmed' && item.payment_type) {
+                return false; // Skip - will show from general_entries
+              }
+              // Otherwise, show it (backward compatibility for old entries)
+              return true;
             }
             // For other agencies, show all entries
             return true;
@@ -617,13 +707,19 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           .map(item => {
             const time = new Date(item.entry_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
             
-            // Special formatting for Mumbai deliveries
+            // Special formatting for Mumbai deliveries (old format)
             let label = item.description || 'Agency Entry';
             let subLabel = `Agency: ${item.agency_name}`;
             
+            // For old Mumbai confirmed entries (without payment_type), format them nicely
             if (item.agency_name === 'Mumbai' && item.confirmation_status === 'confirmed') {
-              label = `Mumbai Delivery Payment - ${item.billty_no || 'N/A'}`;
-              subLabel = item.consignee_name || 'No consignee name';
+              // Try to extract billty_no from description or use billty_no field
+              const billtyNo = item.billty_no || 'N/A';
+              const consigneeName = item.consignee_name || 'N/A';
+              const itemDesc = item.item_description || 'Item details';
+              
+              label = `Mumbai Delivery - ${billtyNo}`;
+              subLabel = `${consigneeName} | ${itemDesc}`;
             }
             
             return {
@@ -642,9 +738,14 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
         const allProcessedTransactions = [...processedGroupedTransactions, ...processedOtherTransactions, ...processedAgencyEntries];
         
+        console.log('📊 AUTO REFRESH: All processed transactions before sorting:', allProcessedTransactions.length);
+        console.log('📊 AUTO REFRESH: Processed transactions details:', JSON.stringify(allProcessedTransactions, null, 2));
+        
         // Sort like manual refresh: credits first, then debits, each sorted by time
         const credits = allProcessedTransactions.filter(t => t.type === 'credit');
         const debits = allProcessedTransactions.filter(t => t.type === 'debit');
+        
+        console.log('📊 AUTO REFRESH: Credits:', credits.length, 'Debits:', debits.length);
 
         const sortedTransactions = [...credits, ...debits].sort((a, b) => {
           const timeA = new Date(`2024-01-01 ${a.time}`).getTime();
@@ -652,9 +753,11 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           return timeB - timeA;
         });
 
+        console.log('📊 AUTO REFRESH: Sorted transactions:', sortedTransactions.length);
         setTransactions(sortedTransactions);
+        console.log('✅ AUTO REFRESH: Transactions set in state');
         console.log('✅ AUTO REFRESH: Transactions processed:', sortedTransactions.length, 'items');
-        console.log('📊 AUTO REFRESH: Processed transactions details:', sortedTransactions);
+        console.log('📊 AUTO REFRESH: Processed transactions details:', JSON.stringify(sortedTransactions, null, 2));
         
         // Calculate and update totals using the loaded cash adjustment
         console.log('🧮 AUTO REFRESH: Starting calculations...');
@@ -1162,9 +1265,13 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
   const loadDailyTransactions = useCallback(async (dateToLoad: Date) => {
     console.log('🔄 loadDailyTransactions called for date:', dateToLoad.toISOString().split('T')[0]);
-    if (!isMountedRef.current) return;
+    if (!isMountedRef.current) {
+      console.log('⚠️ Component not mounted, skipping load');
+      return;
+    }
     
     try {
+      console.log('🧹 Clearing gallery state...');
       setLoading(true);
       setProofCounts({});
       setGalleryVisible(false);
@@ -1180,7 +1287,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       console.log('🏢 MANUAL REFRESH: Loading transactions for office:', currentOfficeId, currentOffice?.name);
       const allTransactions = await getAllTransactionsForDate(dateToLoad, currentOfficeId || undefined); // This now includes majuri
       console.log('📊 MANUAL REFRESH: Raw transactions loaded:', allTransactions.length, 'items');
-      console.log('📊 MANUAL REFRESH: Raw transactions details:', allTransactions);
+      console.log('📊 MANUAL REFRESH: Raw transactions details:', JSON.stringify(allTransactions, null, 2));
 
       const groupedPayments = new Map<string, { amount: number; count: number; date: string; transactions: AgencyPayment[] }>();
       const agencyEntries: AgencyEntry[] = [];
@@ -1289,9 +1396,73 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         } else if ('entry_type' in item) {
           transactionType = item.entry_type;
           const agency = (item as any).agency_name;
+          const desc = (item.description || '').toLowerCase();
           // Show description instead of "General Entry" heading
           label = item.description || 'General Entry';
-          subLabel = agency ? `Agency: ${agency}` : '';
+          
+          // IMPORTANT: Check for "Yash Roadlines GPay" FIRST before "Mumbai Delivery"
+          // because "Yash Roadlines GPay - Mumbai Delivery" contains both strings
+          if (desc.includes('yash roadlines gpay') && (item as any).metadata) {
+            // Special formatting for Yash Roadlines GPay entries
+            try {
+              console.log('🔍 MANUAL REFRESH: Yash Roadlines GPay entry found (with metadata):', item);
+              const metadata = JSON.parse((item as any).metadata);
+              console.log('📦 MANUAL REFRESH: Parsed metadata:', metadata);
+              label = item.description || 'Yash Roadlines GPay';
+              // Show billty_no in subLabel as per requirement
+              subLabel = `Billty No: ${metadata.billty_no || 'N/A'}`;
+              console.log('✅ MANUAL REFRESH: Formatted label:', label, 'subLabel:', subLabel);
+            } catch (e) {
+              // Fallback to default formatting
+              console.error('❌ MANUAL REFRESH: Error parsing Yash Roadlines GPay metadata:', e);
+              label = item.description || 'Yash Roadlines GPay';
+              subLabel = 'Billty details';
+            }
+          } else if (desc.includes('yash roadlines gpay')) {
+            // Handle Yash Roadlines GPay entries without metadata (old format)
+            console.log('🔍 MANUAL REFRESH: Yash Roadlines GPay entry found (without metadata):', item);
+            // Try to extract billty_no from description
+            const parts = item.description.split(' - ');
+            if (parts.length >= 3) {
+              // Format: "Yash Roadlines GPay - Mumbai Delivery - 1234"
+              label = `${parts[0]} - ${parts[1]}`; // "Yash Roadlines GPay - Mumbai Delivery"
+              subLabel = `Billty No: ${parts[2]}`; // "1234"
+              console.log('✅ MANUAL REFRESH: Formatted from parts - label:', label, 'subLabel:', subLabel);
+            } else {
+              label = item.description || 'Yash Roadlines GPay';
+              subLabel = 'Billty details';
+              console.log('⚠️ MANUAL REFRESH: Could not parse parts, using fallback');
+            }
+          } else if (desc.includes('mumbai delivery') && (item as any).metadata) {
+            // Special formatting for Mumbai Delivery entries with metadata
+            try {
+              const metadata = JSON.parse((item as any).metadata);
+              // Description already has "Mumbai Delivery - billty_no" format
+              // Just use it as is for the label
+              label = item.description || 'Mumbai Delivery';
+              subLabel = `${metadata.consignee_name || 'N/A'} | ${metadata.item_description || 'N/A'}`;
+            } catch (e) {
+              // Fallback to default formatting
+              subLabel = agency ? `Agency: ${agency}` : '';
+            }
+          } else if (desc.includes('mumbai delivery')) {
+            // Handle old format: "Mumbai Delivery - billty - consignee"
+            // Parse and convert to new format
+            const parts = item.description.split(' - ');
+            if (parts.length >= 3) {
+              // parts[0] = "Mumbai Delivery"
+              // parts[1] = billty_no
+              // parts[2] = consignee_name
+              label = `Mumbai Delivery - ${parts[1]}`;
+              subLabel = `${parts[2]} | Item details`;
+            } else {
+              // Fallback if parsing fails
+              subLabel = agency ? `Agency: ${agency}` : '';
+            }
+          } else {
+            subLabel = agency ? `Agency: ${agency}` : '';
+          }
+          
           amount = item.amount;
           storageKey = OFFLINE_KEYS.GENERAL_ENTRIES;
           dateKey = item.entry_date;
@@ -1312,9 +1483,13 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       
       const processedAgencyEntries: TransactionItem[] = agencyEntries
         .filter(item => {
-          // For Mumbai agency, only show confirmed entries
-          if (item.agency_name === 'Mumbai') {
-            return item.confirmation_status === 'confirmed';
+          // Skip Mumbai confirmed entries - they show via general_entries now
+          if (item.agency_name === 'Mumbai' && item.confirmation_status === 'confirmed') {
+            return false;
+          }
+          // For Mumbai pending entries, don't show in daily report
+          if (item.agency_name === 'Mumbai' && item.confirmation_status === 'pending') {
+            return false;
           }
           // For other agencies, show all entries
           return true;
@@ -1326,10 +1501,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         let label = item.description || 'Agency Entry';
         let subLabel = `Agency: ${item.agency_name}`;
         
-        if (item.agency_name === 'Mumbai' && item.confirmation_status === 'confirmed') {
-          label = `Mumbai Delivery Payment - ${item.billty_no || 'N/A'}`;
-          subLabel = item.consignee_name || 'No consignee name';
-        }
+        // Mumbai confirmed entries should NOT show here anymore
+        // They are now handled via general_entries created during confirmation
+        // This prevents duplicate display
         
         return {
           id: item.id,
@@ -1346,8 +1520,13 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
       const validTransactions = [...processedGroupedTransactions, ...processedOtherTransactions, ...processedAgencyEntries].filter(t => t && t.amount > 0);
 
+      console.log('📊 MANUAL REFRESH: Valid transactions after filtering:', validTransactions.length);
+      console.log('📊 MANUAL REFRESH: Valid transactions details:', JSON.stringify(validTransactions, null, 2));
+
       const credits = validTransactions.filter(t => t.type === 'credit');
       const debits = validTransactions.filter(t => t.type === 'debit');
+      
+      console.log('📊 MANUAL REFRESH: Credits:', credits.length, 'Debits:', debits.length);
 
       const sortedTransactions = [...credits, ...debits].sort((a, b) => {
         const timeA = new Date(`2024-01-01 ${a.time}`).getTime();
@@ -1355,12 +1534,17 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         return timeB - timeA;
       });
 
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current) {
+        console.log('⚠️ Component not mounted, skipping state update');
+        return;
+      }
       
       console.log('✅ MANUAL REFRESH: Transactions processed:', sortedTransactions.length, 'items');
-      console.log('📊 MANUAL REFRESH: Processed transactions details:', sortedTransactions);
+      console.log('📊 MANUAL REFRESH: Processed transactions details:', JSON.stringify(sortedTransactions, null, 2));
       
+      console.log('💾 MANUAL REFRESH: Setting transactions in state...');
       setTransactions(sortedTransactions);
+      console.log('✅ MANUAL REFRESH: Transactions set in state');
       // Refresh proof counts so gallery icon doesn't disappear on refresh
       refreshProofCounts(sortedTransactions);
 
@@ -1429,6 +1613,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       
       console.log('🔄 MANUAL REFRESH: Syncing all data...');
       await syncAllDataFixed();
+      
+      console.log('💰 MANUAL REFRESH: Reloading cash adjustment...');
+      const cashAdj = await loadManageCashAdjustment(selectedDate);
+      console.log('💰 MANUAL REFRESH: Cash adjustment loaded:', cashAdj);
+      setManageCashAdjustment(cashAdj || 0);
+      
       console.log('🔄 MANUAL REFRESH: Loading daily transactions...');
       await loadDailyTransactions(selectedDate);
       console.log('✅ MANUAL REFRESH completed successfully');
@@ -1826,10 +2016,21 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                 originalTransactions: [subItem],
               };
 
-              const description = item.storageKey === OFFLINE_KEYS.AGENCY_PAYMENTS 
-                ? `Bill No: ${subItem.bill_no || 'N/A'}` 
-                : `Desc: ${subItem.description || 'N/A'}`;
-
+              let subItemDescription = `Desc: ${subItem.description || 'N/A'}`;
+              if (item.storageKey === OFFLINE_KEYS.AGENCY_PAYMENTS) {
+                subItemDescription = `Bill No: ${subItem.bill_no || 'N/A'}`;
+              } else if (item.storageKey === OFFLINE_KEYS.GENERAL_ENTRIES && subItem.description?.toLowerCase().includes('yash roadlines gpay') && subItem.metadata) {
+                try {
+                  const metadata = JSON.parse(subItem.metadata);
+                  if (metadata.billty_no) {
+                    subItemDescription = `Billty No: ${metadata.billty_no}`;
+                  } else {
+                    subItemDescription = `Desc: ${subItem.description || 'N/A'}`;
+                  }
+                } catch (e) {
+                  subItemDescription = `Desc: ${subItem.description || 'N/A'}`;
+                }
+              }
               return (
                 <View key={subItem.id} style={styles.subItem}>
                   <TouchableOpacity
@@ -1866,7 +2067,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                       <View style={styles.subItemTextContainer}>
                                                  <View style={styles.subItemLabelRow}>
                            <Text style={styles.subItemText} numberOfLines={1}>
-                             {description}
+                             {subItemDescription}
                            </Text>
                          </View>
                         <Text style={styles.subItemAmount}>

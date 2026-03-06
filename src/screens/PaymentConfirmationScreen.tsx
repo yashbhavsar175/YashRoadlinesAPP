@@ -233,6 +233,8 @@ useEffect(() => {
   return (
     <GestureHandlerRootView style={GlobalStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+      
+      <CommonHeader title="Payment Confirmation" onBackPress={goBack} />
 
       <ScrollView
         contentContainerStyle={styles.scrollViewContent}
@@ -266,6 +268,7 @@ useEffect(() => {
                 <Text style={[styles.tableHeaderText, styles.consigneeColumn]} numberOfLines={1}>Consignee</Text>
                 <Text style={[styles.tableHeaderText, styles.itemColumn]} numberOfLines={1}>Item</Text>
                 <Text style={[styles.tableHeaderText, styles.amountColumn]} numberOfLines={1}>Amount</Text>
+                <Text style={[styles.tableHeaderText, styles.cashTypeColumn]} numberOfLines={1}>Cash Type</Text>
               </View>
 
               <Text style={styles.sectionTitle}>
@@ -307,6 +310,11 @@ useEffect(() => {
                       </Text>
                       <Text style={[styles.tableCell, styles.amountColumn]}>
                         ₹{record.amount.toFixed(2)}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.cashTypeColumn]} numberOfLines={1}>
+                        {record.payment_type === 'cash' ? 'Cash' : 
+                         record.payment_type === 'gpay_sapan' ? 'GPay (S)' :
+                         record.payment_type === 'gpay_yash' ? 'GPay (Y)' : '-'}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -360,6 +368,11 @@ useEffect(() => {
                           ₹{record.confirmed_amount?.toFixed(2) || record.amount.toFixed(2)}
                         </Text>
                       </View>
+                      <Text style={[styles.tableCell, styles.cashTypeColumn]} numberOfLines={1}>
+                        {record.payment_type === 'cash' ? 'Cash' : 
+                         record.payment_type === 'gpay_sapan' ? 'GPay (S)' :
+                         record.payment_type === 'gpay_yash' ? 'GPay (Y)' : '-'}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 </LongPressGestureHandler>
@@ -451,6 +464,10 @@ const styles = StyleSheet.create({
   amountColumn: {
     flex: 1,
     minWidth: 65,
+  },
+  cashTypeColumn: {
+    flex: 0.8,
+    minWidth: 55,
   },
   tableRow: {
     flexDirection: 'row',

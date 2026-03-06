@@ -41,6 +41,7 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
   const [biltyPhoto, setBiltyPhoto] = useState<PhotoData | null>(null);
   const [signaturePhoto, setSignaturePhoto] = useState<PhotoData | null>(null);
   const [confirming, setConfirming] = useState<boolean>(false);
+  const [paymentType, setPaymentType] = useState<'cash' | 'gpay_sapan' | 'gpay_yash'>('cash');
 
   // Initialize state when modal opens
   useEffect(() => {
@@ -49,6 +50,13 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
       
       // Pre-fill with original amount
       setConfirmedAmount(deliveryRecord.amount.toString());
+      
+      // Set payment type from record if available
+      if (deliveryRecord.payment_type) {
+        setPaymentType(deliveryRecord.payment_type);
+      } else {
+        setPaymentType('cash'); // Default to cash
+      }
       
       // If read-only mode, we might want to load existing photos
       // This will be implemented when photo loading is added
@@ -180,6 +188,7 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
         bilty_photo: biltyPhoto!,
         signature_photo: signaturePhoto!,
         confirmed_at: new Date().toISOString(),
+        payment_type: paymentType,
       };
 
       // Call onConfirm prop with confirmation data
@@ -278,6 +287,78 @@ console.log('PaymentConfirmationPopup RENDER - visible:', visible, '| record:', 
                 placeholderTextColor={Colors.placeholder}
                 editable={!readOnly && !confirming}
               />
+            </View>
+
+            {/* Payment Type Selection */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Payment Type</Text>
+              <View style={styles.paymentTypeContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.paymentTypeButton,
+                    paymentType === 'cash' && styles.paymentTypeButtonActive,
+                    readOnly && styles.buttonDisabled,
+                  ]}
+                  onPress={() => !readOnly && !confirming && setPaymentType('cash')}
+                  disabled={readOnly || confirming}
+                >
+                  <Icon 
+                    name="cash-outline" 
+                    size={24} 
+                    color={paymentType === 'cash' ? Colors.surface : Colors.textSecondary} 
+                  />
+                  <Text style={[
+                    styles.paymentTypeText,
+                    paymentType === 'cash' && styles.paymentTypeTextActive,
+                  ]}>
+                    Cash
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.paymentTypeButton,
+                    paymentType === 'gpay_sapan' && styles.paymentTypeButtonActive,
+                    readOnly && styles.buttonDisabled,
+                  ]}
+                  onPress={() => !readOnly && !confirming && setPaymentType('gpay_sapan')}
+                  disabled={readOnly || confirming}
+                >
+                  <Icon 
+                    name="phone-portrait-outline" 
+                    size={24} 
+                    color={paymentType === 'gpay_sapan' ? Colors.surface : Colors.textSecondary} 
+                  />
+                  <Text style={[
+                    styles.paymentTypeText,
+                    paymentType === 'gpay_sapan' && styles.paymentTypeTextActive,
+                  ]}>
+                    GPay{'\n'}(Sapan)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.paymentTypeButton,
+                    paymentType === 'gpay_yash' && styles.paymentTypeButtonActive,
+                    readOnly && styles.buttonDisabled,
+                  ]}
+                  onPress={() => !readOnly && !confirming && setPaymentType('gpay_yash')}
+                  disabled={readOnly || confirming}
+                >
+                  <Icon 
+                    name="phone-portrait-outline" 
+                    size={24} 
+                    color={paymentType === 'gpay_yash' ? Colors.surface : Colors.textSecondary} 
+                  />
+                  <Text style={[
+                    styles.paymentTypeText,
+                    paymentType === 'gpay_yash' && styles.paymentTypeTextActive,
+                  ]}>
+                    GPay{'\n'}(Yash Roadlines)
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Bilty Photo Upload Section */}
@@ -514,6 +595,37 @@ modalContainer: {
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  paymentTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  paymentTypeButton: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 80,
+  },
+  paymentTypeButtonActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  paymentTypeText: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  paymentTypeTextActive: {
+    color: Colors.surface,
   },
 });
 
