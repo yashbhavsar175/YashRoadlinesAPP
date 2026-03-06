@@ -5700,30 +5700,47 @@ export const createLoginRequest = async (
   userName: string
 ): Promise<string | null> => {
   try {
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
-
+    console.log('🔄 Creating login request with:', { userId, email, userName });
+    
+    // Use database function to bypass RLS issues
     const { data, error } = await supabase
-      .from('login_requests')
-      .insert([{
-        user_id: userId,
-        user_email: email,
-        user_name: userName,
-        status: 'pending',
-        expires_at: expiresAt,
-      }])
-      .select()
-      .single();
+      .rpc('create_login_request', {
+        p_user_id: userId,
+        p_user_email: email,
+        p_user_name: userName,
+      });
 
-    if (error) throw error;
+    console.log('📊 RPC Response:', { data, error });
 
-    console.log('✅ Login request created:', data.id);
+    if (error) {
+      console.error('❌ RPC Error details:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      throw error;
+    }
+
+    if (!data) {
+      console.error('❌ No data returned from RPC');
+      throw new Error('No request ID returned');
+    }
+
+    console.log('✅ Login request created:', data);
     
     // Send notification to all admins
     await notifyAdminsOfLoginRequest(email, userName);
 
-    return data.id;
-  } catch (error) {
-    console.error('Error creating login request:', error);
+    return data;
+  } catch (error: any) {
+    console.error('❌ Error creating login request:', {
+      message: error?.message,
+      details: error?.details,
+      hint: error?.hint,
+      code: error?.code,
+      stack: error?.stack,
+    });
     return null;
   }
 };

@@ -10,6 +10,7 @@ import ReactNativeBiometrics from 'react-native-biometrics';
 import { listAllProfiles, listProfilesExceptCurrent, setUserActive, updateUserType, createProfileIfMissing, getProfile, UserProfile, savePerson, getPersons, Person, saveUppadJamaEntry, syncAllDataFixed, getOffices } from '../data/Storage'; // Added getOffices
 import Dropdown from '../components/Dropdown'; // Added Dropdown import
 import { migrateAllDataToPremDarwaja, checkMigrationNeeded } from '../utils/migrateDataToOffice';
+import { useOffice } from '../context/OfficeContext';
 
 type AdminPanelScreenNavigationProp = NavigationProp<RootStackParamList, 'AdminPanel'>;
 
@@ -19,6 +20,7 @@ interface AdminPanelScreenProps {
 
 function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Element {
   const { navigate, goBack } = navigation;
+  const { currentOffice } = useOffice();
   const [newUsername, setNewUsername] = useState<string>('');
   const [newUserPassword, setNewUserPassword] = useState<string>('');
   const [newUserType, setNewUserType] = useState<'normal' | 'majur'>('normal');
@@ -310,6 +312,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
           amount: numUppad,
           entry_type: 'debit',
           description: 'Admin Panel Uppad Entry', // Default description
+          office_id: currentOffice?.id, // Add office_id
         });
       } else if (hasJama) {
         success = await saveUppadJamaEntry({
@@ -317,12 +320,14 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
           amount: numJama,
           entry_type: 'credit',
           description: 'Admin Panel Jama Entry', // Default description
+          office_id: currentOffice?.id, // Add office_id
         });
         console.log('AdminPanel - Jama entry saved:', {
           person_name: selectedPersonName,
           amount: numJama,
           entry_type: 'credit',
           description: 'Admin Panel Jama Entry',
+          office_id: currentOffice?.id,
           success: success
         });
       }
@@ -1005,8 +1010,9 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                     } else {
                       let statusText = `📊 Found ${total} records that need migration:\n\n`;
                       Object.entries(details).forEach(([table, count]) => {
-                        if (count > 0) {
-                          statusText += `• ${table}: ${count} records\n`;
+                        const recordCount = count as number;
+                        if (recordCount > 0) {
+                          statusText += `• ${table}: ${recordCount} records\n`;
                         }
                       });
                       setMigrationStatus(statusText);

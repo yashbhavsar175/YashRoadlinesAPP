@@ -245,11 +245,10 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         return itemDate >= sevenDaysAgo;
       });
       
-      // Filter uppad/jama entries from the last 7 days (exclude admin panel entries)
+      // Filter uppad/jama entries from the last 7 days
       const recentUppadJama = allUppadJama.filter(item => {
         const itemDate = new Date(item.entry_date);
-        return itemDate >= sevenDaysAgo && 
-               (!item.description || !item.description.includes('Admin Panel'));
+        return itemDate >= sevenDaysAgo;
       });
       
       // Convert majuri entries to combined format
@@ -1641,30 +1640,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 </View>
               </View>
             )}
-
-            <TouchableOpacity 
-              onPress={onSyncStatusPress} 
-              style={styles.syncStatusButton}
-              activeOpacity={0.8}
-            >
-              <Icon 
-                name={syncStatus.isOnline ? 'cloud-done-outline' : 'cloud-offline-outline'} 
-                size={20} 
-                color={syncStatus.isOnline ? BWColors.primary : BWColors.textSecondary} 
-              />
-              <Text style={[
-                styles.syncStatusText,
-                { color: syncStatus.isOnline ? BWColors.primary : BWColors.textSecondary }
-              ]}>
-                {syncStatus.isOnline ? 'Online' : 'Offline'}
-              </Text>
-              {syncStatus.pendingOperations > 0 && (
-                <View style={styles.pendingIndicator}>
-                  <Icon name="sync-outline" size={14} color={BWColors.textSecondary} />
-                  <Text style={styles.pendingText}>{syncStatus.pendingOperations} pending</Text>
-                </View>
-              )}
-            </TouchableOpacity>
           </ScrollView>
 
           {/* Profile Menu Modal */}

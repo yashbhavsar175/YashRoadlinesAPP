@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Modal, Text } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Modal, Text, ScrollView } from 'react-native';
 
 
 interface DropdownOption {
@@ -33,20 +33,26 @@ const Dropdown: React.FC<DropdownProps> = ({ options, selectedValue, onValueChan
         visible={visible}
         onRequestClose={closeMenu}
       >
-        <TouchableOpacity style={styles.overlay} onPress={closeMenu}>
+        <TouchableOpacity style={styles.overlay} onPress={closeMenu} activeOpacity={1}>
           <View style={styles.dropdown}>
-            {options.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={styles.menuItem}
-                onPress={() => {
-                  onValueChange(option.value);
-                  closeMenu();
-                }}
-              >
-                <Text style={styles.menuItemText}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
+            <ScrollView 
+              style={styles.scrollView}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              {options.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={styles.menuItem}
+                  onPress={() => {
+                    onValueChange(option.value);
+                    closeMenu();
+                  }}
+                >
+                  <Text style={styles.menuItemText}>{option.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -83,6 +89,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     maxHeight: '50%',
     overflow: 'hidden',
+  },
+  scrollView: {
+    flexGrow: 0,
   },
   menuItem: {
     padding: 15,
