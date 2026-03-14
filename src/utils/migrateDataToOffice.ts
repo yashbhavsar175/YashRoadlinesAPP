@@ -79,7 +79,7 @@ export const migrateAllDataToPremDarwaja = async () => {
 
     return {
       success: true,
-      officeId: premDarwajaId,
+      officeId: premDarawajaId,
       officeName: office.name,
       totalUpdated,
       details: results,

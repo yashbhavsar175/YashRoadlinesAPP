@@ -133,6 +133,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
   const [includePaid, setIncludePaid] = useState(true);
   const [includeMajuri, setIncludeMajuri] = useState(true);
   const [includeGeneral, setIncludeGeneral] = useState(true);
+  const [includeDelivery, setIncludeDelivery] = useState(true);
   const [includeDrivers, setIncludeDrivers] = useState(true);
   const [includeFuel, setIncludeFuel] = useState(true);
 
@@ -255,6 +256,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     let paid: AgencyPayment[] = [];
     let majuri: AgencyMajuri[] = [];
     let agencyGeneral: AgencyEntry[] = [];
+    let mumbaiDeliveryEntries: AgencyEntry[] = [];
     let generalEntries: GeneralEntry[] = [];
     let driverTransactions: DriverTransaction[] = [];
     let fuelEntries: TruckFuelEntry[] = [];
@@ -272,7 +274,41 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     if (reportType === 'agency' && agencyName) {
       paid = paid.filter(t => t.agency_name === agencyName && includePaid);
       majuri = majuri.filter(t => t.agency_name === agencyName && includeMajuri);
-      agencyGeneral = agencyGeneral.filter(t => t.agency_name === agencyName && includeGeneral);
+      
+      // Separate Mumbai Delivery entries from general entries
+      const isMumbaiAgency = agencyName.toLowerCase().includes('mumbai');
+      
+      console.log('🔍 Agency Name:', agencyName);
+      console.log('🔍 Is Mumbai Agency:', isMumbaiAgency);
+      console.log('🔍 Include Delivery:', includeDelivery);
+      console.log('🔍 Total agency_general entries:', agencyGeneral.length);
+      
+      if (isMumbaiAgency) {
+        // Filter agency general entries for Mumbai
+        const allAgencyGeneral = agencyGeneral.filter(t => t.agency_name === agencyName);
+        console.log('🔍 All Agency General for Mumbai:', allAgencyGeneral.length);
+        console.log('🔍 Sample entry:', allAgencyGeneral[0]);
+        
+        // Separate Mumbai Delivery entries (confirmed deliveries)
+        mumbaiDeliveryEntries = allAgencyGeneral.filter(t => 
+          t.confirmation_status === 'confirmed' && 
+          t.billty_no && 
+          includeDelivery
+        );
+        console.log('🚚 Mumbai Delivery Entries:', mumbaiDeliveryEntries.length);
+        console.log('🚚 Mumbai Delivery Data:', mumbaiDeliveryEntries);
+        
+        // Normal general entries (exclude Mumbai Delivery)
+        agencyGeneral = allAgencyGeneral.filter(t => 
+          !(t.confirmation_status === 'confirmed' && t.billty_no) && 
+          includeGeneral
+        );
+        console.log('📋 Normal General Entries:', agencyGeneral.length);
+      } else {
+        // For non-Mumbai agencies, just filter normally
+        agencyGeneral = agencyGeneral.filter(t => t.agency_name === agencyName && includeGeneral);
+      }
+      
       generalEntries = [];
       driverTransactions = [];
       fuelEntries = [];
@@ -286,6 +322,9 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     }
 
     // Calculate totals
+    console.log('📊 Before HTML generation - Mumbai Delivery Entries:', mumbaiDeliveryEntries?.length || 0);
+    console.log('📊 Mumbai Delivery Data:', mumbaiDeliveryEntries || []);
+    
     const totalPaid = paid.reduce((sum, item) => sum + item.amount, 0);
     const totalMajuri = majuri.reduce((sum, item) => sum + item.amount, 0);
     const totalGeneralCredit = generalEntries.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
@@ -412,6 +451,34 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                               <td>${item.description}</td>
                               <td>${item.entry_type.toUpperCase()}</td>
                               <td class="amount ${item.entry_type === 'credit' ? 'credit' : 'debit'}">₹${item.amount.toLocaleString()}</td>
+                          </tr>
+                      `).join('')}
+                  </tbody>
+              </table>
+          </div>
+          ` : ''}
+
+          ${mumbaiDeliveryEntries.length > 0 ? `
+          <div class="section">
+              <h3 class="section-title">🚚 Mumbai Delivery</h3>
+              <table class="table">
+                  <thead>
+                      <tr>
+                          <th>Date</th>
+                          <th>Billty No</th>
+                          <th>Consignee</th>
+                          <th>Item</th>
+                          <th class="amount">Amount (₹)</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      ${mumbaiDeliveryEntries.map(item => `
+                          <tr>
+                              <td>${formatDateTime(item.entry_date)}</td>
+                              <td>${item.billty_no || 'N/A'}</td>
+                              <td>${item.consignee_name || 'N/A'}</td>
+                              <td>${item.item_description || item.description || 'N/A'}</td>
+                              <td class="amount credit">₹${item.amount.toLocaleString()}</td>
                           </tr>
                       `).join('')}
                   </tbody>
@@ -689,7 +756,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       Alert.alert('Selection Required', 'Please select an agency.');
       return;
     }
-    const isAnySelected = (reportType === 'agency' && (includePaid || includeMajuri || includeGeneral)) ||
+    const isAnySelected = (reportType === 'agency' && (includePaid || includeMajuri || includeGeneral || includeDelivery)) ||
       (reportType === 'other' && (includeGeneral || includeDrivers || includeFuel));
 
     if (!isAnySelected) {
@@ -715,6 +782,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       let paid: AgencyPayment[] = [];
       let majuri: AgencyMajuri[] = [];
       let agencyGeneral: AgencyEntry[] = [];
+      let mumbaiDeliveryEntries: AgencyEntry[] = [];
       let generalEntries: GeneralEntry[] = [];
       let driverTransactions: DriverTransaction[] = [];
       let fuelEntries: TruckFuelEntry[] = [];
@@ -732,7 +800,31 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       if (reportType === 'agency' && selectedAgency) {
         paid = paid.filter(t => t.agency_name === selectedAgency && includePaid);
         majuri = majuri.filter(t => t.agency_name === selectedAgency && includeMajuri);
-        agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
+        
+        // Separate Mumbai Delivery entries from general entries
+        const isMumbaiAgency = selectedAgency.toLowerCase().includes('mumbai');
+        
+        if (isMumbaiAgency) {
+          // Filter agency general entries for Mumbai
+          const allAgencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency);
+          
+          // Separate Mumbai Delivery entries (confirmed deliveries)
+          mumbaiDeliveryEntries = allAgencyGeneral.filter(t => 
+            t.confirmation_status === 'confirmed' && 
+            t.billty_no && 
+            includeDelivery
+          );
+          
+          // Normal general entries (exclude Mumbai Delivery)
+          agencyGeneral = allAgencyGeneral.filter(t => 
+            !(t.confirmation_status === 'confirmed' && t.billty_no) && 
+            includeGeneral
+          );
+        } else {
+          // For non-Mumbai agencies, just filter normally
+          agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
+        }
+        
         generalEntries = [];
         driverTransactions = [];
         fuelEntries = [];
@@ -957,6 +1049,34 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                                   <td>${formatDateTime(item.majuri_date)}</td>
                                   <td>${item.description || 'N/A'}</td>
                                   <td class="amount debit">₹${item.amount.toLocaleString()}</td>
+                              </tr>
+                          `).join('')}
+                      </tbody>
+                  </table>
+              </div>
+              ` : ''}
+
+              ${mumbaiDeliveryEntries.length > 0 ? `
+              <div class="section">
+                  <h3 class="section-title">🚚 Mumbai Delivery</h3>
+                  <table class="table">
+                      <thead>
+                          <tr>
+                              <th>Date</th>
+                              <th>Billty No</th>
+                              <th>Consignee</th>
+                              <th>Item</th>
+                              <th class="amount">Amount (₹)</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          ${mumbaiDeliveryEntries.map(item => `
+                              <tr>
+                                  <td>${formatDateTime(item.entry_date)}</td>
+                                  <td>${item.billty_no || 'N/A'}</td>
+                                  <td>${item.consignee_name || 'N/A'}</td>
+                                  <td>${item.item_description || item.description || 'N/A'}</td>
+                                  <td class="amount credit">₹${item.amount.toLocaleString()}</td>
                               </tr>
                           `).join('')}
                       </tbody>
@@ -1228,7 +1348,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       Alert.alert('Selection Required', 'Please select an agency.');
       return;
     }
-    const isAnySelected = (reportType === 'agency' && (includePaid || includeMajuri || includeGeneral)) ||
+    const isAnySelected = (reportType === 'agency' && (includePaid || includeMajuri || includeGeneral || includeDelivery)) ||
       (reportType === 'other' && (includeGeneral || includeDrivers || includeFuel));
 
     if (!isAnySelected) {
@@ -1837,6 +1957,17 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                 />
                 <Text style={styles.checkBoxText}>General Entries (Agency)</Text>
               </View>
+              {selectedAgency?.toLowerCase().includes('mumbai') && (
+                <View style={styles.checkboxWrapper}>
+                  <CheckBox
+                    value={includeDelivery}
+                    onValueChange={setIncludeDelivery}
+                    tintColors={{ true: Colors.primary, false: Colors.textSecondary }}
+                    disabled={loading}
+                  />
+                  <Text style={styles.checkBoxText}>Mumbai Delivery</Text>
+                </View>
+              )}
             </View>
           ) : (
             <View style={styles.checkboxGroup}>
@@ -1875,7 +2006,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
           <TouchableOpacity
             onPress={previewPdf}
             disabled={loading || (reportType === 'agency' && !selectedAgency) ||
-              (reportType === 'agency' && (!includePaid && !includeMajuri && !includeGeneral)) ||
+              (reportType === 'agency' && (!includePaid && !includeMajuri && !includeGeneral && !includeDelivery)) ||
               (reportType === 'other' && (!includeGeneral && !includeDrivers && !includeFuel))}
             style={[
               GlobalStyles.buttonPrimary,

@@ -49,6 +49,7 @@ import MumbaiDeliveryEntryScreen from './src/screens/MumbaiDeliveryEntryScreen';
 import PaymentConfirmationScreen from './src/screens/PaymentConfirmationScreen';
 import MumbaiDeliveryNavigator from './src/navigation/MumbaiDeliveryNavigator';
 import BackdatedEntryScreen from './src/screens/BackdatedEntryScreen';
+import DailyEntriesScreen from './src/screens/DailyEntriesScreen';
 import NotificationTestScreen from './src/screens/NotificationTestScreen';
 import ComprehensiveNotificationTest from './src/screens/ComprehensiveNotificationTest';
 import LeaveCashSetupScreen from './src/screens/LeaveCashSetupScreen';
@@ -106,6 +107,7 @@ type RootStackParamList = {
   CashBalance: undefined;
   MumbaiDelivery: undefined;
   BackdatedEntry: undefined;
+  DailyEntries: undefined;
   NotificationTest: undefined;
   ComprehensiveNotificationTest: undefined;
   LeaveCashSetupScreen: undefined;
@@ -1096,6 +1098,7 @@ function App(): React.JSX.Element {
                   options={{ title: 'Confirm Payment' }} 
                 />
                 <Stack.Screen name="BackdatedEntry" component={BackdatedEntryScreen} options={{ title: 'Backdated Entry' }} />
+                <Stack.Screen name="DailyEntries" component={DailyEntriesScreen} options={{ title: 'Daily Entries' }} />
                 <Stack.Screen name="NotificationTest" component={NotificationTestScreen} />
                 <Stack.Screen name="ComprehensiveNotificationTest" component={ComprehensiveNotificationTest} options={{ title: 'Complete Notification Test' }} />
                 <Stack.Screen name="LeaveCashSetupScreen" component={LeaveCashSetupScreen} options={{ title: 'Setup Cash Amount' }} />

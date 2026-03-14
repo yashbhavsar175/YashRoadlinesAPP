@@ -15,7 +15,7 @@ class AuthLogoutService {
   private currentUserId: string | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: number | null = null;
   private baseReconnectDelay = 1000;
   private maxReconnectDelay = 30000;
 
@@ -38,7 +38,7 @@ class AuthLogoutService {
         this.startListening();
       }
     } catch (error) {
-      console.error('🔴 AuthLogoutService: Failed to initialize:', error);
+      // Silent error handling
     }
   }
 
@@ -46,11 +46,8 @@ class AuthLogoutService {
 
   private startListening() {
     if (this.isListening || this.channel) {
-      console.log('⚠️ AuthLogoutService: Already listening, skipping');
       return;
     }
-
-    console.log('🔐 AuthLogoutService: Starting logout notification listener');
 
     // Listen for auth events that affect current user
     this.channel = supabase
@@ -64,28 +61,23 @@ class AuthLogoutService {
           filter: `user_id=eq.${this.currentUserId}`,
         },
         (payload) => {
-          console.log('🔐 AuthLogoutService: Received auth event:', payload);
           this.handleAuthEvent(payload);
         }
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           this.isListening = true;
-          this.reconnectAttempts = 0; // Reset on successful connection
-          console.log('✅ AuthLogoutService: Subscription active');
+          this.reconnectAttempts = 0; // Reset on successful connection          // console.log('✅ AuthLogoutService: Subscription active');
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ AuthLogoutService: Subscription error');
           this.isListening = false;
-          this.handleReconnection();
+          this.handleReconnection(); // console.log('⚠️ AuthLogoutService: Channel error');
         } else if (status === 'CLOSED') {
-          console.warn('⚠️ AuthLogoutService: Channel closed');
           this.isListening = false;
           // Only reconnect if we didn't manually close it
           if (this.channel) {
             this.handleReconnection();
           }
         } else if (status === 'TIMED_OUT') {
-          console.warn('⏱️ AuthLogoutService: Subscription timed out');
           this.isListening = false;
           this.handleReconnection();
         }
@@ -99,7 +91,6 @@ class AuthLogoutService {
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('❌ Max reconnection attempts reached for AuthLogoutService. Stopping reconnection.');
       return;
     }
 
@@ -112,8 +103,7 @@ class AuthLogoutService {
     );
     const jitter = Math.random() * 1000;
     const delay = exponentialDelay + jitter;
-
-    console.log(`🔄 Reconnecting AuthLogoutService ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${Math.round(delay)}ms...`);
+    // console.log(`🔄 Reconnecting AuthLogoutService ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${Math.round(delay)}ms...`);
 
     this.reconnectTimeout = setTimeout(async () => {
       try {
@@ -126,13 +116,11 @@ class AuthLogoutService {
         // Verify user is still authenticated
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || user.id !== this.currentUserId) {
-          console.error('❌ User no longer authenticated, stopping reconnection');
           return;
         }
         
         this.startListening();
       } catch (error) {
-        console.error('❌ Reconnection attempt failed:', error);
         // Only retry if we haven't hit max attempts
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.handleReconnection();
@@ -145,8 +133,6 @@ class AuthLogoutService {
     // Handle auth events from database
     const eventData = payload.new;
     if (eventData && eventData.user_id === this.currentUserId) {
-      console.log('🔐 AuthLogoutService: Processing auth event:', eventData);
-      
       if (eventData.event_type === 'forced_logout') {
         const details = eventData.details || {};
         let reason = 'You have been logged out by an administrator';
@@ -162,8 +148,6 @@ class AuthLogoutService {
 
   private handleLogoutNotification(notification: LogoutNotification) {
     if (notification.user_id === this.currentUserId) {
-      console.log('🔐 AuthLogoutService: Force logout triggered for current user');
-      
       let reason = 'You have been logged out';
       if (notification.action === 'password_changed') {
         reason = 'Your password has been changed by an administrator. Please log in with your new password.';
@@ -175,8 +159,6 @@ class AuthLogoutService {
 
   private async forceLogout(reason: string) {
     try {
-      console.log('🔐 AuthLogoutService: Forcing logout -', reason);
-
       // Show alert to user
       Alert.alert(
         'Session Ended',
@@ -199,7 +181,7 @@ class AuthLogoutService {
       );
 
     } catch (error) {
-      console.error('🔴 AuthLogoutService: Error during force logout:', error);
+      // Silent error handling
     }
   }
 
@@ -219,16 +201,12 @@ class AuthLogoutService {
           event: 'user_logout',
           payload: notification,
         });
-
-      console.log('🔐 AuthLogoutService: Logout notification sent for user:', targetUserId);
     } catch (error) {
-      console.error('🔴 AuthLogoutService: Failed to send logout notification:', error);
+      // Silent error handling
     }
   }
 
   stop() {
-    console.log('🔐 AuthLogoutService: Stopping listener...');
-    
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -243,7 +221,6 @@ class AuthLogoutService {
     this.isListening = false;
     this.currentUserId = null;
     this.reconnectAttempts = 0;
-    console.log('✅ AuthLogoutService: Stopped listening');
   }
 }
 

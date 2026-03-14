@@ -106,6 +106,7 @@ export interface GeneralEntry {
   office_id?: string;
   office_name?: string;
   created_by?: string;
+  metadata?: string; // Add metadata field
   created_at: string;
   updated_at: string;
 }
@@ -241,12 +242,26 @@ export interface CashRecord {
   updated_at: string;
 }
 
+export interface DailyEntry {
+  id: string;
+  user_id: string;
+  office_id?: string;
+  entry_date: string;
+  entries: Record<string, number>; // categoryId -> amount
+  total_credit: number;
+  total_debit: number;
+  net_profit: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // =====================================================
 // 2. OFFLINE STORAGE KEYS
 // =====================================================
 export const OFFLINE_KEYS = {
   AGENCIES: 'offline_agencies',
   AGENCY_PAYMENTS: 'offline_agency_payments',
+  DAILY_ENTRIES: 'offline_daily_entries',
   AGENCY_MAJURI: 'offline_agency_majuri',
   DRIVER_TRANSACTIONS: 'offline_driver_transactions',
   TRUCK_FUEL: 'offline_truck_fuel',
@@ -3589,6 +3604,7 @@ export interface GeneralEntryInput {
   description?: string;
   entry_date?: string;
   agency_name?: string;
+  metadata?: string; // Add metadata field
   office_id?: string;
 }
 
@@ -3597,6 +3613,15 @@ export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolea
     const online = await isOnline();
     const isUpdate = !!entry.id;
     const userId = (await supabase.auth.getUser()).data.user?.id;
+    
+    console.log('💾 saveGeneralEntry called:', {
+      isUpdate,
+      online,
+      entry_date: entry.entry_date,
+      amount: entry.amount,
+      entry_type: entry.entry_type,
+      description: entry.description
+    });
     
     const entryData: any = {
       ...(isUpdate && { id: entry.id }),
@@ -3607,6 +3632,7 @@ export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolea
       entry_date: entry.entry_date || new Date().toISOString(),
       office_id: entry.office_id || null,
       updated_at: new Date().toISOString(),
+      metadata: entry.metadata || null, // Include metadata
       ...(!isUpdate && { 
         created_by: userId,
         created_at: new Date().toISOString()
@@ -3614,7 +3640,9 @@ export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolea
     };
 
     // Create a sanitized payload for Supabase (exclude columns not present in schema like `agency_name`)
-    const { agency_name: _omitAgencyName, ...supabaseData } = entryData;
+    const { agency_name: _omitAgencyName, ...supabaseData } = entryData; // metadata is now part of entryData
+
+    console.log('💾 Supabase payload:', supabaseData);
 
     if (online) {
       let data: any, error;
@@ -3636,9 +3664,16 @@ export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolea
           .single();
         data = inserted;
         error = insertError;
+        
+        console.log('💾 Insert result:', { data: inserted, error: insertError });
       }
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        throw error;
+      }
+      
+      console.log('✅ General entry saved to Supabase:', data);
       
       // Update local storage, preserving agency_name locally for UI usage
       const currentData = await AsyncStorage.getItem(OFFLINE_KEYS.GENERAL_ENTRIES);
@@ -4236,29 +4271,86 @@ export const confirmDeliveryPayment = async (
     };
 
     if (online) {
-      // Save photos first and get their IDs
+      // First, upload photos to Supabase storage
+      console.log('📤 Uploading bilty photo to Supabase storage...');
+      const biltyStoragePath = `${confirmation.delivery_record_id}/bilty_${Date.now()}.jpg`;
+      
+      // Convert photo URI to blob for upload
+      const biltyPhotoUri = confirmation.bilty_photo.uri.replace('file://', '');
+      const RNFS = await import('react-native-fs');
+      const biltyBase64 = await RNFS.default.readFile(biltyPhotoUri, 'base64');
+      const biltyBytes = Uint8Array.from(atob(biltyBase64), c => c.charCodeAt(0));
+      
+      const { data: biltyUploadData, error: biltyUploadError } = await supabase.storage
+        .from('delivery-photos')
+        .upload(biltyStoragePath, biltyBytes, {
+          contentType: confirmation.bilty_photo.mimeType,
+          upsert: false,
+        });
+      
+      if (biltyUploadError) {
+        console.error('❌ Bilty photo upload error:', biltyUploadError);
+        throw new Error('Failed to upload bilty photo');
+      }
+      
+      console.log('✅ Bilty photo uploaded:', biltyUploadData.path);
+      
+      // Get public URL for bilty photo
+      const { data: { publicUrl: biltyPublicUrl } } = supabase.storage
+        .from('delivery-photos')
+        .getPublicUrl(biltyUploadData.path);
+      
+      console.log('📤 Uploading signature photo to Supabase storage...');
+      const signatureStoragePath = `${confirmation.delivery_record_id}/signature_${Date.now()}.jpg`;
+      
+      const signaturePhotoUri = confirmation.signature_photo.uri.replace('file://', '');
+      const signatureBase64 = await RNFS.default.readFile(signaturePhotoUri, 'base64');
+      const signatureBytes = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
+      
+      const { data: signatureUploadData, error: signatureUploadError } = await supabase.storage
+        .from('delivery-photos')
+        .upload(signatureStoragePath, signatureBytes, {
+          contentType: confirmation.signature_photo.mimeType,
+          upsert: false,
+        });
+      
+      if (signatureUploadError) {
+        console.error('❌ Signature photo upload error:', signatureUploadError);
+        throw new Error('Failed to upload signature photo');
+      }
+      
+      console.log('✅ Signature photo uploaded:', signatureUploadData.path);
+      
+      // Get public URL for signature photo
+      const { data: { publicUrl: signaturePublicUrl } } = supabase.storage
+        .from('delivery-photos')
+        .getPublicUrl(signatureUploadData.path);
+      
+      // Now save photo records with storage paths
       const biltyPhotoId = await savePhotoRecord({
         delivery_record_id: confirmation.delivery_record_id,
         photo_type: 'bilty',
-        file_path: confirmation.bilty_photo.uri,
+        file_path: biltyUploadData.path, // Use storage path, not local path
         file_name: confirmation.bilty_photo.fileName,
         file_size: confirmation.bilty_photo.fileSize,
         mime_type: confirmation.bilty_photo.mimeType,
-        uploaded: false,
+        uploaded: true, // Mark as uploaded
+        upload_url: biltyPublicUrl, // Save public URL
         created_by: currentUser?.id,
-        office_id: deliveryRecord.office_id, // Inherit office_id from delivery record - Validates: Requirement 7.4
+        office_id: deliveryRecord.office_id,
       });
 
       const signaturePhotoId = await savePhotoRecord({
         delivery_record_id: confirmation.delivery_record_id,
         photo_type: 'signature',
-        file_path: confirmation.signature_photo.uri,
+        file_path: signatureUploadData.path, // Use storage path, not local path
         file_name: confirmation.signature_photo.fileName,
         file_size: confirmation.signature_photo.fileSize,
         mime_type: confirmation.signature_photo.mimeType,
-        uploaded: false,
+        uploaded: true, // Mark as uploaded
+        upload_url: signaturePublicUrl, // Save public URL
         created_by: currentUser?.id,
-        office_id: deliveryRecord.office_id, // Inherit office_id from delivery record - Validates: Requirement 7.4
+        office_id: deliveryRecord.office_id,
       });
 
       // Update delivery record with confirmation data and photo IDs
@@ -4843,13 +4935,28 @@ export const getAllTransactionsForDate = async (targetDate: Date, officeId?: str
     });
     
     if (online) {
-      const startOfDay = new Date(targetDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(targetDate);
-      endOfDay.setHours(23, 59, 59, 999);
+      // Create date strings in YYYY-MM-DD format to avoid timezone issues
+      const year = targetDate.getFullYear();
+      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+      const day = String(targetDate.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${day}`;
       
-      const startISO = startOfDay.toISOString();
-      const endISO = endOfDay.toISOString();
+      // Query for the entire day in UTC (00:00 to 23:59)
+     // IST offset = 330 minutes
+const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+const startOfDayIST = new Date(
+  Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()) - IST_OFFSET
+);
+const endOfDayIST = new Date(startOfDayIST.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+const startISO = startOfDayIST.toISOString();
+const endISO = endOfDayIST.toISOString();
+      
+      console.log('🔍 Query date range:', {
+        dateString,
+        startISO,
+        endISO
+      });
       
       // Build queries with optional office filter
       const buildQuery = (table: string, dateField: string) => {
@@ -4885,6 +4992,19 @@ export const getAllTransactionsForDate = async (targetDate: Date, officeId?: str
         agencyEntries: agencyEntries.data?.length || 0,
         uppadJamaEntries: uppadJamaEntries.data?.length || 0,
       });
+      
+      // Debug general entries specifically
+      if (generalEntries.data && generalEntries.data.length > 0) {
+        console.log('📝 General Entries found:', generalEntries.data.length);
+        generalEntries.data.forEach((entry: any, index: number) => {
+          console.log(`   [${index}] ID: ${entry.id}, Amount: ${entry.amount}, Type: ${entry.entry_type}, Date: ${entry.entry_date}, Desc: ${entry.description}`);
+        });
+      } else {
+        console.log('⚠️ No general entries found for this date');
+        if (generalEntries.error) {
+          console.error('   Error:', generalEntries.error);
+        }
+      }
       
       // Debug agency entries specifically
       const mumbaiEntries = (agencyEntries.data || []).filter((e: any) => e.agency_name === 'Mumbai');
@@ -4988,6 +5108,10 @@ export const getMonthlyTransactions = async (month: string, year: string, office
     const startISO = startDate.toISOString();
     const endISO = endDate.toISOString();
 
+    console.log('📅 getMonthlyTransactions - Month:', month, 'Year:', year);
+    console.log('📅 Date Range:', startISO, 'to', endISO);
+    console.log('📅 Office ID:', officeId);
+
     // Build queries with optional office_id filter
     let paymentsQuery = supabase
       .from('agency_payments')
@@ -5055,6 +5179,15 @@ export const getMonthlyTransactions = async (month: string, year: string, office
       fuelQuery,
       uppadJamaQuery,
     ]);
+
+    console.log('📊 Fetched Data Counts:');
+    console.log('  - Payments:', payments.data?.length || 0);
+    console.log('  - Majuri:', majuri.data?.length || 0);
+    console.log('  - Agency Entries:', agencyGeneralEntries.data?.length || 0);
+    console.log('  - General Entries:', generalEntries.data?.length || 0);
+    console.log('  - Driver Transactions:', driverTransactions.data?.length || 0);
+    console.log('  - Fuel Entries:', fuelEntries.data?.length || 0);
+    console.log('  - Uppad/Jama:', uppadJamaEntries.data?.length || 0);
 
     // Filter out admin panel transactions and include only home screen Uppad/Jama entries
     const allTransactions = [
@@ -6102,3 +6235,277 @@ export const getPendingLoginRequests = async (): Promise<LoginRequest[]> => {
     return [];
   }
 };
+
+// =====================================================
+// 24. DAILY ENTRIES MANAGEMENT
+// =====================================================
+
+/**
+ * Save a new daily entry to Supabase
+ */
+export async function saveDailyEntry(
+  entries: Record<string, number>,
+  totalCredit: number,
+  totalDebit: number,
+  netProfit: number,
+  officeId?: string
+): Promise<DailyEntry | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('No authenticated user');
+      return null;
+    }
+
+    const entryData = {
+      user_id: user.id,
+      office_id: officeId || null,
+      entry_date: new Date().toISOString().split('T')[0],
+      entries: entries,
+      total_credit: totalCredit,
+      total_debit: totalDebit,
+      net_profit: netProfit,
+    };
+
+    const { data, error } = await supabase
+      .from('daily_entries')
+      .insert([entryData])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving daily entry:', error);
+      return null;
+    }
+
+    console.log('✅ Daily entry saved successfully:', data);
+    await logHistory('add', 'daily_entries', data.id, entryData);
+    
+    // Clear local cache
+    await AsyncStorage.removeItem(OFFLINE_KEYS.DAILY_ENTRIES);
+    
+    return data;
+  } catch (error) {
+    console.error('Error in saveDailyEntry:', error);
+    return null;
+  }
+}
+
+/**
+ * Get all daily entries for the current user
+ */
+export async function getDailyEntries(officeId?: string, forceRefresh: boolean = false): Promise<DailyEntry[]> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('No authenticated user');
+      return [];
+    }
+
+    // Try to get from cache first (unless force refresh)
+    const cacheKey = officeId 
+      ? `${OFFLINE_KEYS.DAILY_ENTRIES}_${officeId}`
+      : OFFLINE_KEYS.DAILY_ENTRIES;
+    
+    if (!forceRefresh) {
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const parsedCache = JSON.parse(cached);
+        if (parsedCache.timestamp && Date.now() - parsedCache.timestamp < 5 * 60 * 1000) {
+          console.log('📦 Returning cached daily entries');
+          return parsedCache.data;
+        }
+      }
+    } else {
+      console.log('🔄 Force refresh - skipping cache');
+    }
+
+    let query = supabase
+      .from('daily_entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('entry_date', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (officeId) {
+      query = query.eq('office_id', officeId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching daily entries:', error);
+      return [];
+    }
+
+    console.log('🔄 Fetched fresh data from database:', data?.length || 0, 'entries');
+
+    // Cache the results
+    await AsyncStorage.setItem(cacheKey, JSON.stringify({
+      data: data || [],
+      timestamp: Date.now()
+    }));
+
+    return data || [];
+  } catch (error) {
+    console.error('Error in getDailyEntries:', error);
+    return [];
+  }
+}
+
+/**
+ * Get a single daily entry by ID
+ */
+export async function getDailyEntryById(id: string): Promise<DailyEntry | null> {
+  try {
+    const { data, error } = await supabase
+      .from('daily_entries')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      console.error('Error fetching daily entry:', error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error in getDailyEntryById:', error);
+    return null;
+  }
+}
+
+/**
+ * Update an existing daily entry
+ */
+export async function updateDailyEntry(
+  id: string,
+  entries: Record<string, number>,
+  totalCredit: number,
+  totalDebit: number,
+  netProfit: number
+): Promise<boolean> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('No authenticated user');
+      return false;
+    }
+
+    const updateData = {
+      entries: entries,
+      total_credit: totalCredit,
+      total_debit: totalDebit,
+      net_profit: netProfit,
+    };
+
+    const { error } = await supabase
+      .from('daily_entries')
+      .update(updateData)
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Error updating daily entry:', error);
+      return false;
+    }
+
+    console.log('✅ Daily entry updated successfully');
+    await logHistory('update', 'daily_entries', id, updateData);
+    
+    // Clear cache
+    await AsyncStorage.removeItem(OFFLINE_KEYS.DAILY_ENTRIES);
+    
+    return true;
+  } catch (error) {
+    console.error('Error in updateDailyEntry:', error);
+    return false;
+  }
+}
+
+/**
+ * Delete a daily entry
+ */
+export async function deleteDailyEntry(id: string): Promise<boolean> {
+  try {
+    console.log('🗑️ deleteDailyEntry called with id:', id);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('❌ No authenticated user');
+      return false;
+    }
+    console.log('👤 User ID:', user.id);
+
+    const { error } = await supabase
+      .from('daily_entries')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('❌ Error deleting daily entry:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      return false;
+    }
+
+    console.log('✅ Daily entry deleted successfully');
+    await logHistory('delete', 'daily_entries', id, { deleted_at: new Date().toISOString() });
+    
+    // Clear ALL cache variations
+    await AsyncStorage.removeItem(OFFLINE_KEYS.DAILY_ENTRIES);
+    // Also clear office-specific caches
+    const keys = await AsyncStorage.getAllKeys();
+    const dailyEntriesKeys = keys.filter(key => key.startsWith(OFFLINE_KEYS.DAILY_ENTRIES));
+    if (dailyEntriesKeys.length > 0) {
+      await AsyncStorage.multiRemove(dailyEntriesKeys);
+      console.log('🧹 Cleared all daily entries caches:', dailyEntriesKeys.length);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error in deleteDailyEntry:', error);
+    return false;
+  }
+}
+
+/**
+ * Get daily entries for a specific date range
+ */
+export async function getDailyEntriesByDateRange(
+  startDate: string,
+  endDate: string,
+  officeId?: string
+): Promise<DailyEntry[]> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('No authenticated user');
+      return [];
+    }
+
+    let query = supabase
+      .from('daily_entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('entry_date', startDate)
+      .lte('entry_date', endDate)
+      .order('entry_date', { ascending: false });
+
+    if (officeId) {
+      query = query.eq('office_id', officeId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching daily entries by date range:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Error in getDailyEntriesByDateRange:', error);
+    return [];
+  }
+}

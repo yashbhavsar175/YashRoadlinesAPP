@@ -79,6 +79,12 @@ const AVAILABLE_SCREENS: ScreenPermission[] = [
     category: 'Financial Entry'
   },
   {
+    screen_name: 'DailyEntriesScreen',
+    display_name: 'Daily Entries',
+    description: 'Quick entry for daily credit/debit transactions with auto-calculation',
+    category: 'Financial Entry'
+  },
+  {
     screen_name: 'AgencyPaymentsScreen',
     display_name: 'Agency Payments',
     description: 'Manage agency payment records',

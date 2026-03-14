@@ -11,6 +11,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { GlobalStyles } from '../theme/styles';
 import { Colors } from '../theme/colors';
@@ -42,33 +43,148 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
   const [signaturePhoto, setSignaturePhoto] = useState<PhotoData | null>(null);
   const [confirming, setConfirming] = useState<boolean>(false);
   const [paymentType, setPaymentType] = useState<'cash' | 'gpay_sapan' | 'gpay_yash'>('cash');
+  const [loadingPhotos, setLoadingPhotos] = useState<boolean>(false);
+  const [biltyPhotoUrl, setBiltyPhotoUrl] = useState<string | null>(null);
+  const [signaturePhotoUrl, setSignaturePhotoUrl] = useState<string | null>(null);
+  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  
+  // Track if we've initialized for this record to prevent re-initialization
+  const initializedRecordRef = React.useRef<string | null>(null);
 
   // Initialize state when modal opens
   useEffect(() => {
     if (visible && deliveryRecord) {
-      console.log('📱 PaymentConfirmationPopup: Opening for record', deliveryRecord.id);
-      
-      // Pre-fill with original amount
-      setConfirmedAmount(deliveryRecord.amount.toString());
-      
-      // Set payment type from record if available
-      if (deliveryRecord.payment_type) {
-        setPaymentType(deliveryRecord.payment_type);
+      // Only initialize if this is a new record or we haven't initialized yet
+      if (initializedRecordRef.current !== deliveryRecord.id) {
+        console.log('📱 PaymentConfirmationPopup: Initializing for record', deliveryRecord.id);
+        initializedRecordRef.current = deliveryRecord.id;
+        
+        // Pre-fill with original amount
+        setConfirmedAmount(deliveryRecord.confirmed_amount?.toString() || deliveryRecord.amount.toString());
+        
+        // Set payment type from record if available
+        if (deliveryRecord.payment_type) {
+          setPaymentType(deliveryRecord.payment_type);
+        } else {
+          setPaymentType('cash'); // Default to cash
+        }
+        
+        // If read-only mode, load existing photos
+        if (readOnly && deliveryRecord.confirmation_status === 'confirmed') {
+          loadExistingPhotos();
+        } else {
+          // Reset photos for new confirmation
+          setBiltyPhoto(null);
+          setSignaturePhoto(null);
+          setBiltyPhotoUrl(null);
+          setSignaturePhotoUrl(null);
+        }
       } else {
-        setPaymentType('cash'); // Default to cash
-      }
-      
-      // If read-only mode, we might want to load existing photos
-      // This will be implemented when photo loading is added
-      if (readOnly) {
-        // TODO: Load existing photos from deliveryRecord
-      } else {
-        // Reset photos for new confirmation
-        setBiltyPhoto(null);
-        setSignaturePhoto(null);
+        console.log('📱 PaymentConfirmationPopup: Already initialized for this record, skipping reset');
       }
     }
   }, [visible, deliveryRecord, readOnly]);
+
+  // Load existing photos for confirmed records
+  const loadExistingPhotos = async () => {
+    try {
+      setLoadingPhotos(true);
+      console.log('📸 Loading existing photos for record:', deliveryRecord.id);
+      console.log('📸 Bilty photo ID:', deliveryRecord.bilty_photo_id);
+      console.log('📸 Signature photo ID:', deliveryRecord.signature_photo_id);
+      
+      const { supabase } = await import('../supabase');
+      
+      // Load bilty photo
+      if (deliveryRecord.bilty_photo_id) {
+        console.log('📸 Fetching bilty photo from database...');
+        const { data: biltyPhotoData, error: biltyError } = await supabase
+          .from('delivery_photos')
+          .select('file_path, upload_url')
+          .eq('id', deliveryRecord.bilty_photo_id)
+          .single();
+        
+        console.log('📸 Bilty photo query result:', { data: biltyPhotoData, error: biltyError });
+        
+        if (biltyPhotoData) {
+          // Check if photo is uploaded to storage
+          if (biltyPhotoData.upload_url) {
+            console.log('📸 Using upload_url:', biltyPhotoData.upload_url);
+            setBiltyPhotoUrl(biltyPhotoData.upload_url);
+          } else if (biltyPhotoData.file_path) {
+            // Check if file_path is a local path or storage path
+            if (biltyPhotoData.file_path.startsWith('file://') || biltyPhotoData.file_path.startsWith('/data/')) {
+              console.log('⚠️ Photo not uploaded yet, using local path:', biltyPhotoData.file_path);
+              // For local files, we can't display them in the web view
+              // Show a message that photo needs to be synced
+              setBiltyPhotoUrl(null);
+              showAlert('Photos are stored locally. Please sync to view them.');
+            } else {
+              console.log('📸 Bilty photo storage path:', biltyPhotoData.file_path);
+              // Get public URL for the photo from correct bucket
+              const { data: { publicUrl } } = supabase.storage
+                .from('delivery-photos')
+                .getPublicUrl(biltyPhotoData.file_path);
+              
+              console.log('📸 Bilty photo public URL:', publicUrl);
+              setBiltyPhotoUrl(publicUrl);
+            }
+          }
+          console.log('✅ Bilty photo processed');
+        } else {
+          console.log('⚠️ No bilty photo data found');
+        }
+      } else {
+        console.log('⚠️ No bilty_photo_id in delivery record');
+      }
+      
+      // Load signature photo
+      if (deliveryRecord.signature_photo_id) {
+        console.log('📸 Fetching signature photo from database...');
+        const { data: signaturePhotoData, error: signatureError } = await supabase
+          .from('delivery_photos')
+          .select('file_path, upload_url')
+          .eq('id', deliveryRecord.signature_photo_id)
+          .single();
+        
+        console.log('📸 Signature photo query result:', { data: signaturePhotoData, error: signatureError });
+        
+        if (signaturePhotoData) {
+          // Check if photo is uploaded to storage
+          if (signaturePhotoData.upload_url) {
+            console.log('📸 Using upload_url:', signaturePhotoData.upload_url);
+            setSignaturePhotoUrl(signaturePhotoData.upload_url);
+          } else if (signaturePhotoData.file_path) {
+            // Check if file_path is a local path or storage path
+            if (signaturePhotoData.file_path.startsWith('file://') || signaturePhotoData.file_path.startsWith('/data/')) {
+              console.log('⚠️ Photo not uploaded yet, using local path:', signaturePhotoData.file_path);
+              setSignaturePhotoUrl(null);
+            } else {
+              console.log('📸 Signature photo storage path:', signaturePhotoData.file_path);
+              // Get public URL for the photo from correct bucket
+              const { data: { publicUrl } } = supabase.storage
+                .from('delivery-photos')
+                .getPublicUrl(signaturePhotoData.file_path);
+              
+              console.log('📸 Signature photo public URL:', publicUrl);
+              setSignaturePhotoUrl(publicUrl);
+            }
+          }
+          console.log('✅ Signature photo processed');
+        } else {
+          console.log('⚠️ No signature photo data found');
+        }
+      } else {
+        console.log('⚠️ No signature_photo_id in delivery record');
+      }
+    } catch (error) {
+      console.error('❌ Error loading photos:', error);
+      showAlert('Failed to load photos');
+    } finally {
+      setLoadingPhotos(false);
+      console.log('📸 Photo loading complete');
+    }
+  };
 
   // Reset state when modal closes
   useEffect(() => {
@@ -77,7 +193,10 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
       setConfirmedAmount('');
       setBiltyPhoto(null);
       setSignaturePhoto(null);
+      setBiltyPhotoUrl(null);
+      setSignaturePhotoUrl(null);
       setConfirming(false);
+      initializedRecordRef.current = null; // Reset the ref when closing
     }
   }, [visible]);
 
@@ -364,57 +483,101 @@ console.log('PaymentConfirmationPopup RENDER - visible:', visible, '| record:', 
             {/* Bilty Photo Upload Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Bilty Photo</Text>
-              <TouchableOpacity
-                style={[
-                  styles.photoUploadBox,
-                  biltyPhoto && styles.photoUploadBoxWithPhoto,
-                  readOnly && styles.photoUploadBoxDisabled,
-                ]}
-                onPress={() => !readOnly && !confirming && handleCapturePhoto('bilty')}
-                disabled={readOnly || confirming}
-              >
-                {biltyPhoto ? (
-                  <View style={styles.photoPreview}>
-                    <Icon name="image" size={48} color={Colors.success} />
-                    <Text style={styles.photoPreviewText}>Photo captured</Text>
+              {loadingPhotos ? (
+                <View style={styles.photoLoadingBox}>
+                  <ActivityIndicator size="large" color={Colors.primary} />
+                  <Text style={styles.photoLoadingText}>Loading photo...</Text>
+                </View>
+              ) : readOnly && biltyPhotoUrl ? (
+                <TouchableOpacity
+                  style={styles.photoViewBox}
+                  onPress={() => setFullScreenImage(biltyPhotoUrl)}
+                >
+                  <Image
+                    source={{ uri: biltyPhotoUrl }}
+                    style={styles.photoImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.photoOverlay}>
+                    <Icon name="expand-outline" size={32} color={Colors.surface} />
+                    <Text style={styles.photoOverlayText}>Tap to view full size</Text>
                   </View>
-                ) : (
-                  <View style={styles.photoPlaceholder}>
-                    <Icon name="camera" size={48} color={Colors.textSecondary} />
-                    <Text style={styles.photoPlaceholderText}>
-                      {readOnly ? 'No photo' : 'Tap to capture'}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.photoUploadBox,
+                    biltyPhoto && styles.photoUploadBoxWithPhoto,
+                    readOnly && styles.photoUploadBoxDisabled,
+                  ]}
+                  onPress={() => !readOnly && !confirming && handleCapturePhoto('bilty')}
+                  disabled={readOnly || confirming}
+                >
+                  {biltyPhoto ? (
+                    <View style={styles.photoPreview}>
+                      <Icon name="image" size={48} color={Colors.success} />
+                      <Text style={styles.photoPreviewText}>Photo captured</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.photoPlaceholder}>
+                      <Icon name="camera" size={48} color={Colors.textSecondary} />
+                      <Text style={styles.photoPlaceholderText}>
+                        {readOnly ? 'No photo available' : 'Tap to capture'}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Signature Photo Upload Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Signature Photo</Text>
-              <TouchableOpacity
-                style={[
-                  styles.photoUploadBox,
-                  signaturePhoto && styles.photoUploadBoxWithPhoto,
-                  readOnly && styles.photoUploadBoxDisabled,
-                ]}
-                onPress={() => !readOnly && !confirming && handleCapturePhoto('signature')}
-                disabled={readOnly || confirming}
-              >
-                {signaturePhoto ? (
-                  <View style={styles.photoPreview}>
-                    <Icon name="image" size={48} color={Colors.success} />
-                    <Text style={styles.photoPreviewText}>Photo captured</Text>
+              {loadingPhotos ? (
+                <View style={styles.photoLoadingBox}>
+                  <ActivityIndicator size="large" color={Colors.primary} />
+                  <Text style={styles.photoLoadingText}>Loading photo...</Text>
+                </View>
+              ) : readOnly && signaturePhotoUrl ? (
+                <TouchableOpacity
+                  style={styles.photoViewBox}
+                  onPress={() => setFullScreenImage(signaturePhotoUrl)}
+                >
+                  <Image
+                    source={{ uri: signaturePhotoUrl }}
+                    style={styles.photoImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.photoOverlay}>
+                    <Icon name="expand-outline" size={32} color={Colors.surface} />
+                    <Text style={styles.photoOverlayText}>Tap to view full size</Text>
                   </View>
-                ) : (
-                  <View style={styles.photoPlaceholder}>
-                    <Icon name="camera" size={48} color={Colors.textSecondary} />
-                    <Text style={styles.photoPlaceholderText}>
-                      {readOnly ? 'No photo' : 'Tap to capture'}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.photoUploadBox,
+                    signaturePhoto && styles.photoUploadBoxWithPhoto,
+                    readOnly && styles.photoUploadBoxDisabled,
+                  ]}
+                  onPress={() => !readOnly && !confirming && handleCapturePhoto('signature')}
+                  disabled={readOnly || confirming}
+                >
+                  {signaturePhoto ? (
+                    <View style={styles.photoPreview}>
+                      <Icon name="image" size={48} color={Colors.success} />
+                      <Text style={styles.photoPreviewText}>Photo captured</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.photoPlaceholder}>
+                      <Icon name="camera" size={48} color={Colors.textSecondary} />
+                      <Text style={styles.photoPlaceholderText}>
+                        {readOnly ? 'No photo available' : 'Tap to capture'}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Action Buttons */}
@@ -454,6 +617,39 @@ console.log('PaymentConfirmationPopup RENDER - visible:', visible, '| record:', 
           </ScrollView>
         </View>
     </View>
+
+    {/* Full Screen Image Viewer */}
+    {fullScreenImage && (
+      <Modal
+        visible={true}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setFullScreenImage(null)}
+        statusBarTranslucent={true}
+      >
+        <View style={styles.fullScreenOverlay}>
+          <TouchableOpacity
+            style={styles.fullScreenCloseButton}
+            onPress={() => setFullScreenImage(null)}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          >
+            <Icon name="close-circle" size={40} color={Colors.surface} />
+          </TouchableOpacity>
+          
+          <Image
+            source={{ uri: fullScreenImage }}
+            style={styles.fullScreenImage}
+            resizeMode="contain"
+          />
+          
+          <TouchableOpacity
+            style={styles.fullScreenTapArea}
+            onPress={() => setFullScreenImage(null)}
+            activeOpacity={1}
+          />
+        </View>
+      </Modal>
+    )}
     </View>
     </Modal>
   );
@@ -626,6 +822,74 @@ modalContainer: {
   },
   paymentTypeTextActive: {
     color: Colors.surface,
+  },
+  photoLoadingBox: {
+    height: 200,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+  },
+  photoLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  photoViewBox: {
+    height: 200,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: Colors.background,
+    position: 'relative',
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoOverlayText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: Colors.surface,
+    fontWeight: '600',
+  },
+  fullScreenOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  fullScreenCloseButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 10,
+    elevation: 10,
+  },
+  fullScreenTapArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1,
   },
 });
 

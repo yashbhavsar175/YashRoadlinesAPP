@@ -27,7 +27,8 @@ import {
   saveUppadJamaEntry,
   saveAgencyPayment,
   getAgencies,
-  Agency
+  Agency,
+  clearAllCache
 } from '../data/Storage';
 import { useAlert } from '../context/AlertContext';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -255,210 +256,104 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
       const numericAmount = parseFloat(amount.trim());
       let success = false;
 
+      // Create a date string in YYYY-MM-DD format to avoid timezone issues
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${day}`;
+      
+      // Create ISO string with noon time to avoid timezone edge cases
+      const dateISO = `${dateString}T12:00:00.000Z`;
+
+      console.log('💾 Backdated Entry - Saving:');
+      console.log('   Selected Date:', date.toLocaleDateString('en-IN'));
+      console.log('   Date String:', dateString);
+      console.log('   ISO String:', dateISO);
+      console.log('   Entry Type:', selectedEntryType);
+      console.log('   Amount:', numericAmount);
+
       switch (selectedEntryType) {
         case 'majuri':
+          console.log('💾 Saving Majuri with majuri_date:', dateISO);
           success = await saveAgencyMajuri({
             agency_name: selectedAgency,
             description: description.trim(),
             amount: numericAmount,
-            majuri_date: date.toISOString(),
+            majuri_date: dateISO,
             office_id: getCurrentOfficeId() || undefined
           });
           break;
 
         case 'agency':
+          const agencyOfficeId = getCurrentOfficeId();
+          console.log('🏢 Office ID for agency entry:', agencyOfficeId);
+          console.log('💾 Saving Agency Entry with entry_date:', dateISO);
           success = await saveAgencyEntry({
             agency_name: selectedAgency,
             description: description.trim(),
             amount: numericAmount,
             entry_type: entryType,
-            entry_date: date.toISOString(),
+            entry_date: dateISO,
+            office_id: agencyOfficeId || undefined,
           });
           break;
 
         case 'mumbai_delivery':
+          const mumbaiOfficeId = getCurrentOfficeId();
+          console.log('🏢 Office ID for Mumbai delivery:', mumbaiOfficeId);
+          console.log('💾 Saving Mumbai Delivery with entry_date:', dateISO);
           success = await saveAgencyEntry({
             agency_name: 'Mumbai',
             description: description.trim(),
             amount: numericAmount,
             entry_type: 'credit' as 'credit',
-            entry_date: date.toISOString(),
+            entry_date: dateISO,
             delivery_status: 'yes' as 'yes',
+            office_id: mumbaiOfficeId || undefined,
           });
           break;
 
         case 'general':
+          const generalOfficeId = getCurrentOfficeId();
+          console.log('🏢 Office ID for general entry:', generalOfficeId);
+          console.log('💾 Saving General Entry with entry_date:', dateISO);
           success = await saveGeneralEntry({
             description: description.trim(),
             amount: numericAmount,
             entry_type: entryType,
-            entry_date: date.toISOString(),
-            charAt: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            charCodeAt: function (index: number): number {
-              throw new Error('Function not implemented.');
-            },
-            concat: function (...strings: string[]): string {
-              throw new Error('Function not implemented.');
-            },
-            indexOf: function (searchString: string, position?: number): number {
-              throw new Error('Function not implemented.');
-            },
-            lastIndexOf: function (searchString: string, position?: number): number {
-              throw new Error('Function not implemented.');
-            },
-            localeCompare: function (that: string): number {
-              throw new Error('Function not implemented.');
-            },
-            match: function (regexp: string | RegExp): RegExpMatchArray | null {
-              throw new Error('Function not implemented.');
-            },
-            replace: function (searchValue: string | RegExp, replaceValue: string): string {
-              throw new Error('Function not implemented.');
-            },
-            search: function (regexp: string | RegExp): number {
-              throw new Error('Function not implemented.');
-            },
-            slice: function (start?: number, end?: number): string {
-              throw new Error('Function not implemented.');
-            },
-            split: function (separator: string | RegExp, limit?: number): string[] {
-              throw new Error('Function not implemented.');
-            },
-            substring: function (start: number, end?: number): string {
-              throw new Error('Function not implemented.');
-            },
-            toLowerCase: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            toLocaleLowerCase: function (locales?: string | string[]): string {
-              throw new Error('Function not implemented.');
-            },
-            toUpperCase: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            toLocaleUpperCase: function (locales?: string | string[]): string {
-              throw new Error('Function not implemented.');
-            },
-            trim: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            length: 0,
-            substr: function (from: number, length?: number): string {
-              throw new Error('Function not implemented.');
-            },
-            codePointAt: function (pos: number): number | undefined {
-              throw new Error('Function not implemented.');
-            },
-            includes: function (searchString: string, position?: number): boolean {
-              throw new Error('Function not implemented.');
-            },
-            endsWith: function (searchString: string, endPosition?: number): boolean {
-              throw new Error('Function not implemented.');
-            },
-            normalize: function (form: 'NFC' | 'NFD' | 'NFKC' | 'NFKD'): string {
-              throw new Error('Function not implemented.');
-            },
-            repeat: function (count: number): string {
-              throw new Error('Function not implemented.');
-            },
-            startsWith: function (searchString: string, position?: number): boolean {
-              throw new Error('Function not implemented.');
-            },
-            anchor: function (name: string): string {
-              throw new Error('Function not implemented.');
-            },
-            big: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            blink: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            bold: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            fixed: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            fontcolor: function (color: string): string {
-              throw new Error('Function not implemented.');
-            },
-            fontsize: function (size: number): string {
-              throw new Error('Function not implemented.');
-            },
-            italics: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            link: function (url: string): string {
-              throw new Error('Function not implemented.');
-            },
-            small: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            strike: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            sub: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            sup: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            padStart: function (maxLength: number, fillString?: string): string {
-              throw new Error('Function not implemented.');
-            },
-            padEnd: function (maxLength: number, fillString?: string): string {
-              throw new Error('Function not implemented.');
-            },
-            trimEnd: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            trimStart: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            trimLeft: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            trimRight: function (): string {
-              throw new Error('Function not implemented.');
-            },
-            matchAll: function (regexp: RegExp): RegExpStringIterator<RegExpExecArray> {
-              throw new Error('Function not implemented.');
-            },
-            replaceAll: function (searchValue: string | RegExp, replaceValue: string): string {
-              throw new Error('Function not implemented.');
-            },
-            at: function (index: number): string | undefined {
-              throw new Error('Function not implemented.');
-            },
-            [Symbol.iterator]: function (): StringIterator<string> {
-              throw new Error('Function not implemented.');
-            }
-          }, {});
+            entry_date: dateISO,
+            office_id: generalOfficeId || undefined,
+          });
           break;
 
         case 'paid_section':
+          console.log('💾 Saving Agency Payment with payment_date:', dateISO);
           success = await saveAgencyPayment({
             agency_name: selectedAgency,
             amount: numericAmount,
             bill_no: billNo.trim(),
-            payment_date: date.toISOString(),
+            payment_date: dateISO,
             office_id: getCurrentOfficeId() || undefined
           });
           break;
 
         case 'uppad_jama':
+          const uppadJamaOfficeId = getCurrentOfficeId();
+          console.log('🏢 Office ID for uppad/jama:', uppadJamaOfficeId);
+          console.log('💾 Saving Uppad/Jama with entry_date:', dateISO);
           success = await saveUppadJamaEntry({
             person_name: personName.trim(),
             amount: numericAmount,
             entry_type: entryType,
             description: `${uppadJamaType} - ${personName.trim()}`,
-            entry_date: date.toISOString(),
+            entry_date: dateISO,
+            office_id: uppadJamaOfficeId || undefined,
           });
           break;
 
         case 'fuel':
+          const fuelOfficeId = getCurrentOfficeId();
+          console.log('🏢 Office ID for fuel:', fuelOfficeId);
           const calculatedAmount = parseFloat(fuelQuantity) * parseFloat(ratePerLiter);
           success = await saveTruckFuel({
             truck_number: truckNumber.trim(),
@@ -466,11 +361,16 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
             quantity: parseFloat(fuelQuantity),
             price_per_liter: parseFloat(ratePerLiter),
             total_price: calculatedAmount,
+            office_id: fuelOfficeId || undefined,
           });
           break;
       }
 
       if (success) {
+        // Clear cache to ensure fresh data is loaded in Daily Report
+        console.log('🧹 Clearing cache after backdated entry save...');
+        await clearAllCache();
+        
         // Send notification to admin
         const entryTypeName = entryTypeOptions.find(t => t.value === selectedEntryType)?.label || selectedEntryType;
         await NotificationService.notifyAdd(selectedEntryType as any, `Backdated ${entryTypeName}: ₹${numericAmount} for ${date.toLocaleDateString('en-IN')}`);

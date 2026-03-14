@@ -1484,6 +1484,19 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     <Text style={styles.gridButtonText}>Backdated Entry</Text>
                   </TouchableOpacity>
                 )}
+
+                {(contextIsAdmin || hasScreenAccess('DailyEntriesScreen')) && (
+                  <TouchableOpacity 
+                    onPress={() => navigate('DailyEntries')} 
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="calculator-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>Daily Entries</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
             )}

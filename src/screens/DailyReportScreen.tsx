@@ -800,15 +800,24 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   }, [selectedDate, currentOffice, showAlert]);
 
 
-  // Refresh cash adjustment when screen gains focus (e.g., returning from ManageCash)
+  // Refresh data when screen gains focus (e.g., returning from BackdatedEntry or ManageCash)
   useFocusEffect(
     useCallback(() => {
       let active = true;
       (async () => {
         try {
+          console.log('🔄 Screen focused - refreshing data...');
+          // Reload cash adjustment
           const adj = await loadManageCashAdjustment(selectedDate);
           if (active) setManageCashAdjustment(adj || 0);
-        } catch {}
+          
+          // Reload transactions to get any new backdated entries
+          if (active) {
+            setRefreshKey(prev => prev + 1);
+          }
+        } catch (error) {
+          console.error('Error refreshing on focus:', error);
+        }
       })();
       return () => { active = false; };
     }, [selectedDate])
