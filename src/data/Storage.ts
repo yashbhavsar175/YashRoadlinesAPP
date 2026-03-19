@@ -6248,7 +6248,8 @@ export async function saveDailyEntry(
   totalCredit: number,
   totalDebit: number,
   netProfit: number,
-  officeId?: string
+  officeId?: string,
+  entryDate?: string
 ): Promise<DailyEntry | null> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -6260,7 +6261,7 @@ export async function saveDailyEntry(
     const entryData = {
       user_id: user.id,
       office_id: officeId || null,
-      entry_date: new Date().toISOString().split('T')[0],
+      entry_date: entryDate || new Date().toISOString().split('T')[0],
       entries: entries,
       total_credit: totalCredit,
       total_debit: totalDebit,

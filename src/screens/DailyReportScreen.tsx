@@ -83,8 +83,7 @@ interface OriginalTransaction {
   amount: number;
   description?: string;
   bill_no?: string;
-  // Add other possible fields that might exist in your transaction objects
-  [key: string]: any;
+    [key: string]: any;
 }
 
 interface TransactionItem {
