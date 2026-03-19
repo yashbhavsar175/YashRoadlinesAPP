@@ -4,7 +4,6 @@
 
 # Example/template files — contain placeholder text only, no real secrets
 .env.example
-.env.template
 firebase-secret-formatter.example.js
 
 # Documentation files — contain pattern examples, not real secrets
