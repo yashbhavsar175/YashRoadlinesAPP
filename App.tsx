@@ -56,8 +56,8 @@ function safeEval(expr: string): number {
 const log = (...args: any[]) => { if (__DEV__) { console.log(...args); } };
 const warn = (...args: any[]) => { if (__DEV__) { console.warn(...args); } };
 const err = (...args: any[]) => { if (__DEV__) { console.error(...args); } };
-import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions, Platform, AppStateStatus } from 'react-native';
-import { NavigationContainer, CommonActions, NavigationContainerRef, NavigationState } from '@react-navigation/native';
+import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions, Platform, AppStateStatus, StatusBar } from 'react-native';
+import { NavigationContainer, CommonActions, NavigationContainerRef, NavigationState, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 // Create navigation reference
 import { createStackNavigator } from '@react-navigation/stack';
@@ -120,6 +120,7 @@ import { Colors } from './src/theme/colors';
 import { AlertProvider } from './src/context/AlertContext';
 import { UserAccessProvider } from './src/context/UserAccessContext';
 import { OfficeProvider } from './src/context/OfficeContext';
+import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import AuthLogoutService from './src/services/AuthLogoutService';
 import { LoginRequestListener } from './src/services/LoginRequestListener';
 
@@ -585,6 +586,15 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
   
 
 function App(): React.JSX.Element {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
+  );
+}
+
+function AppContent(): React.JSX.Element {
+    const { colors, isDark } = useTheme();
     const [syncStatus, setSyncStatus] = useState({
       lastSync: null as string | null,
       pendingOperations: 0,
@@ -1052,6 +1062,10 @@ function App(): React.JSX.Element {
   
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.headerBackground}
+        />
         <OfficeProvider>
           <UserAccessProvider>
             <AlertProvider>
@@ -1059,6 +1073,7 @@ function App(): React.JSX.Element {
               {isNavigationReady && (
                 <NavigationContainer
                   ref={navigationRef as React.Ref<NavigationContainerRef<RootStackParamList>>}
+                  theme={isDark ? DarkTheme : DefaultTheme}
                   initialState={initialNavigationState}
                   onStateChange={(state: NavigationState | undefined) => {
                     if (state) {

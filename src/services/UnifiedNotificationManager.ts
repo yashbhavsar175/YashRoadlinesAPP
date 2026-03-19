@@ -10,7 +10,7 @@ import PushGateway from './PushGateway';
 interface NotificationConfig {
   title: string;
   message: string;
-  type: 'add' | 'edit' | 'delete' | 'system';
+  type: 'add' | 'edit' | 'delete' | 'system' | 'login_request';
   severity?: 'info' | 'warning' | 'success' | 'error';
   data?: any;
 }
