@@ -7,7 +7,7 @@ export interface AdminNotification {
   id: string;
   title: string;
   message: string;
-  type: 'add' | 'edit' | 'delete' | 'system';
+  type: 'add' | 'edit' | 'delete' | 'system' | 'login_request';
   severity: 'info' | 'warning' | 'success' | 'error';
   is_read: boolean;
   deleted?: boolean;
@@ -38,7 +38,7 @@ export interface UserNotification {
 export interface NotificationData {
   title: string;
   message: string;
-  type: 'add' | 'edit' | 'delete' | 'system';
+  type: 'add' | 'edit' | 'delete' | 'system' | 'login_request';
   severity?: 'info' | 'warning' | 'success' | 'error';
   metadata?: any;
 }

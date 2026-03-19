@@ -3084,14 +3084,16 @@ export const getAgencyPaymentsLocal = async (officeId?: string): Promise<AgencyP
       try {
         let query = supabase
           .from('agency_payments')
-          .select('*');
-        
+          .select('id, amount, payment_date, agency_id, office_id, description, created_at, agency_name, payment_type')
+          .order('payment_date', { ascending: false })
+          .limit(100);
+
         // Apply office filter if provided
         if (officeId) {
           query = query.eq('office_id', officeId);
         }
-        
-        const { data, error } = await query.order('payment_date', { ascending: false });
+
+        const { data, error } = await query;
 
         if (!error && data) {
           const localIds = localData.map((item: any) => item.id);
@@ -6200,7 +6202,12 @@ const notifyAdminsOfLoginRequest = async (
       if (fcmError) {
         console.warn('⚠️ FCM notification failed (non-critical):', fcmError.message);
       } else {
-        console.log('✅ FCM push notification sent:', fcmResult);
+        // ok:false with a known reason is a soft failure (no secret set, or no device tokens) — not an error
+        if (fcmResult?.ok === false && (fcmResult?.reason === 'no-credentials' || fcmResult?.reason === 'no-tokens')) {
+          console.warn('⚠️ FCM push skipped (non-critical):', fcmResult.reason, fcmResult.message || '');
+        } else {
+          console.log('✅ FCM push notification sent:', fcmResult);
+        }
       }
     } catch (fcmError: any) {
       console.warn('⚠️ FCM notification error (non-critical):', fcmError?.message || fcmError);

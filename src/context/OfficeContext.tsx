@@ -118,7 +118,7 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
       // Load available offices with caching
       const offices = await loadOfficesWithCache();
       setAvailableOffices(offices);
-
+      console.log('[OFFICE] Offices loaded:', offices.length, 'offices');
 
       if (offices.length === 0) {
         setError('No offices available. Please contact administrator.');
@@ -139,6 +139,7 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
 
       const isAdmin = profile?.is_admin === true;
       setCanSwitchOffice(isAdmin);
+      console.log('[OFFICE] Fetching offices for role:', isAdmin ? 'Admin' : 'User');
 
       // Determine which office to set as current
       let officeToSet: Office | null = null;
@@ -282,12 +283,24 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
     };
   };
 
-  // Initialize on mount — delayed to avoid racing react-native-config bridge init
+  // Listen for auth state changes — initialize offices on login, reset on logout
   useEffect(() => {
-    const timer = setTimeout(() => {
-      initializeOfficeContext();
-    }, 500);
-    return () => clearTimeout(timer);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[OFFICE] Auth state changed:', event, 'userId:', session?.user?.id ?? 'none');
+      if (session?.user?.id) {
+        // Invalidate cache so fresh data is fetched for the newly logged-in user
+        await invalidateOfficeCache();
+        await initializeOfficeContext();
+      } else {
+        // User logged out — reset office state
+        setCurrentOffice(null);
+        setAvailableOffices([]);
+        setCanSwitchOffice(false);
+        setError(null);
+        setIsLoading(false);
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   // Performance metrics disabled

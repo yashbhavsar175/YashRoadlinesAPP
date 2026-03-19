@@ -2,6 +2,7 @@
 import { supabase } from '../supabase';
 import PushNotification from 'react-native-push-notification';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { navigationRef } from '../../App';
 
 class NotificationListener {
   private static instance: NotificationListener;
@@ -33,6 +34,24 @@ class NotificationListener {
         console.log('🚫 No current user, skipping notification listener');
         return;
       }
+
+      // Handle taps on local notifications shown by this listener
+      PushNotification.configure({
+        onNotification: (notification: any) => {
+          if (notification.userInteraction) {
+            const type = notification.userInfo?.type || notification.data?.type;
+            const title = notification.title || '';
+            if (type === 'system' && title.includes('Login Request')) {
+              console.log('🔑 NotificationListener: navigating to AdminNotifications on tap');
+              if (navigationRef.current?.isReady()) {
+                navigationRef.current.navigate('AdminNotifications' as never);
+              }
+            }
+          }
+        },
+        requestPermissions: false,
+        popInitialNotification: false,
+      });
 
       // Setup real-time subscription for notifications
       this.setupNotificationSubscription();

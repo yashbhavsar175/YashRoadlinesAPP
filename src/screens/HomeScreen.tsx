@@ -66,8 +66,7 @@ const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenProps): React.JSX.Element {
   const { navigate, replace } = navigation;
   const { isAdmin: contextIsAdmin, screenAccess, hasScreenAccess: contextHasScreenAccess, refreshPermissions, isLoading: contextLoading, lastUpdated } = useUserAccess();
-  const { currentOffice, getCurrentOfficeId, isLoading: officeLoading, availableOffices, switchOffice } = useOffice();
-  const [userInitial, setUserInitial] = useState<string>('');
+  const { currentOffice, getCurrentOfficeId, isLoading: officeLoading, availableOffices, switchOffice } = useOffice();  const [userInitial, setUserInitial] = useState<string>('');
   const [userName, setUserName] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('User');
   const [userType, setUserType] = useState<'normal' | 'majur'>('normal');
@@ -87,6 +86,35 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       isMountedRef.current = false;
     };
   }, []);
+
+  // SECURITY: Verify no pending login request exists when HomeScreen mounts
+  useEffect(() => {
+    const verifyUserAccess = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          return;
+        }
+        const { data: pendingRequest } = await supabase
+          .from('login_requests')
+          .select('id, status')
+          .eq('user_id', user.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (pendingRequest) {
+          console.log('🔒 SECURITY: Pending request found, navigating back to Login waiting screen');
+          // Do NOT signOut — keep session alive so LoginScreen can resume polling
+          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        }
+      } catch (e) {
+        console.log('Access verification error:', e);
+      }
+    };
+    verifyUserAccess();
+  }, [navigation]);
   
   // Majur Dashboard states
   const [majuriData, setMajuriData] = useState<{displayDate: string; isToday: boolean; isYesterday: boolean; id: string; majuri_date: string; amount: number; agency_name: string; description?: string}[]>([]);
@@ -1166,7 +1194,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     }
   };
 
-  if (isProfileLoading) {
+  if (isProfileLoading || contextLoading || officeLoading) {
+    console.log('[HOME] Waiting for context... contextLoading=' + contextLoading + ' officeLoading=' + officeLoading);
     return (
       <View style={[styles.container, styles.loadingContainer]}>
         <ActivityIndicator size="large" color={BWColors.primary} />
@@ -1174,6 +1203,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       </View>
     );
   }
+
+  console.log('[HOME] Rendering with role=' + (contextIsAdmin ? 'Admin' : 'User') + ', offices=' + availableOffices.length);
 
   return (
     <View style={styles.container}>
@@ -1183,7 +1214,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           <Text style={styles.appBarTitle} numberOfLines={1}>Yash Roadlines</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={styles.appBarSubtitle} numberOfLines={1}>
-              {userName ? `${userName} • ${userRole}` : userRole}
+              {userName ? `${userName} • ${contextIsAdmin ? 'Admin' : 'User'}` : (contextIsAdmin ? 'Admin' : 'User')}
               {currentOffice && ` • ${currentOffice.name}`}
             </Text>
           </View>
@@ -1459,6 +1490,20 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                   </TouchableOpacity>
                 )}
 
+                {/* My Uppad/Jama — visible to non-admin normal users only */}
+                {!contextIsAdmin && (
+                  <TouchableOpacity
+                    onPress={() => navigate('UserUppadJama')}
+                    style={styles.gridButton}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconContainer}>
+                      <Icon name="wallet-outline" size={26} color={BWColors.primary} />
+                    </View>
+                    <Text style={styles.gridButtonText}>My Uppad / Jama</Text>
+                  </TouchableOpacity>
+                )}
+
                 {(contextIsAdmin || hasScreenAccess('MumbaiDeliveryEntryScreen')) && (
                   <TouchableOpacity 
                     onPress={() => navigate('MumbaiDelivery')} 
@@ -1673,14 +1718,14 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     <Text style={styles.menuAvatarText}>{userInitial}</Text>
                   </View>
                   <Text style={styles.menuUserName}>{userName || 'User'}</Text>
-                  <Text style={styles.menuUserRole}>{userRole}</Text>
+                  <Text style={styles.menuUserRole}>{contextIsAdmin ? 'Admin' : 'User'}</Text>
                 </View>
 
                 {/* Debug: Log admin status */}
                 {(() => {
                   console.log('🔧 DEBUG: Profile menu rendering with permissions:', {
                     contextIsAdmin,
-                    userRole,
+                    userRole: contextIsAdmin ? 'Admin' : 'User',
                     screenAccess: screenAccess
                   });
                   return null;

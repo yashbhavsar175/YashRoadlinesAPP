@@ -100,6 +100,7 @@ import AdminPasswordResetScreen from './src/screens/AdminPasswordResetScreen';
 import PageBuilderScreen from './src/screens/PageBuilderScreen';
 import PageManagementScreen from './src/screens/PageManagementScreen';
 import UppadJamaScreen from './src/screens/UppadJamaScreen';
+import UserUppadJamaScreen from './src/screens/UserUppadJamaScreen';
 import MumbaiDeliveryEntryScreen from './src/screens/MumbaiDeliveryEntryScreen';
 import PaymentConfirmationScreen from './src/screens/PaymentConfirmationScreen';
 import MumbaiDeliveryNavigator from './src/navigation/MumbaiDeliveryNavigator';
@@ -159,6 +160,7 @@ type RootStackParamList = {
   PageBuilder: undefined;
   PageManagement: undefined;
   UppadJama: undefined;
+  UserUppadJama: undefined;
   CashBalance: undefined;
   MumbaiDelivery: undefined;
   PaymentConfirmation: undefined;
@@ -186,7 +188,7 @@ export type { RootStackParamList };
 // Create a typed stack navigator
 const Stack = createStackNavigator<RootStackParamList>();
 
-const navigationRef = React.createRef<NavigationContainerRef<RootStackParamList>>();
+export const navigationRef = React.createRef<NavigationContainerRef<RootStackParamList>>();
 // Key component moved outside to prevent re-rendering issues
 const Key = ({ label, onPress, type, style }: { 
   label: string; 
@@ -872,19 +874,48 @@ function App(): React.JSX.Element {
                                         (!wasInBackgroundRef.current || timeSinceBackground > 5000);
           
           if (shouldResetNavigation) {
-            log('🔄 FRESH LAUNCH DETECTED: Clearing navigation state and going to Home');
+            log('🔄 FRESH LAUNCH DETECTED: Checking for pending login request before navigating...');
             log('   Reason:', !wasInBackgroundRef.current ? 'wasInBackgroundRef is false' : `timeSinceBackground (${timeSinceBackground}ms) > 5000ms`);
-            
-            // Clear navigation state for fresh launch
+
+            // SECURITY FIX: Check if user has a pending login request before resetting to Home
+            let hasPendingRequest = false;
+            try {
+              const waitingFlag = await AsyncStorage.getItem('waiting_for_admin');
+              if (waitingFlag === 'true') {
+                // Double-check against the database to be sure
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                  const { data: pendingRequest } = await supabase
+                    .from('login_requests')
+                    .select('id, status')
+                    .eq('user_id', user.id)
+                    .eq('status', 'pending')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                  if (pendingRequest) {
+                    hasPendingRequest = true;
+                    log('🔒 SECURITY: Pending login request found, NOT navigating to Home');
+                  }
+                }
+              }
+            } catch (e) {
+              log('Could not check pending login request:', e);
+            }
+
             await AsyncStorage.removeItem(NAVIGATION_STATE_KEY);
-            log('✅ Navigation state cleared from AsyncStorage');
-            
-            if (navigationRef.current?.isReady()) {
+
+            if (hasPendingRequest) {
+              // Send back to Login so the waiting screen can resume
+              if (navigationRef.current?.isReady()) {
+                navigationRef.current.dispatch(
+                  CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
+                );
+                log('✅ Navigation reset to Login screen (pending approval)');
+              }
+            } else if (navigationRef.current?.isReady()) {
               navigationRef.current.dispatch(
-                CommonActions.reset({
-                  index: 0,
-                  routes: [{ name: 'Home' }],
-                })
+                CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] })
               );
               log('✅ Navigation reset to Home screen');
             } else {
@@ -1090,6 +1121,7 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="PageBuilder" component={PageBuilderScreen} options={{ title: 'Create Custom Page' }} />
                 <Stack.Screen name="PageManagement" component={PageManagementScreen} options={{ title: 'Manage Pages' }} />
                 <Stack.Screen name="UppadJama" component={UppadJamaScreen} options={{ title: 'Uppad/Jama' }} />
+                <Stack.Screen name="UserUppadJama" component={UserUppadJamaScreen} options={{ title: 'My Uppad/Jama' }} />
                 <Stack.Screen 
                   name="MumbaiDelivery" 
                   component={MumbaiDeliveryEntryScreen} 

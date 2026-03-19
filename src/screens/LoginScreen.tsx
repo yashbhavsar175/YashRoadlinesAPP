@@ -1,5 +1,5 @@
 // Updated LoginScreen.tsx with enhanced OTP security & UX and Waiting Screen
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '../supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -64,6 +65,30 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       }
     };
   }, []);
+
+  // Resume waiting state when screen comes back into focus (e.g. after app backgrounded)
+  useFocusEffect(
+    useCallback(() => {
+      const checkPendingRequest = async () => {
+        try {
+          const waitingFlag = await AsyncStorage.getItem('waiting_for_admin');
+          const savedRequestId = await AsyncStorage.getItem('login_request_id');
+          if (waitingFlag === 'true' && savedRequestId) {
+            console.log('🔄 Resuming pending login request:', savedRequestId);
+            setLoginRequestId(savedRequestId);
+            setWaitingForAdmin(true);
+            // Only start polling if not already polling
+            if (!pollingIntervalRef.current) {
+              startPollingForApproval(savedRequestId);
+            }
+          }
+        } catch (e) {
+          console.log('Could not restore pending request:', e);
+        }
+      };
+      checkPendingRequest();
+    }, [])
+  );
 
   // OTP security & UX controls
   const OTP_MAX_ATTEMPTS = 5;
@@ -212,6 +237,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
 
       if (isAdmin) {
         // Admin: Direct login without OTP
+        console.log('[AUTH] Login complete, user id:', data.user.id);
         console.log('✅ Admin login - bypassing OTP');
         
         // Save user profile to AsyncStorage
@@ -232,6 +258,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
           // Clear any pending approval flags
           await AsyncStorage.removeItem('waiting_for_admin');
           await AsyncStorage.removeItem('login_request_id');
+          await AsyncStorage.removeItem('pending_login_request_id');
           
           // Initialize NotificationService
           const NotificationService = require('../services/NotificationService').default;
@@ -250,6 +277,27 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
 
       // Normal user: Require admin approval
       const userName = profile.full_name || profile.username || email.split('@')[0];
+
+      // Check if there's already a pending request — avoid creating duplicates
+      const savedRequestId = await AsyncStorage.getItem('login_request_id');
+      if (savedRequestId) {
+        const { data: existingRequest } = await supabase
+          .from('login_requests')
+          .select('id, status')
+          .eq('id', savedRequestId)
+          .eq('status', 'pending')
+          .maybeSingle();
+        if (existingRequest) {
+          console.log('🔄 Found existing pending request, resuming:', savedRequestId);
+          setLoginRequestId(savedRequestId);
+          setSignedInUserId(data.user.id);
+          setWaitingForAdmin(true);
+          await AsyncStorage.setItem('waiting_for_admin', 'true');
+          startPollingForApproval(savedRequestId);
+          return;
+        }
+      }
+
       const requestId = await createLoginRequest(data.user.id, email.trim(), userName);
 
       if (!requestId) {
@@ -424,6 +472,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       // Clear waiting flags from AsyncStorage
       await AsyncStorage.removeItem('waiting_for_admin');
       await AsyncStorage.removeItem('login_request_id');
+      await AsyncStorage.removeItem('pending_login_request_id');
       
       navigation.replace('Home');
     } catch (e) {
@@ -447,6 +496,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
     try { await AsyncStorage.removeItem('otp_pending'); } catch { }
     try { await AsyncStorage.removeItem('waiting_for_admin'); } catch { }
     try { await AsyncStorage.removeItem('login_request_id'); } catch { }
+    try { await AsyncStorage.removeItem('pending_login_request_id'); } catch { }
     try {
       if (signedInUserId) {
         await AsyncStorage.multiRemove([

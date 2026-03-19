@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Integration Tests for Multi-Office Support Feature
  * 

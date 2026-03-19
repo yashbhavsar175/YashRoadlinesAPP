@@ -3,7 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { LoginRequestPopup } from '../components/LoginRequestPopup';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState, AppStateStatus } from 'react-native';
+import { Alert, AppState, AppStateStatus } from 'react-native';
+import { navigationRef } from '../../App';
 
 interface LoginRequest {
   id: string;
@@ -109,6 +110,24 @@ export const LoginRequestListener: React.FC = () => {
           if (appState === 'active') {
             setCurrentRequest(data as LoginRequest);
             setShowPopup(true);
+
+            // Also show an Alert so admin is immediately notified without needing to tap a notification
+            Alert.alert(
+              '🔑 Login Request',
+              `${data.user_name || data.user_email} is requesting login approval.`,
+              [
+                { text: 'Dismiss', style: 'cancel' },
+                {
+                  text: 'View Request',
+                  onPress: () => {
+                    if (navigationRef.current?.isReady()) {
+                      navigationRef.current.navigate('AdminNotifications' as never);
+                    }
+                  },
+                },
+              ],
+              { cancelable: true }
+            );
           }
         }
       } catch (error) {

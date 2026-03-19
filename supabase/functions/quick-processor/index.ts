@@ -285,14 +285,23 @@ Deno.serve(async (req) => {
       console.log('📱 [FCM] Starting push notification send...');
       // Accept multiple secret names to be flexible with dashboard naming
       const serverKey = Deno.env.get('FCM_SERVER_KEY') || Deno.env.get('FCM_SERVER') || Deno.env.get('FIREBASE_SERVER_KEY');
-      const saJsonRaw = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_JSON') || Deno.env.get('FIREBASE_SA_JSON') || Deno.env.get('FIREBASE_SA');
+      const saJsonRaw =
+        Deno.env.get('FIREBASE_SERVICE_ACCOUNT_JSON') ||
+        Deno.env.get('FIREBASE_SERVICE_ACCOUNT_KEY') ||  // also accept the name from the prompt
+        Deno.env.get('FIREBASE_SA_JSON') ||
+        Deno.env.get('FIREBASE_SA');
       
       console.log('🔍 [FCM] Checking secrets:', {
         hasServerKey: !!serverKey,
         hasServiceAccount: !!saJsonRaw,
       });
 
-      // Helper: base64url
+      // If neither credential is present, return a clear 200 with a reason instead of 500
+      // so the client-side warning is not triggered for a config issue
+      if (!serverKey && !saJsonRaw) {
+        console.error('❌ [FCM] No FCM credentials found. Set FIREBASE_SERVICE_ACCOUNT_JSON in Supabase Dashboard → Project Settings → Edge Functions → Secrets');
+        return json({ ok: false, reason: 'no-credentials', message: 'FIREBASE_SERVICE_ACCOUNT_JSON secret not set in Supabase dashboard' }, { status: 200 });
+      }
       function base64url(input: Uint8Array | string) {
         let str = typeof input === 'string' ? input : String.fromCharCode(...input);
         // if binary, convert
@@ -372,11 +381,7 @@ Deno.serve(async (req) => {
   return tokenJson.access_token as string;
       }
 
-      if (!serverKey && !saJsonRaw) {
-        console.error('❌ [FCM] No FCM credentials found');
-        return serverError('Missing FCM server key or service account JSON');
-      }
-
+      // Helper: base64url
       const svc = getServiceClient();
       const targetEmail = ((body.target_email as string) || Deno.env.get('ADMIN_EMAIL') || Deno.env.get('ADMIN') || '').toLowerCase();
       if (!targetEmail) {

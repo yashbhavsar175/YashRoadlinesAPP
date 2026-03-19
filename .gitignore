@@ -98,3 +98,11 @@ google-services.json
 supabase.exe
 *.exe
 *.bin
+
+# Backup files
+*_backup.tsx
+*_backup.ts
+
+# Deploy scripts
+deploy-*.bat
+deploy-*.sh

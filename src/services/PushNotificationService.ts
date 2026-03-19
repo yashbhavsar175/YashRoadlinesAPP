@@ -5,7 +5,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NotificationService from './NotificationService';
 import { supabase } from '../supabase';
 import { AppState, AppStateStatus } from 'react-native';
-import messaging from '@react-native-firebase/messaging';
+import { getApp } from '@react-native-firebase/app';
+import { getMessaging, getToken, onTokenRefresh, onMessage, onNotificationOpenedApp, getInitialNotification, requestPermission, AuthorizationStatus } from '@react-native-firebase/messaging';
+import { navigationRef } from '../../App';
 
 export interface PushNotificationData {
   title: string;
@@ -235,10 +237,17 @@ class PushNotificationService {
           data: notification.data
         });
 
-        // Handle notification tap (defensive check)
-        if (notification && (notification as any).userInteraction) {
+        // Handle notification tap
+        if (notification && notification.userInteraction) {
           console.log('👆 User tapped notification');
-          // You can navigate to specific screen here
+          const type = notification.data?.type || notification.userInfo?.type;
+          const title = notification.title || '';
+          if (type === 'login_request' || title.includes('Login Request')) {
+            console.log('🔑 Navigating to AdminNotifications from tapped notification');
+            if (navigationRef.current?.isReady()) {
+              navigationRef.current.navigate('AdminNotifications' as never);
+            }
+          }
         }
       },
 
@@ -276,69 +285,101 @@ class PushNotificationService {
   }
 
   private async setupFirebaseMessaging() {
-    try {
-      // Request permission for FCM
-      const authStatus = await messaging().requestPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      try {
+        const fcmMessaging = getMessaging(getApp());
 
-      if (enabled) {
-        console.log('✅ FCM Authorization status:', authStatus);
+        // Request permission for FCM
+        const authStatus = await requestPermission(fcmMessaging);
+        const enabled =
+          authStatus === AuthorizationStatus.AUTHORIZED ||
+          authStatus === AuthorizationStatus.PROVISIONAL;
 
-        // Get FCM token
-        const token = await messaging().getToken();
-        if (token) {
-          console.log('📱 FCM Token:', token);
-          await AsyncStorage.setItem('fcm_token', token);
-          await this.registerTokenWithServer(token);
-        }
+        if (enabled) {
+          console.log('✅ FCM Authorization status:', authStatus);
 
-        // Listen for token refresh
-        messaging().onTokenRefresh(async (newToken) => {
-          console.log('🔄 FCM Token refreshed:', newToken);
-          await AsyncStorage.setItem('fcm_token', newToken);
-          await this.registerTokenWithServer(newToken);
-        });
-
-        // Handle foreground messages
-        messaging().onMessage(async (remoteMessage) => {
-          console.log('🔔 FCM foreground message:', remoteMessage);
-          
-          if (remoteMessage.notification) {
-            // Show local notification for foreground messages
-            PushNotification.localNotification({
-              channelId: 'admin-notifications',
-              title: remoteMessage.notification.title || 'YashRoadlines',
-              message: remoteMessage.notification.body || 'New notification',
-              playSound: true,
-              soundName: 'default',
-              importance: 'high',
-              priority: 'high',
-              vibrate: true,
-              autoCancel: false,
-              largeIcon: 'ic_launcher',
-              smallIcon: 'ic_notification',
-              bigText: remoteMessage.notification.body,
-              subText: `YashRoadlines - ${new Date().toLocaleTimeString()}`,
-              color: '#2196F3',
-              group: 'admin-notifications',
-              when: Date.now(),
-              userInfo: {
-                ...remoteMessage.data,
-                remote: true,
-                timestamp: Date.now(),
-              },
-            });
+          // Get FCM token
+          const token = await getToken(fcmMessaging);
+          if (token) {
+            console.log('📱 FCM Token:', token);
+            await AsyncStorage.setItem('fcm_token', token);
+            await this.registerTokenWithServer(token);
           }
-        });
-      } else {
-        console.log('❌ FCM permission denied');
+
+          // Listen for token refresh
+          onTokenRefresh(fcmMessaging, async (newToken) => {
+            console.log('🔄 FCM Token refreshed:', newToken);
+            await AsyncStorage.setItem('fcm_token', newToken);
+            await this.registerTokenWithServer(newToken);
+          });
+
+          // Handle foreground messages
+          onMessage(fcmMessaging, async (remoteMessage) => {
+            console.log('🔔 FCM foreground message:', remoteMessage);
+
+            if (remoteMessage.notification) {
+              PushNotification.localNotification({
+                channelId: 'admin-notifications',
+                title: remoteMessage.notification.title || 'YashRoadlines',
+                message: remoteMessage.notification.body || 'New notification',
+                playSound: true,
+                soundName: 'default',
+                importance: 'high',
+                priority: 'high',
+                vibrate: true,
+                autoCancel: false,
+                largeIcon: 'ic_launcher',
+                smallIcon: 'ic_notification',
+                bigText: remoteMessage.notification.body,
+                subText: `YashRoadlines - ${new Date().toLocaleTimeString()}`,
+                color: '#2196F3',
+                group: 'admin-notifications',
+                when: Date.now(),
+                userInfo: {
+                  ...remoteMessage.data,
+                  remote: true,
+                  timestamp: Date.now(),
+                },
+              });
+            }
+          });
+
+          // Handle notification tap when app is in background (not killed)
+          onNotificationOpenedApp(fcmMessaging, (remoteMessage) => {
+            console.log('👆 FCM notification opened (background):', remoteMessage);
+            const type = remoteMessage.data?.type;
+            const title = remoteMessage.notification?.title || '';
+            if (type === 'login_request' || title.includes('Login Request')) {
+              console.log('🔑 Navigating to AdminNotifications (background tap)');
+              if (navigationRef.current?.isReady()) {
+                navigationRef.current.navigate('AdminNotifications' as never);
+              }
+            }
+          });
+
+          // Handle notification tap when app was killed (cold start)
+          getInitialNotification(fcmMessaging).then((remoteMessage) => {
+            if (remoteMessage) {
+              console.log('👆 FCM notification opened (cold start):', remoteMessage);
+              const type = remoteMessage.data?.type;
+              const title = remoteMessage.notification?.title || '';
+              if (type === 'login_request' || title.includes('Login Request')) {
+                console.log('🔑 Navigating to AdminNotifications (cold start)');
+                setTimeout(() => {
+                  if (navigationRef.current?.isReady()) {
+                    navigationRef.current.navigate('AdminNotifications' as never);
+                  }
+                }, 1000);
+              }
+            }
+          });
+        } else {
+          console.log('❌ FCM permission denied');
+        }
+      } catch (error) {
+        console.error('❌ Error setting up Firebase messaging:', error);
       }
-    } catch (error) {
-      console.error('❌ Error setting up Firebase messaging:', error);
     }
-  }
+
 
   private setupRealtimeSubscription() {
     if (!this.isAdmin) {

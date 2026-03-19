@@ -1,15 +1,17 @@
 /**
  * Background message handler for Firebase Cloud Messaging
- * This file handles notifications when the app is in background or closed
+ * This file handles notifications when the app is in background or closed.
+ * Uses modular Firebase API (v23+).
  */
-import messaging from '@react-native-firebase/messaging';
+import { getApp } from '@react-native-firebase/app';
+import { getMessaging, setBackgroundMessageHandler } from '@react-native-firebase/messaging';
 import PushNotification from 'react-native-push-notification';
 
-// Background message handler (app closed/background)
-messaging().setBackgroundMessageHandler(async remoteMessage => {
+const messagingInstance = getMessaging(getApp());
+
+setBackgroundMessageHandler(messagingInstance, async remoteMessage => {
   console.log('🔔 Background FCM message received:', remoteMessage);
-  
-  // Show local notification for background messages
+
   if (remoteMessage.notification) {
     PushNotification.localNotification({
       channelId: 'admin-notifications',
@@ -20,7 +22,7 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
       importance: 'high',
       priority: 'high',
       vibrate: true,
-      autoCancel: false, // Keep until user dismisses
+      autoCancel: false,
       largeIcon: 'ic_launcher',
       smallIcon: 'ic_notification',
       bigText: remoteMessage.notification.body,
@@ -37,4 +39,4 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
   }
 });
 
-export default messaging;
+export default messagingInstance;

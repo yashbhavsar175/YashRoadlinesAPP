@@ -1,6 +1,7 @@
 // UserAccessContext.tsx - React Context for managing user screen access permissions in real-time
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import UserAccessHelper, { ScreenAccess } from '../services/UserAccessHelper';
+import { supabase } from '../supabase';
 
 interface UserAccessContextType {
   isAdmin: boolean;
@@ -25,7 +26,8 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [screenAccess, setScreenAccess] = useState<ScreenAccess>({} as ScreenAccess);
   const [userEmail, setUserEmail] = useState<string | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState<boolean>(false); // Start with false to avoid blocking
+  // FIX: Start as true so HomeScreen waits for real data before rendering role/offices
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
   const [assignedOfficeId, setAssignedOfficeId] = useState<string | null>(null);
   const [assignedOfficeName, setAssignedOfficeName] = useState<string | null>(null);
@@ -34,6 +36,9 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
   const refreshPermissions = async () => {
     try {
       setIsLoading(true);
+      // Wait for a valid Supabase session before fetching profile
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('[PROFILE] Fetching profile for user:', user?.id ?? 'none');
       const accessData = await UserAccessHelper.refreshUserAccess();
       
       setIsAdmin(accessData.isAdmin);
@@ -46,6 +51,7 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
       const canSwitch = accessData.isAdmin === true;
       setCanAccessMultipleOffices(canSwitch);
       
+      console.log('[PROFILE] Profile loaded: role=' + (accessData.isAdmin ? 'Admin' : 'User') + ', office=' + (accessData.assignedOfficeName ?? 'none'));
       setLastUpdated(Date.now()); // Update timestamp when permissions change
       
 
@@ -67,12 +73,24 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
     return isAdmin || (screenAccess[screenName as keyof ScreenAccess] === true);
   };
 
-  // Initial load — delayed to avoid racing react-native-config bridge init
+  // Listen for auth state changes — fetch permissions on login, reset on logout
   useEffect(() => {
-    const timer = setTimeout(() => {
-      refreshPermissions();
-    }, 500);
-    return () => clearTimeout(timer);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[PROFILE] Auth state changed:', event, 'userId:', session?.user?.id ?? 'none');
+      if (session?.user?.id) {
+        await refreshPermissions();
+      } else {
+        // User logged out — reset to safe defaults
+        setIsAdmin(false);
+        setScreenAccess({} as ScreenAccess);
+        setUserEmail(undefined);
+        setAssignedOfficeId(null);
+        setAssignedOfficeName(null);
+        setCanAccessMultipleOffices(false);
+        setIsLoading(false);
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   const contextValue: UserAccessContextType = {
