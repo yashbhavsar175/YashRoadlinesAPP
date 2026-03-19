@@ -22,18 +22,15 @@ export const LoginRequestListener: React.FC = () => {
 
 
 
-  // Check if user is admin
+  // Check if user is admin — with retry to handle config/Supabase init race condition
   useEffect(() => {
     const checkAdmin = async () => {
+      // Small delay to ensure react-native-config bridge and Supabase are ready
+      await new Promise(resolve => setTimeout(resolve, 500));
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          setIsAdmin(false);
-          return;
-        }
+        if (!user) { setIsAdmin(false); return; }
 
-        // Check is_admin flag from database
         const { data: profile, error } = await supabase
           .from('user_profiles')
           .select('is_admin')
@@ -45,12 +42,25 @@ export const LoginRequestListener: React.FC = () => {
           setIsAdmin(false);
           return;
         }
-
         setIsAdmin(profile?.is_admin === true);
         console.log('✅ Admin status checked:', profile?.is_admin === true);
       } catch (error) {
-        console.error('❌ Error checking admin status:', error);
-        setIsAdmin(false);
+        console.warn('⚠️ Admin check failed on first attempt, retrying...', error);
+        // Retry once after a longer delay
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) { setIsAdmin(false); return; }
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('is_admin')
+            .eq('id', user.id)
+            .single();
+          setIsAdmin(profile?.is_admin === true);
+        } catch (e) {
+          console.warn('❌ Admin check failed after retry:', e);
+          setIsAdmin(false);
+        }
       }
     };
 

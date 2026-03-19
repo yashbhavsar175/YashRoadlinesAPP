@@ -282,9 +282,12 @@ export const OfficeProvider: React.FC<OfficeProviderProps> = ({ children }) => {
     };
   };
 
-  // Initialize on mount
+  // Initialize on mount — delayed to avoid racing react-native-config bridge init
   useEffect(() => {
-    initializeOfficeContext();
+    const timer = setTimeout(() => {
+      initializeOfficeContext();
+    }, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   // Performance metrics disabled

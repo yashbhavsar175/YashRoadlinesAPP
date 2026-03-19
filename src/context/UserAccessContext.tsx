@@ -67,9 +67,12 @@ export const UserAccessProvider: React.FC<UserAccessProviderProps> = ({ children
     return isAdmin || (screenAccess[screenName as keyof ScreenAccess] === true);
   };
 
-  // Initial load
+  // Initial load — delayed to avoid racing react-native-config bridge init
   useEffect(() => {
-    refreshPermissions();
+    const timer = setTimeout(() => {
+      refreshPermissions();
+    }, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   const contextValue: UserAccessContextType = {

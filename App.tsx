@@ -1,7 +1,56 @@
 // App.tsx
 import 'react-native-url-polyfill/auto';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import * as math from 'mathjs';
+// Lightweight safe math evaluator — replaces mathjs (avoids Metro ESM resolution issues)
+// Only allows digits, operators, decimals and parentheses — no arbitrary code execution
+function safeEval(expr: string): number {
+  if (!/^[\d\s+\-*/().]+$/.test(expr)) throw new Error('Invalid expression');
+  // Recursive descent parser: handles +, -, *, / and parentheses
+  let pos = 0;
+  const peek = () => expr[pos];
+  const consume = () => expr[pos++];
+  const skipSpaces = () => { while (expr[pos] === ' ') pos++; };
+
+  function parseExpr(): number {
+    let left = parseTerm();
+    skipSpaces();
+    while (peek() === '+' || peek() === '-') {
+      const op = consume(); skipSpaces();
+      const right = parseTerm();
+      left = op === '+' ? left + right : left - right;
+      skipSpaces();
+    }
+    return left;
+  }
+  function parseTerm(): number {
+    let left = parseFactor();
+    skipSpaces();
+    while (peek() === '*' || peek() === '/') {
+      const op = consume(); skipSpaces();
+      const right = parseFactor();
+      if (op === '/' && right === 0) throw new Error('Division by zero');
+      left = op === '*' ? left * right : left / right;
+      skipSpaces();
+    }
+    return left;
+  }
+  function parseFactor(): number {
+    skipSpaces();
+    if (peek() === '(') {
+      consume(); // '('
+      const val = parseExpr();
+      skipSpaces();
+      if (peek() === ')') consume();
+      return val;
+    }
+    if (peek() === '-') { consume(); return -parseFactor(); }
+    let num = '';
+    while (peek() !== undefined && /[\d.]/.test(peek())) num += consume();
+    if (num === '') throw new Error('Unexpected token');
+    return parseFloat(num);
+  }
+  return parseExpr();
+}
 
 // Dev-only logger (Issue 5)
 const log = (...args: any[]) => { if (__DEV__) { console.log(...args); } };
@@ -408,7 +457,7 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
     const evaluate = () => {
       try {
         const safe = expr.replace(/×/g, '*').replace(/÷/g, '/');
-        const val = math.evaluate(safe || '0');
+        const val = safeEval(safe || '0');
         const out = (Number.isFinite(val) ? val : 0).toString();
         setDisplay(out);
         setExpr(out);

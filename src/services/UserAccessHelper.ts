@@ -268,7 +268,6 @@ class UserAccessHelper {
       // Check profile admin flag
       const profile = await getProfile(user.id);
       return profile?.is_admin === true;
-      return profile?.is_admin === true;
     } catch (error) {
       console.error('🔐 UserAccessHelper: Error checking admin status:', error);
       return false;
