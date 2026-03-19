@@ -1,0 +1,9 @@
+firebase-secret-formatter.example.js
+.env.example
+.env.template
+SECURITY_AUDIT.md
+MASTER_SECURITY_PLAN.md
+SECURITY_CHECKLIST.md
+SECURITY_REMEDIATION.md
+test-edge-function.html
+android/app/build/

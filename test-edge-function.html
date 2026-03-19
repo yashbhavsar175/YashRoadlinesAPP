@@ -105,6 +105,11 @@
         </div>
 
         <div class="input-group">
+            <label>Target Email (for push notification test)</label>
+            <input type="text" id="targetEmail" placeholder="admin@example.com" />
+        </div>
+
+        <div class="input-group">
             <label>Test Payload (JSON)</label>
             <textarea id="payload">{"action": "test"}</textarea>
         </div>
@@ -187,7 +192,7 @@
                     screen: 'Test',
                     userName: 'Tester'
                 },
-                target_email: 'yashbhavsar175@gmail.com'
+                target_email: document.getElementById('targetEmail').value.trim() || ''
             };
 
             showResult('⏳ Sending test push notification...', 'info');

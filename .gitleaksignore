@@ -1,10 +1,20 @@
 # Gitleaks ignore file
-# Add false positives here
+# Format: commit-hash:filepath:line (or just filepath for path-based ignores)
+# Add confirmed false positives here
 
-# Example files that are safe
+# Example/template files — contain placeholder text only, no real secrets
 .env.example
 .env.template
 firebase-secret-formatter.example.js
 
-# Supabase anon keys are safe for client-side use
-src/supabase.ts:supabaseAnonKey
+# Documentation files — contain pattern examples, not real secrets
+SECURITY_AUDIT.md
+MASTER_SECURITY_PLAN.md
+SECURITY_CHECKLIST.md
+SECURITY_REMEDIATION.md
+
+# Test HTML tool — inputs are entered at runtime, no hardcoded secrets
+test-edge-function.html
+
+# Supabase edge function — uses Deno.env.get(), no hardcoded secrets
+supabase/functions/quick-processor/index.ts
