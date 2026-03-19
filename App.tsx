@@ -1,6 +1,12 @@
 // App.tsx
 import 'react-native-url-polyfill/auto';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as math from 'mathjs';
+
+// Dev-only logger (Issue 5)
+const log = (...args: any[]) => { if (__DEV__) { console.log(...args); } };
+const warn = (...args: any[]) => { if (__DEV__) { console.warn(...args); } };
+const err = (...args: any[]) => { if (__DEV__) { console.error(...args); } };
 import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions, Platform, AppStateStatus } from 'react-native';
 import { NavigationContainer, CommonActions, NavigationContainerRef, NavigationState } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -106,6 +112,7 @@ type RootStackParamList = {
   UppadJama: undefined;
   CashBalance: undefined;
   MumbaiDelivery: undefined;
+  PaymentConfirmation: undefined;
   BackdatedEntry: undefined;
   DailyEntries: undefined;
   NotificationTest: undefined;
@@ -153,11 +160,11 @@ const Key = ({ label, onPress, type, style }: {
 
 function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: () => void }) {
     useEffect(() => {
-      console.log('[CALC] overlay component mounted');
-      return () => console.log('[CALC] overlay component unmounted');
+      log('[CALC] overlay component mounted');
+      return () => log('[CALC] overlay component unmounted');
     }, []);
     useEffect(() => {
-      console.log('[CALC] visible =', visible);
+      log('[CALC] visible =', visible);
     }, [visible]);
     const [expr, setExpr] = useState<string>('');
     const [display, setDisplay] = useState<string>('0');
@@ -182,6 +189,10 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
     }, []);
     
     const [size, setSize] = useState<{ w: number; h: number }>({ w: CARD_W_DEF, h: CARD_H_DEF });
+    
+    // Issue 2: sizeRef keeps resizePan closure in sync with latest size
+    const sizeRef = useRef(size);
+    useEffect(() => { sizeRef.current = size; }, [size]);
     
     const getWin = () => Dimensions.get('window');
     
@@ -211,6 +222,7 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
 
     // Load saved position and size
     useEffect(() => {
+      let isMounted = true;
       (async () => {
         try {
           const [sx, sy, sw, sh] = await Promise.all([
@@ -227,7 +239,7 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
             const h = parseFloat(sh);
             if (!Number.isNaN(w) && !Number.isNaN(h) && w >= MIN_W && h >= MIN_H) {
               newSize = { w, h };
-              setSize(newSize);
+              if (isMounted) setSize(newSize);
             }
           }
           
@@ -237,19 +249,18 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
             const y = parseFloat(sy);
             if (!Number.isNaN(x) && !Number.isNaN(y)) { 
               const clampedPos = clamp(x, y, newSize);
-              setPos(clampedPos); 
+              if (isMounted) setPos(clampedPos);
               return; 
             }
           }
           
           // Set default position based on current size
-          const defPos = defaultPos();
-          setPos(defPos);
+          if (isMounted) setPos(defaultPos());
         } catch {
-          const defPos = defaultPos();
-          setPos(defPos);
+          if (isMounted) setPos(defaultPos());
         }
       })();
+      return () => { isMounted = false; };
     }, [clamp, defaultPos]);
   
     const dragOrigin = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -282,13 +293,13 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
       setPos(clampedPos);
     };
     const handlePinchStateChange = async ({ nativeEvent }: any) => {
-      console.log('[PINCH] state change -> state:', nativeEvent.state, 'oldState:', nativeEvent.oldState);
+      log('[PINCH] state change -> state:', nativeEvent.state, 'oldState:', nativeEvent.oldState);
       // When gesture becomes active, capture base size and center
       if (nativeEvent.state === State.ACTIVE) {
         setIsResizing(true);
         pinchStartSize.current = { w: size.w, h: size.h };
         pinchCenter.current = { cx: posRef.current.x + size.w / 2, cy: posRef.current.y + size.h / 2 };
-        console.log('[PINCH] ACTIVE -> base size', pinchStartSize.current);
+        log('[PINCH] ACTIVE -> base size', pinchStartSize.current);
       }
       // When gesture ends
       if (
@@ -302,7 +313,7 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
           ['calc_overlay_w', String(w)],
           ['calc_overlay_h', String(h)],
         ]).catch(() => {});
-        console.log('[PINCH] END -> saved size', w, h);
+        log('[PINCH] END -> saved size', w, h);
       }
     };
     
@@ -313,16 +324,15 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
       const { translationX, translationY } = evt.nativeEvent;
       const next = clamp(dragOrigin.current.x + translationX, dragOrigin.current.y + translationY);
       setPos(next);
-      // Debug drag event frames
-      console.log('[DRAG-H] event tx,ty=', translationX, translationY, ' -> pos ', next);
+      log('[DRAG-H] event tx,ty=', translationX, translationY, ' -> pos ', next);
     };
     const onHeaderPanStateChange = async ({ nativeEvent }: any) => {
       const { state, translationX, translationY } = nativeEvent;
-      console.log('[DRAG-H] state change ->', state, 'tx,ty=', translationX, translationY);
+      log('[DRAG-H] state change ->', state, 'tx,ty=', translationX, translationY);
       if (state === State.BEGAN) {
         isDragging.current = true;
         dragOrigin.current = { x: posRef.current.x, y: posRef.current.y };
-        console.log('[DRAG-H] BEGAN at', dragOrigin.current);
+        log('[DRAG-H] BEGAN at', dragOrigin.current);
       }
       if (state === State.ACTIVE) {
         const next = clamp(dragOrigin.current.x + translationX, dragOrigin.current.y + translationY);
@@ -337,7 +347,7 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
           ['calc_overlay_x', String(p.x)],
           ['calc_overlay_y', String(p.y)],
         ]).catch(() => {});
-        console.log('[DRAG-H] END saved pos', p);
+        log('[DRAG-H] END saved pos', p);
       }
     };
 
@@ -349,12 +359,12 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
         onPanResponderGrant: (evt) => {
           setIsResizing(true);
           resizeOrigin.current = {
-            w: size.w,
-            h: size.h,
+            w: sizeRef.current.w,
+            h: sizeRef.current.h,
             startX: evt.nativeEvent.pageX,
             startY: evt.nativeEvent.pageY,
           };
-          console.log('[RESIZE-HANDLE] grant origin', resizeOrigin.current);
+          log('[RESIZE-HANDLE] grant origin', resizeOrigin.current);
         },
         onPanResponderMove: (evt) => {
           const deltaX = evt.nativeEvent.pageX - resizeOrigin.current.startX;
@@ -370,12 +380,12 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
         },
         onPanResponderRelease: async () => {
           setIsResizing(false);
-          const { w, h } = size;
+          const { w, h } = sizeRef.current;
           await AsyncStorage.multiSet([
             ['calc_overlay_w', String(w)],
             ['calc_overlay_h', String(h)],
           ]).catch(() => {});
-          console.log('[RESIZE-HANDLE] release saved size', w, h);
+          log('[RESIZE-HANDLE] release saved size', w, h);
         },
       })
     ).current;
@@ -398,8 +408,7 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
     const evaluate = () => {
       try {
         const safe = expr.replace(/×/g, '*').replace(/÷/g, '/');
-        // eslint-disable-next-line no-new-func
-        const val = Function(`"use strict"; return (${safe || '0'})`)();
+        const val = math.evaluate(safe || '0');
         const out = (Number.isFinite(val) ? val : 0).toString();
         setDisplay(out);
         setExpr(out);
@@ -489,7 +498,7 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
                   style={stylesCalc.resetHandle}
                   onPress={() => {
                     clearAll();
-                    console.log('[CALC] Reset button pressed - calculator cleared');
+                    log('[CALC] Reset button pressed - calculator cleared');
                   }}
                   activeOpacity={0.7}
                 >
@@ -541,6 +550,7 @@ function App(): React.JSX.Element {
     
     // Load persisted navigation state on mount
     useEffect(() => {
+      let isMounted = true;
       const restoreNavigationState = async () => {
         try {
           // Check when app was last closed
@@ -548,35 +558,38 @@ function App(): React.JSX.Element {
           const closeTime = closeTimeString ? parseInt(closeTimeString) : 0;
           const timeSinceClose = Date.now() - closeTime;
           
-          console.log('🕐 APP LAUNCH CHECK:');
-          console.log('   Last close time:', closeTime ? new Date(closeTime).toLocaleTimeString() : 'Never');
-          console.log('   Time since close:', timeSinceClose, 'ms');
+          log('🕐 APP LAUNCH CHECK:');
+          log('   Last close time:', closeTime ? new Date(closeTime).toLocaleTimeString() : 'Never');
+          log('   Time since close:', timeSinceClose, 'ms');
           
           // Only restore navigation state if app was closed recently (< 3 seconds)
-          // This means it's a quick restart, not a fresh launch
           if (closeTime > 0 && timeSinceClose < 3000) {
             const savedStateString = await AsyncStorage.getItem(NAVIGATION_STATE_KEY);
             if (savedStateString) {
               const state = JSON.parse(savedStateString);
-              setInitialNavigationState(state);
-              console.log('✅ Navigation state restored (quick restart)');
+              if (isMounted) {
+                setInitialNavigationState(state);
+              }
+              log('✅ Navigation state restored (quick restart)');
             }
           } else {
-            console.log('🏠 Fresh launch detected - starting from Home');
-            // Clear old navigation state
+            log('🏠 Fresh launch detected - starting from Home');
             await AsyncStorage.removeItem(NAVIGATION_STATE_KEY);
           }
         } catch (error) {
-          console.warn('⚠️ Failed to restore navigation state:', error);
+          warn('⚠️ Failed to restore navigation state:', error);
         } finally {
-          setIsNavigationReady(true);
+          if (isMounted) {
+            setIsNavigationReady(true);
+          }
         }
       };
       
       restoreNavigationState();
+      return () => { isMounted = false; };
     }, []);
     
-    const checkActiveUser = async () => {
+    const checkActiveUser = useCallback(async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
@@ -598,32 +611,34 @@ function App(): React.JSX.Element {
       } catch (e) {
         // ignore
       }
-    };
+    }, []);
    
   
     useEffect(() => {
+      let isMounted = true;
       if (!isInitialized.current) {
         const initializeApp = async () => {
+          if (!isMounted) return;
           try {
-            console.log('🚀 Initializing app services...');
+            log('🚀 Initializing app services...');
             
             // Initialize Supabase storage first
             await initializeSupabaseStorage();
-            console.log('✅ Supabase storage initialized');
+            log('✅ Supabase storage initialized');
             
             // Setup notification channels for local notifications
-            console.log('📱 Setting up push notifications...');
+            log('📱 Setting up push notifications...');
             
             PushNotification.configure({
               onRegister: function (token) {
-                console.log('📱 Notification token received:', token);
+                log('📱 Notification token received:', token);
               },
               onNotification: function (notification) {
-                console.log('🔔 Notification received in app:', notification);
+                log('🔔 Notification received in app:', notification);
                 
                 // Handle notification tap
                 if ((notification as any).userInteraction) {
-                  console.log('👆 User tapped notification');
+                  log('👆 User tapped notification');
                 }
               },
               permissions: {
@@ -650,65 +665,66 @@ function App(): React.JSX.Element {
                 showBadge: true,
               } as any,
               (created) => {
-                console.log(`✅ User notification channel created: ${created}`);
+                log(`✅ User notification channel created: ${created}`);
               }
             );
             
             // Initialize notification services properly
-            console.log('📱 Initializing notification services...');
+            log('📱 Initializing notification services...');
             await NotificationService.initialize();
-            console.log('✅ NotificationService initialized');
+            log('✅ NotificationService initialized');
             
             // Initialize push notification service
             await PushNotificationService.initialize();
-            console.log('✅ PushNotificationService initialized');
+            log('✅ PushNotificationService initialized');
             
             // Initialize notification listener for current user
             await NotificationListener.getInstance().initialize();
-            console.log('✅ NotificationListener initialized');
+            log('✅ NotificationListener initialized');
             
             // Initialize auth logout service for real-time logout
             await AuthLogoutService.getInstance().initialize();
-            console.log('✅ AuthLogoutService initialized');
+            log('✅ AuthLogoutService initialized');
             
             // DeviceNotificationService is auto-initialized via constructor
-            console.log('📱 DeviceNotificationService ready');
+            log('📱 DeviceNotificationService ready');
             
             // Start AdminNotificationListener for admin users
             const AdminNotificationListener = (await import('./src/services/AdminNotificationListener')).default;
             await AdminNotificationListener.start();
-            console.log('✅ AdminNotificationListener started');
+            log('✅ AdminNotificationListener started');
             
             // Fix notification channels and configuration
             try {
               const NotificationFixer = await import('./src/services/NotificationFixer');
               await NotificationFixer.default.fixNotificationChannels();
-              console.log('✅ Notification channels fixed');
+              log('✅ Notification channels fixed');
             } catch (fixError) {
-              console.warn('⚠️ Could not fix notification channels:', fixError);
+              warn('⚠️ Could not fix notification channels:', fixError);
             }
             
-            console.log('✅ All notification services initialized');
+            log('✅ All notification services initialized');
             
             // Ensure Mumbai agency exists in database
             try {
               const { ensureMumbaiAgency } = await import('./src/utils/ensureMumbaiAgency');
               await ensureMumbaiAgency();
-              console.log('✅ Mumbai agency verified');
+              log('✅ Mumbai agency verified');
             } catch (agencyError) {
-              console.warn('⚠️ Could not verify Mumbai agency:', agencyError);
+              warn('⚠️ Could not verify Mumbai agency:', agencyError);
             }
             
             await checkSyncStatus();
             await checkActiveUser();
           } catch (error) {
-            console.error('❌ App initialization failed:', error);
+            err('❌ App initialization failed:', error);
           }
         };
         initializeApp();
         isInitialized.current = true;
       }
-    }, []);
+      return () => { isMounted = false; };
+    }, [checkActiveUser]);
   
     // Realtime: immediately sign out if current user's profile becomes inactive
     useEffect(() => {
@@ -764,11 +780,11 @@ function App(): React.JSX.Element {
     const isCameraActiveRef = useRef(false); // Track if camera is active
   
     useEffect(() => {
-      console.log('🚀 APP LAUNCH: Initial setup, wasInBackgroundRef =', wasInBackgroundRef.current);
+      log('🚀 APP LAUNCH: Initial setup, wasInBackgroundRef =', wasInBackgroundRef.current);
       
       const handleAppStateChange = async (nextAppState: AppStateStatus) => {
         const previousState = appStateRef.current;
-        console.log('📱 APP STATE CHANGE:', previousState, '→', nextAppState, 'isCameraActive:', isCameraActiveRef.current);
+        log('📱 APP STATE CHANGE:', previousState, '→', nextAppState, 'isCameraActive:', isCameraActiveRef.current);
         
         // Track state transitions
         if (previousState === 'active' && (nextAppState === 'background' || nextAppState === 'inactive')) {
@@ -776,44 +792,43 @@ function App(): React.JSX.Element {
           const timestamp = Date.now();
           wasInBackgroundRef.current = true;
           await AsyncStorage.setItem('app_background_time', timestamp.toString());
-          console.log('⏸️ APP GOING TO BACKGROUND: Saved timestamp', timestamp, 'wasInBackgroundRef =', wasInBackgroundRef.current);
+          log('⏸️ APP GOING TO BACKGROUND: Saved timestamp', timestamp, 'wasInBackgroundRef =', wasInBackgroundRef.current);
         }
         
         // When app is completely closed (not just backgrounded)
         if (nextAppState === 'background' || nextAppState === 'inactive') {
           // Save close time for detecting fresh launches
           await AsyncStorage.setItem(APP_CLOSE_TIME_KEY, Date.now().toString());
-          console.log('💾 Saved app close time');
+          log('💾 Saved app close time');
         }
         
         if (nextAppState === 'active') {
-          console.log('▶️ APP BECOMING ACTIVE: wasInBackgroundRef =', wasInBackgroundRef.current);
+          log('▶️ APP BECOMING ACTIVE: wasInBackgroundRef =', wasInBackgroundRef.current);
           
           // Check if camera was active
           const cameraActive = await AsyncStorage.getItem('camera_active');
           if (cameraActive === 'true') {
             isCameraActiveRef.current = true;
-            console.log('📸 Camera was active, will not reset navigation');
+            log('📸 Camera was active, will not reset navigation');
           }
           
           // Check if this is a fresh app launch or resume from background
           const backgroundTime = await AsyncStorage.getItem('app_background_time');
           const timeSinceBackground = backgroundTime ? Date.now() - parseInt(backgroundTime) : 0;
           
-          console.log('⏱️ TIME CHECK: backgroundTime =', backgroundTime, 'timeSinceBackground =', timeSinceBackground, 'ms');
+          log('⏱️ TIME CHECK: backgroundTime =', backgroundTime, 'timeSinceBackground =', timeSinceBackground, 'ms');
           
           // IMPORTANT: Don't reset navigation if camera was active
-          // Camera activity causes app to background, but we should stay on current screen
           const shouldResetNavigation = !isCameraActiveRef.current && 
                                         (!wasInBackgroundRef.current || timeSinceBackground > 5000);
           
           if (shouldResetNavigation) {
-            console.log('🔄 FRESH LAUNCH DETECTED: Clearing navigation state and going to Home');
-            console.log('   Reason:', !wasInBackgroundRef.current ? 'wasInBackgroundRef is false' : `timeSinceBackground (${timeSinceBackground}ms) > 5000ms`);
+            log('🔄 FRESH LAUNCH DETECTED: Clearing navigation state and going to Home');
+            log('   Reason:', !wasInBackgroundRef.current ? 'wasInBackgroundRef is false' : `timeSinceBackground (${timeSinceBackground}ms) > 5000ms`);
             
             // Clear navigation state for fresh launch
             await AsyncStorage.removeItem(NAVIGATION_STATE_KEY);
-            console.log('✅ Navigation state cleared from AsyncStorage');
+            log('✅ Navigation state cleared from AsyncStorage');
             
             if (navigationRef.current?.isReady()) {
               navigationRef.current.dispatch(
@@ -822,16 +837,16 @@ function App(): React.JSX.Element {
                   routes: [{ name: 'Home' }],
                 })
               );
-              console.log('✅ Navigation reset to Home screen');
+              log('✅ Navigation reset to Home screen');
             } else {
-              console.log('⚠️ Navigation ref not ready');
+              log('⚠️ Navigation ref not ready');
             }
           } else {
             if (isCameraActiveRef.current) {
-              console.log('📸 CAMERA WAS ACTIVE: Staying on current screen');
+              log('📸 CAMERA WAS ACTIVE: Staying on current screen');
             } else {
-              console.log('↩️ RESUME FROM BACKGROUND: Staying on current screen');
-              console.log('   timeSinceBackground =', timeSinceBackground, 'ms (< 5000ms)');
+              log('↩️ RESUME FROM BACKGROUND: Staying on current screen');
+              log('   timeSinceBackground =', timeSinceBackground, 'ms (< 5000ms)');
             }
           }
           
@@ -840,7 +855,7 @@ function App(): React.JSX.Element {
           isCameraActiveRef.current = false; // Reset camera flag
           await AsyncStorage.removeItem('app_background_time');
           await AsyncStorage.removeItem('camera_active'); // Clean up camera flag
-          console.log('🧹 Cleaned up: wasInBackgroundRef = false, isCameraActive = false, background_time removed');
+          log('🧹 Cleaned up: wasInBackgroundRef = false, isCameraActive = false, background_time removed');
           
           await syncAllDataFixed();
           await checkSyncStatus();
@@ -851,7 +866,7 @@ function App(): React.JSX.Element {
       };
       const subscription = AppState.addEventListener('change', handleAppStateChange);
       return () => subscription?.remove();
-    }, []);
+    }, [checkActiveUser]);
   
     const checkSyncStatus = async () => {
       const status = await getSyncStatus();
@@ -883,15 +898,16 @@ function App(): React.JSX.Element {
   
     // Draggable FAB state
     const FAB_W = 48, FAB_H = 48, MARGIN = 12;
-    const getWin = () => Dimensions.get('window');
-    const defaultPos = useCallback(() => {
-      const { width, height } = getWin();
+    const getFabWin = () => Dimensions.get('window');
+    const defaultFabPos = useCallback(() => {
+      const { width, height } = getFabWin();
       return { x: Math.max(MARGIN, width - FAB_W - 16), y: Math.max(MARGIN, height - FAB_H - 32) };
     }, []);
     const [fabPos, setFabPos] = useState<{ x: number; y: number } | null>(null);
     const fabPosRef = useRef<{ x: number; y: number } | null>(null);
   
     useEffect(() => {
+      let isMounted = true;
       (async () => {
         try {
           const [sx, sy] = await Promise.all([
@@ -900,14 +916,21 @@ function App(): React.JSX.Element {
           ]);
           if (sx != null && sy != null) {
             const x = parseFloat(sx); const y = parseFloat(sy);
-            if (!Number.isNaN(x) && !Number.isNaN(y)) { const p = { x, y }; setFabPos(p); fabPosRef.current = p; return; }
+            if (!Number.isNaN(x) && !Number.isNaN(y)) {
+              const p = { x, y };
+              if (isMounted) { setFabPos(p); fabPosRef.current = p; }
+              return;
+            }
           }
         } catch {}
-        const def = defaultPos();
-        setFabPos(def);
-        fabPosRef.current = def;
+        if (isMounted) {
+          const def = defaultFabPos();
+          setFabPos(def);
+          fabPosRef.current = def;
+        }
       })();
-    }, [defaultPos]);
+      return () => { isMounted = false; };
+    }, [defaultFabPos]);
   
     // Keep ref in sync in case position changes via state
     useEffect(() => {
@@ -915,7 +938,7 @@ function App(): React.JSX.Element {
     }, [fabPos]);
   
     const clampPos = (x: number, y: number) => {
-      const { width, height } = getWin();
+      const { width, height } = getFabWin();
       const minX = MARGIN, minY = MARGIN;
       const maxX = width - FAB_W - MARGIN;
       const maxY = height - FAB_H - (MARGIN + 4);
@@ -928,7 +951,7 @@ function App(): React.JSX.Element {
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 3 || Math.abs(g.dy) > 3,
         onPanResponderGrant: () => {
-          const base = fabPosRef.current ?? defaultPos();
+          const base = fabPosRef.current ?? defaultFabPos();
           dragOrigin.current = { x: base.x, y: base.y };
         },
         onPanResponderMove: (_, g) => {
@@ -937,7 +960,7 @@ function App(): React.JSX.Element {
           setFabPos(next);
         },
         onPanResponderRelease: async () => {
-          const p = fabPosRef.current ?? defaultPos();
+          const p = fabPosRef.current ?? defaultFabPos();
           await AsyncStorage.multiSet([
             ['calc_fab_x', String(p.x)],
             ['calc_fab_y', String(p.y)],
@@ -965,7 +988,7 @@ function App(): React.JSX.Element {
                       // Persist navigation state - Validates: Requirement 9.4
                       AsyncStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state))
                         .catch((error) => {
-                          console.warn('⚠️ Failed to persist navigation state:', error);
+                          warn('⚠️ Failed to persist navigation state:', error);
                         });
                     }
                   }}

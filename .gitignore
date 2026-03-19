@@ -77,11 +77,19 @@ yarn-error.log
 # Environment variables and secrets
 .env
 .env.local
+.env.production
 .env.*.local
 *.env
 !.env.example
+!.env.template
 firebase-credentials.json
+firebase-secret-formatter.js
 firebase-secret*.js
 !firebase-secret*.example.js
 service-account*.json
 *-credentials.json
+google-services.json
+/android/app/google-services.json
+/ios/GoogleService-Info.plist
+*.keystore
+*.jks

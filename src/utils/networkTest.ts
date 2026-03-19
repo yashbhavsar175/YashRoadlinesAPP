@@ -1,6 +1,9 @@
 // Network diagnostic utility
+import Config from 'react-native-config';
+
 export const testSupabaseConnection = async () => {
-  const supabaseUrl = 'https://rejkocbdaeyvsxdiamhu.supabase.co';
+  const supabaseUrl = Config.SUPABASE_URL ?? '';
+  const supabaseAnonKey = Config.SUPABASE_ANON_KEY ?? '';
   
   console.log('🔍 Testing Supabase connection...');
   console.log('Target URL:', supabaseUrl);
@@ -17,7 +20,7 @@ export const testSupabaseConnection = async () => {
     const response = await fetch(`${supabaseUrl}/rest/v1/`, {
       method: 'GET',
       headers: {
-        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJlamtvY2JkYWV5dnN4ZGlhbWh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQyMTUzNzUsImV4cCI6MjA2OTc5MTM3NX0.WHcp7lSxisXFJ9Waz_MzY2KJ1J934odeDI_3iQh8lBw'
+        'apikey': supabaseAnonKey
       },
       signal: controller.signal
     });
