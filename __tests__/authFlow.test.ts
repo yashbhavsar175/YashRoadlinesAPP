@@ -1,39 +1,30 @@
 /**
  * Unit tests for authentication flow.
- * Tests sign-in, sign-out, and session persistence behavior.
+ * Tests sign-in, sign-out, and session persistence behavior using mocked Supabase auth.
  */
 
-// Mock supabase before importing anything that uses it
 const mockSignInWithPassword = jest.fn();
 const mockSignOut = jest.fn();
 const mockGetUser = jest.fn();
 const mockGetSession = jest.fn();
 
-jest.mock('../src/supabase', () => ({
-  supabase: {
-    auth: {
-      signInWithPassword: mockSignInWithPassword,
-      signOut: mockSignOut,
-      getUser: mockGetUser,
-      getSession: mockGetSession,
-    },
-    from: jest.fn(() => ({
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      single: jest.fn(),
-    })),
-  },
-  getSupabase: jest.fn(() => ({
-    auth: {
-      signInWithPassword: mockSignInWithPassword,
-      signOut: mockSignOut,
-      getUser: mockGetUser,
-      getSession: mockGetSession,
-    },
-  })),
-}));
+// Mock the entire supabase module — must be before any imports
+jest.mock('../src/supabase', () => {
+  const mockAuth = {
+    signInWithPassword: (...args: any[]) => mockSignInWithPassword(...args),
+    signOut: (...args: any[]) => mockSignOut(...args),
+    getUser: (...args: any[]) => mockGetUser(...args),
+    getSession: (...args: any[]) => mockGetSession(...args),
+  };
+  return {
+    supabase: { auth: mockAuth },
+    getSupabase: () => ({ auth: mockAuth }),
+    SUPABASE_URL: 'https://mock.supabase.co',
+  };
+});
 
-import { supabase } from '../src/supabase';
+// Import after mock is set up
+const { supabase } = require('../src/supabase');
 
 describe('Authentication Flow', () => {
   beforeEach(() => {
