@@ -26,6 +26,7 @@ import {
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
+import { useTheme } from '../theme/ThemeContext';
 import Icon from 'react-native-vector-icons/Ionicons';
 
 // Utility to safely extract a message from unknown errors
@@ -46,6 +47,7 @@ interface LoginScreenProps {
 }
 
 function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
+  const { colors, isDark } = useTheme();
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -512,54 +514,54 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
 
   return (
     <KeyboardAvoidingView
-      style={GlobalStyles.container}
+      style={[GlobalStyles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Yash Roadlines</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Yash Roadlines</Text>
         </View>
 
-        <View style={GlobalStyles.card}>
+        <View style={[GlobalStyles.card, { backgroundColor: colors.card }]}>
           {/* Show waiting screen when waiting for admin approval */}
           {waitingForAdmin ? (
             <View style={styles.waitingContainer}>
-              <Icon name="time-outline" size={80} color={Colors.primary || '#007AFF'} />
-              <Text style={styles.waitingTitle}>Awaiting Admin Approval</Text>
-              <Text style={styles.waitingMessage}>
+              <Icon name="time-outline" size={80} color={colors.primary} />
+              <Text style={[styles.waitingTitle, { color: colors.text }]}>Awaiting Admin Approval</Text>
+              <Text style={[styles.waitingMessage, { color: colors.textSecondary }]}>
                 Your login request has been submitted successfully.
               </Text>
-              <Text style={styles.waitingMessage}>
+              <Text style={[styles.waitingMessage, { color: colors.textSecondary }]}>
                 Please wait while the administrator reviews and approves your access.
               </Text>
-              <View style={styles.waitingInfoBox}>
-                <Icon name="information-circle-outline" size={24} color={Colors.primary || '#007AFF'} />
-                <Text style={styles.waitingInfoText}>
+              <View style={[styles.waitingInfoBox, { backgroundColor: colors.surface, borderLeftColor: colors.primary }]}>
+                <Icon name="information-circle-outline" size={24} color={colors.primary} />
+                <Text style={[styles.waitingInfoText, { color: colors.textSecondary }]}>
                   You will be notified once your request is approved. The admin will provide you with an OTP code to complete the login process.
                 </Text>
               </View>
-              <View style={styles.contactBox}>
-                <Text style={styles.contactLabel}>Need immediate assistance?</Text>
-                <Text style={styles.contactInfo}>Contact: Yash Bhavsar</Text>
-                <Text style={styles.contactEmail}>yashbhavsar175@gmail.com</Text>
+              <View style={[styles.contactBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.contactLabel, { color: colors.textSecondary }]}>Need immediate assistance?</Text>
+                <Text style={[styles.contactInfo, { color: colors.text }]}>Contact: Yash Bhavsar</Text>
+                <Text style={[styles.contactEmail, { color: colors.primary }]}>yashbhavsar175@gmail.com</Text>
               </View>
               <TouchableOpacity
                 onPress={handleCancelOtp}
-                style={[GlobalStyles.buttonSecondary, { marginTop: 20 }]}
+                style={[GlobalStyles.buttonSecondary, { marginTop: 20, backgroundColor: colors.surface, borderColor: colors.border }]}
               >
-                <Text style={GlobalStyles.buttonSecondaryText}>Cancel Request</Text>
+                <Text style={[GlobalStyles.buttonSecondaryText, { color: colors.text }]}>Cancel Request</Text>
               </TouchableOpacity>
             </View>
           ) : otpPhase ? (
             /* OTP Entry Screen */
             <View>
-              <Text style={GlobalStyles.title}>Enter OTP</Text>
-              <Text style={styles.inputLabel}>OTP Code</Text>
+              <Text style={[GlobalStyles.title, { color: colors.text }]}>Enter OTP</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>OTP Code</Text>
               <TextInput
-                style={GlobalStyles.input}
+                style={[GlobalStyles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
                 placeholder="6-digit OTP"
-                placeholderTextColor={Colors.placeholder}
+                placeholderTextColor={colors.textSecondary}
                 value={otpInput}
                 onChangeText={setOtpInput}
                 keyboardType="number-pad"
@@ -570,48 +572,48 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
                   Too many attempts. Try again later.
                 </Text>
               ) : (
-                <Text style={styles.helperText}>Attempts left: {attemptsLeft}</Text>
+                <Text style={[styles.helperText, { color: colors.textSecondary }]}>Attempts left: {attemptsLeft}</Text>
               )}
-              <Text style={styles.helperTextSecondary}>
+              <Text style={[styles.helperTextSecondary, { color: colors.textSecondary }]}>
                 Enter the OTP code provided by the administrator.
               </Text>
               <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
                 <TouchableOpacity
                   onPress={handleVerifyOtp}
                   disabled={loading || (lockUntil && lockUntil > Date.now()) || otpInput.trim().length < 6}
-                  style={[GlobalStyles.buttonPrimary, { flex: 1 }, loading && styles.disabledButton]}
+                  style={[GlobalStyles.buttonPrimary, { flex: 1, backgroundColor: colors.primary }, loading && styles.disabledButton]}
                 >
-                  <Text style={GlobalStyles.buttonPrimaryText}>
+                  <Text style={[GlobalStyles.buttonPrimaryText, { color: colors.headerText }]}>
                     {loading ? 'Verifying…' : 'Verify OTP'}
                   </Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity onPress={handleCancelOtp} style={[GlobalStyles.buttonTextOnly, { marginTop: 12 }]}>
-                <Text style={[GlobalStyles.linkText, { textAlign: 'center' }]}>Cancel</Text>
+                <Text style={[GlobalStyles.linkText, { textAlign: 'center', color: colors.primary }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           ) : (
             /* Login Form */
             <>
-              <Text style={GlobalStyles.title}>Account Login</Text>
+              <Text style={[GlobalStyles.title, { color: colors.text }]}>Account Login</Text>
 
-              <Text style={styles.inputLabel}>Email</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Email</Text>
               <TextInput
-                style={GlobalStyles.input}
+                style={[GlobalStyles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
                 placeholder="Enter your email"
-                placeholderTextColor={Colors.placeholder}
+                placeholderTextColor={colors.textSecondary}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
               />
 
-              <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.passwordInputWrapper}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Password</Text>
+              <View style={[styles.passwordInputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
                 <TextInput
-                  style={styles.passwordInput}
+                  style={[styles.passwordInput, { color: colors.text }]}
                   placeholder="Enter your password"
-                  placeholderTextColor={Colors.placeholder}
+                  placeholderTextColor={colors.textSecondary}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!isPasswordVisible}
@@ -623,7 +625,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
                   <Icon
                     name={isPasswordVisible ? 'eye-outline' : 'eye-off-outline'}
                     size={24}
-                    color={Colors.textSecondary}
+                    color={colors.textSecondary}
                   />
                 </TouchableOpacity>
               </View>
@@ -631,9 +633,9 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
               <TouchableOpacity
                 onPress={handleLogin}
                 disabled={loading}
-                style={[GlobalStyles.buttonPrimary, loading && styles.disabledButton]}
+                style={[GlobalStyles.buttonPrimary, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
               >
-                <Text style={GlobalStyles.buttonPrimaryText}>
+                <Text style={[GlobalStyles.buttonPrimaryText, { color: colors.headerText }]}>
                   {loading ? 'Checking…' : 'Login'}
                 </Text>
               </TouchableOpacity>
@@ -659,22 +661,18 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: Colors.textPrimary,
   },
   inputLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: Colors.textPrimary,
     marginBottom: 8,
     marginTop: 15,
   },
   passwordInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderColor: Colors.border,
     borderWidth: 1,
     borderRadius: 8,
-    backgroundColor: Colors.surface,
     marginBottom: 16,
     height: 55,
   },
@@ -683,26 +681,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: Colors.textPrimary,
   },
   eyeIcon: {
     padding: 10,
   },
   disabledButton: {
-    backgroundColor: Colors.textSecondary,
-    opacity: 0.8,
-    elevation: 1,
-    shadowOpacity: 0.1,
+    opacity: 0.5,
   },
   helperText: {
     marginTop: 6,
     fontSize: 12,
-    color: Colors.textSecondary,
   },
   helperTextSecondary: {
     marginTop: 4,
     fontSize: 12,
-    color: Colors.textSecondary,
   },
   lockText: {
     marginTop: 6,
@@ -718,14 +710,12 @@ const styles = StyleSheet.create({
   waitingTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: Colors.textPrimary,
     marginTop: 20,
     marginBottom: 16,
     textAlign: 'center',
   },
   waitingMessage: {
     fontSize: 16,
-    color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: 12,
     paddingHorizontal: 20,
@@ -733,45 +723,37 @@ const styles = StyleSheet.create({
   },
   waitingInfoBox: {
     flexDirection: 'row',
-    backgroundColor: Colors.surface,
     borderRadius: 12,
     padding: 16,
     marginTop: 20,
     marginBottom: 20,
     borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
   },
   waitingInfoText: {
     flex: 1,
     fontSize: 14,
-    color: Colors.textSecondary,
     marginLeft: 12,
     lineHeight: 20,
   },
   contactBox: {
-    backgroundColor: '#f8f9fa',
     borderRadius: 12,
     padding: 20,
     width: '100%',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
   },
   contactLabel: {
     fontSize: 14,
-    color: Colors.textSecondary,
     marginBottom: 12,
     fontWeight: '600',
   },
   contactInfo: {
     fontSize: 16,
-    color: Colors.textPrimary,
     fontWeight: 'bold',
     marginBottom: 4,
   },
   contactEmail: {
     fontSize: 14,
-    color: Colors.primary,
     marginTop: 4,
   },
 });

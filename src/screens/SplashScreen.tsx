@@ -5,6 +5,7 @@ import { NavigationProp, CommonActions } from '@react-navigation/native';
 import { supabase } from '../supabase';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BiometricAuthService } from '../services/BiometricAuthService';
 import { responsiveFontSize, responsiveSpacing } from '../utils/responsive';
@@ -16,6 +17,7 @@ interface SplashScreenProps {
 }
 
 const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
+  const { colors, isDark } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
@@ -102,13 +104,13 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.primaryDark} />
+    <View style={[styles.container, { backgroundColor: colors.primary }]}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.headerBackground} />
       
       <Animated.View style={[styles.mainContent, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
         <View style={styles.titleContainer}>
           <Text 
-            style={styles.appName}
+            style={[styles.appName, { color: colors.headerText }]}
             numberOfLines={1}
             adjustsFontSizeToFit={true}
             minimumFontScale={0.6}
@@ -116,7 +118,7 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
             Yash Roadlines
           </Text>
         </View>
-        <Text style={styles.tagline}>Financial Management</Text>
+        <Text style={[styles.tagline, { color: colors.headerText }]}>Financial Management</Text>
       </Animated.View>
     </View>
   );
@@ -127,7 +129,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.primaryDark,
   },
   mainContent: {
     alignItems: 'center',
@@ -143,14 +144,12 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: responsiveFontSize(34),
     fontWeight: 'bold',
-    color: Colors.accent,
     textAlign: 'center',
     letterSpacing: 0.5,
     width: '100%',
   },
   tagline: {
     fontSize: responsiveFontSize(14),
-    color: Colors.surface,
     opacity: 0.7,
     textAlign: 'center',
     marginTop: responsiveSpacing(5),

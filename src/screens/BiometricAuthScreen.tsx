@@ -18,6 +18,7 @@ import { supabase } from '../supabase';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
+import { useTheme } from '../theme/ThemeContext';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { BiometricAuthService, BiometricCapability } from '../services/BiometricAuthService';
 import { getProfile } from '../data/Storage';
@@ -29,6 +30,7 @@ interface BiometricAuthScreenProps {
 }
 
 const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JSX.Element => {
+  const { colors, isDark } = useTheme();
   const [loading, setLoading] = useState<boolean>(false);
   const [capability, setCapability] = useState<BiometricCapability | null>(null);
   const [showPasswordInput, setShowPasswordInput] = useState<boolean>(false);
@@ -265,23 +267,23 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
 
   if (showPasswordInput) {
     return (
-      <View style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
         
         <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.header}>
-            <Icon name="shield-checkmark-outline" size={60} color={Colors.primary} />
-            <Text style={styles.title}>Enter Password</Text>
-            <Text style={styles.subtitle}>
+            <Icon name="shield-checkmark-outline" size={60} color={colors.primary} />
+            <Text style={[styles.title, { color: colors.text }]}>Enter Password</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
               Enter your password to continue as {userEmail}
             </Text>
           </View>
 
           <View style={styles.form}>
             <TextInput
-              style={GlobalStyles.input}
+              style={[GlobalStyles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
               placeholder="Enter your password"
-              placeholderTextColor={Colors.placeholder}
+              placeholderTextColor={colors.textSecondary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={true}
@@ -291,12 +293,12 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
             <TouchableOpacity
               onPress={handlePasswordAuth}
               disabled={loading}
-              style={[GlobalStyles.buttonPrimary, loading && styles.disabledButton]}
+              style={[GlobalStyles.buttonPrimary, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={colors.headerText} size="small" />
               ) : (
-                <Text style={GlobalStyles.buttonPrimaryText}>Continue</Text>
+                <Text style={[GlobalStyles.buttonPrimaryText, { color: colors.headerText }]}>Continue</Text>
               )}
             </TouchableOpacity>
 
@@ -304,7 +306,7 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
               onPress={() => setShowPasswordInput(false)}
               style={[GlobalStyles.buttonTextOnly, { marginTop: 16 }]}
             >
-              <Text style={GlobalStyles.linkText}>Back</Text>
+              <Text style={[GlobalStyles.linkText, { color: colors.primary }]}>Back</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -313,32 +315,32 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
       
       <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
         <View style={styles.header}>
-          <Icon name="shield-checkmark-outline" size={60} color={Colors.primary} />
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>
+          <Icon name="shield-checkmark-outline" size={60} color={colors.primary} />
+          <Text style={[styles.title, { color: colors.text }]}>Welcome Back</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             {userEmail ? `Logged in as ${userEmail}` : 'Please authenticate to continue'}
           </Text>
         </View>
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Authenticating...</Text>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Authenticating...</Text>
           </View>
         ) : (
           <View style={styles.authOptions}>
             {capability?.isAvailable && (
               <TouchableOpacity
                 onPress={handleBiometricAuth}
-                style={styles.biometricButton}
+                style={[styles.biometricButton, { backgroundColor: colors.surface, borderColor: colors.primary }]}
               >
-                <Icon name={getBiometricIcon()} size={50} color={Colors.primary} />
-                <Text style={styles.biometricButtonText}>
+                <Icon name={getBiometricIcon()} size={50} color={colors.primary} />
+                <Text style={[styles.biometricButtonText, { color: colors.primary }]}>
                   Use {getBiometricName()}
                 </Text>
               </TouchableOpacity>
@@ -346,17 +348,17 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
 
             <TouchableOpacity
               onPress={() => setShowPasswordInput(true)}
-              style={styles.passwordButton}
+              style={[styles.passwordButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
             >
-              <Icon name="key-outline" size={24} color={Colors.textSecondary} />
-              <Text style={styles.passwordButtonText}>Use Password</Text>
+              <Icon name="key-outline" size={24} color={colors.textSecondary} />
+              <Text style={[styles.passwordButtonText, { color: colors.textSecondary }]}>Use Password</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => navigation.replace('Login')}
               style={[GlobalStyles.buttonTextOnly, { marginTop: 20 }]}
             >
-              <Text style={GlobalStyles.linkText}>Switch Account</Text>
+              <Text style={[GlobalStyles.linkText, { color: colors.primary }]}>Switch Account</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -368,7 +370,6 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
@@ -382,13 +383,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: Colors.textPrimary,
     marginTop: 16,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
   },
@@ -398,7 +397,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: Colors.textSecondary,
     marginTop: 12,
   },
   authOptions: {
@@ -408,9 +406,7 @@ const styles = StyleSheet.create({
   biometricButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.surface,
     borderWidth: 2,
-    borderColor: Colors.primary,
     borderRadius: 16,
     paddingVertical: 24,
     paddingHorizontal: 40,
@@ -420,16 +416,13 @@ const styles = StyleSheet.create({
   biometricButtonText: {
     fontSize: 18,
     fontWeight: '600',
-    color: Colors.primary,
     marginTop: 8,
   },
   passwordButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
     borderRadius: 12,
     paddingVertical: 16,
     paddingHorizontal: 24,
@@ -437,7 +430,6 @@ const styles = StyleSheet.create({
   },
   passwordButtonText: {
     fontSize: 16,
-    color: Colors.textSecondary,
     marginLeft: 8,
     fontWeight: '500',
   },
@@ -446,8 +438,7 @@ const styles = StyleSheet.create({
     maxWidth: 300,
   },
   disabledButton: {
-    backgroundColor: Colors.textSecondary,
-    opacity: 0.8,
+    opacity: 0.5,
   },
 });
 
