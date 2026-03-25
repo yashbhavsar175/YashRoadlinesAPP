@@ -28,7 +28,6 @@ import { GlobalStyles } from '../theme/styles';
 import { getProfile, updateProfile, getAgencyMajuri, AgencyMajuri, getUppadJamaEntries, UppadJamaEntry, getAllTransactionsForDate, syncAllDataFixed } from '../data/Storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NotificationBell } from '../components/NotificationBell';
-import { useTheme } from '../theme/ThemeContext';
 
 // Black & White Theme Colors
 const BWColors = {
@@ -67,8 +66,7 @@ const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenProps): React.JSX.Element {
   const { navigate, replace } = navigation;
   const { isAdmin: contextIsAdmin, screenAccess, hasScreenAccess: contextHasScreenAccess, refreshPermissions, isLoading: contextLoading, lastUpdated } = useUserAccess();
-  const { currentOffice, getCurrentOfficeId, isLoading: officeLoading, availableOffices, switchOffice } = useOffice();
-  const { colors, isDark, currentTheme, setTheme } = useTheme();  const [userInitial, setUserInitial] = useState<string>('');
+  const { currentOffice, getCurrentOfficeId, isLoading: officeLoading, availableOffices, switchOffice } = useOffice();  const [userInitial, setUserInitial] = useState<string>('');
   const [userName, setUserName] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('User');
   const [userType, setUserType] = useState<'normal' | 'majur'>('normal');
@@ -565,11 +563,11 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
   // Remove automatic polling - only refresh on specific events
 
-  // Dynamic Styles - Use theme colors instead of hardcoded BWColors
+  // Updated Styles with Black & White Theme
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: colors.surface,
+      backgroundColor: BWColors.surfaceVariant,
     },
     iconContainer: {
       width: 56,
@@ -578,9 +576,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       justifyContent: 'center',
       alignItems: 'center',
       marginBottom: 12,
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: BWColors.borderLight,
     },
     loadingContainer: {
       padding: 48,
@@ -588,13 +586,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       justifyContent: 'center',
     },
     loadingText: {
-      color: colors.textSecondary,
+      color: BWColors.textSecondary,
       fontSize: 16,
       fontWeight: '600',
       marginTop: 16,
     },
     appBar: {
-      backgroundColor: colors.primary,
+      backgroundColor: BWColors.primary,
       padding: 20,
       paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 16 : 50,
       paddingBottom: 24,
@@ -605,7 +603,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       borderBottomRightRadius: 0,
     },
     appBarTitle: {
-      color: colors.card,
+      color: BWColors.surface,
       fontSize: 20,
       fontWeight: '800',
       letterSpacing: -0.5,
@@ -617,10 +615,10 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       fontWeight: '400',
     },
     adminOfficeSelector: {
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       padding: 16,
       borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      borderBottomColor: BWColors.borderLight,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
@@ -628,7 +626,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     officeSelectorLabel: {
       fontSize: 15,
       fontWeight: '600',
-      color: colors.text,
+      color: BWColors.text,
     },
     officeSelectorDropdown: {
       flex: 1,
@@ -637,14 +635,14 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       justifyContent: 'center',
       alignItems: 'center',
       borderWidth: 2,
       borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     avatarText: {
-      color: colors.primary,
+      color: BWColors.primary,
       fontWeight: '800',
       fontSize: 16,
     },
@@ -656,13 +654,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 20,
       padding: 20,
       marginBottom: 28,
       borderWidth: 2,
-      borderColor: colors.border,
-      shadowColor: colors.shadow,
+      borderColor: BWColors.borderLight,
+      shadowColor: BWColors.shadow,
       shadowOpacity: 0.1,
       shadowRadius: 12,
       elevation: 4,
@@ -671,11 +669,11 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       width: 50,
       height: 50,
       borderRadius: 25,
-      backgroundColor: colors.surface,
+      backgroundColor: BWColors.surfaceDark,
       justifyContent: 'center',
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: BWColors.border,
     },
     dateDisplay: {
       alignItems: 'center',
@@ -685,7 +683,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     dateText: {
       fontSize: 20,
       fontWeight: '800',
-      color: colors.text,
+      color: BWColors.text,
       textAlign: 'center',
     },
     sectionHeader: {
@@ -700,7 +698,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     sectionTitle: {
       fontSize: 22,
       fontWeight: '800',
-      color: colors.text,
+      color: BWColors.text,
       marginBottom: 16,
     },
     dateSummaryContent: {
@@ -708,7 +706,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       paddingBottom: 8,
     },
     dateSummaryItem: {
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 20,
       padding: 20,
       marginRight: 16,
@@ -717,16 +715,16 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       minHeight: 120,
       justifyContent: 'space-between',
       borderWidth: 2,
-      borderColor: colors.border,
-      shadowColor: colors.shadow,
+      borderColor: BWColors.borderLight,
+      shadowColor: BWColors.shadow,
       shadowOpacity: 0.08,
       shadowRadius: 8,
       elevation: 3,
     },
     selectedDateItem: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-      shadowColor: colors.primary,
+      backgroundColor: BWColors.primary,
+      borderColor: BWColors.primary,
+      shadowColor: BWColors.primary,
       shadowOpacity: 0.3,
     },
     dateSummaryHeader: {
@@ -736,7 +734,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     },
     summaryDateText: {
       fontSize: 15,
-      color: colors.textSecondary,
+      color: BWColors.textSecondary,
       fontWeight: '600',
       textAlign: 'center',
       marginBottom: 8,
@@ -744,35 +742,35 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     summaryDayText: {
       fontSize: 16,
       fontWeight: '700',
-      color: colors.text,
+      color: BWColors.text,
       textAlign: 'center',
       marginBottom: 12,
     },
     summaryAmountText: {
       fontSize: 18,
       fontWeight: '800',
-      color: colors.primary,
-      backgroundColor: colors.surface,
+      color: BWColors.primary,
+      backgroundColor: BWColors.surfaceDark,
       paddingVertical: 8,
       paddingHorizontal: 12,
       borderRadius: 12,
       textAlign: 'center',
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: BWColors.borderLight,
       overflow: 'hidden',
     },
     selectedSummaryAmountText: {
-      color: colors.card,
+      color: BWColors.surface,
       backgroundColor: 'rgba(255, 255, 255, 0.25)',
       borderColor: 'rgba(255, 255, 255, 0.3)',
     },
     majuriList: {
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 20,
       overflow: 'hidden',
       borderWidth: 2,
-      borderColor: colors.border,
-      shadowColor: colors.shadow,
+      borderColor: BWColors.borderLight,
+      shadowColor: BWColors.shadow,
       shadowOpacity: 0.1,
       shadowRadius: 12,
       elevation: 4,
@@ -788,7 +786,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     majuriAmount: {
       fontSize: 20,
       fontWeight: '800',
-      color: colors.primary,
+      color: BWColors.primary,
       textAlign: 'right',
       minWidth: 100,
     },
@@ -810,21 +808,21 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     },
     separator: {
       height: 1,
-      backgroundColor: colors.border,
+      backgroundColor: BWColors.borderLight,
       marginHorizontal: 24,
     },
     emptyContainer: {
       padding: 48,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 20,
       borderWidth: 2,
-      borderColor: colors.border,
+      borderColor: BWColors.borderLight,
       marginTop: 16,
     },
     emptyText: {
-      color: colors.textTertiary,
+      color: BWColors.textTertiary,
       fontSize: 16,
       fontWeight: '600',
       textAlign: 'center',
@@ -832,13 +830,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       lineHeight: 24,
     },
     card: {
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 20,
       padding: 24,
       marginBottom: 20,
       borderWidth: 2,
-      borderColor: colors.border,
-      shadowColor: colors.shadow,
+      borderColor: BWColors.borderLight,
+      shadowColor: BWColors.shadow,
       shadowOpacity: 0.1,
       shadowRadius: 12,
       elevation: 4,
@@ -850,28 +848,28 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       alignItems: 'center',
     },
     profileMenu: {
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 20,
       width: '90%',
       maxWidth: 400,
       overflow: 'hidden',
       borderWidth: 2,
-      borderColor: colors.border,
-      shadowColor: colors.shadow,
+      borderColor: BWColors.borderLight,
+      shadowColor: BWColors.shadow,
       shadowOpacity: 0.2,
       shadowRadius: 16,
       elevation: 8,
     },
     menuHeader: {
       padding: 24,
-      backgroundColor: colors.primary,
+      backgroundColor: BWColors.primary,
       alignItems: 'center',
     },
     menuAvatar: {
       width: 80,
       height: 80,
       borderRadius: 40,
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       justifyContent: 'center',
       alignItems: 'center',
       marginBottom: 12,
@@ -879,12 +877,12 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     menuAvatarText: {
-      color: colors.primary,
+      color: BWColors.primary,
       fontSize: 32,
       fontWeight: '800',
     },
     menuUserName: {
-      color: colors.card,
+      color: BWColors.surface,
       fontSize: 20,
       fontWeight: '800',
       marginBottom: 4,
@@ -899,7 +897,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       alignItems: 'center',
       padding: 20,
       borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      borderBottomColor: BWColors.borderLight,
     },
     menuIcon: {
       marginRight: 16,
@@ -908,41 +906,41 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     },
     menuItemText: {
       fontSize: 17,
-      color: colors.text,
+      color: BWColors.text,
       fontWeight: '600',
     },
     namePromptContainer: {
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 20,
       padding: 28,
       width: '90%',
       maxWidth: 400,
       borderWidth: 2,
-      borderColor: colors.border,
+      borderColor: BWColors.borderLight,
     },
     namePromptTitle: {
       fontSize: 24,
       fontWeight: '800',
       marginBottom: 8,
-      color: colors.text,
+      color: BWColors.text,
       textAlign: 'center',
     },
     modalSubtitle: {
       fontSize: 16,
-      color: colors.textSecondary,
+      color: BWColors.textSecondary,
       marginBottom: 24,
       textAlign: 'center',
       lineHeight: 22,
     },
     nameInput: {
       borderWidth: 2,
-      borderColor: colors.border,
+      borderColor: BWColors.border,
       borderRadius: 12,
       padding: 16,
       marginBottom: 24,
       fontSize: 16,
       fontWeight: '500',
-      backgroundColor: colors.inputBackground,
+      backgroundColor: BWColors.surfaceVariant,
     },
     buttonRow: {
       flexDirection: 'row',
@@ -962,22 +960,22 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       alignItems: 'center',
     },
     cancelButton: {
-      backgroundColor: colors.surface,
+      backgroundColor: BWColors.surfaceDark,
       borderWidth: 2,
-      borderColor: colors.border,
+      borderColor: BWColors.border,
     },
     cancelButtonText: {
-      color: colors.textSecondary,
+      color: BWColors.textSecondary,
       fontSize: 16,
       fontWeight: '600',
     },
     saveButton: {
-      backgroundColor: colors.primary,
+      backgroundColor: BWColors.primary,
       borderWidth: 2,
-      borderColor: colors.primary,
+      borderColor: BWColors.primary,
     },
     saveButtonText: {
-      color: colors.card,
+      color: BWColors.surface,
       fontSize: 16,
       fontWeight: '700',
     },
@@ -989,14 +987,14 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     },
     gridButton: {
       width: '48%',
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 16,
       padding: 24,
       marginBottom: 16,
       alignItems: 'center',
       borderWidth: 2,
-      borderColor: colors.border,
-      shadowColor: colors.shadow,
+      borderColor: BWColors.borderLight,
+      shadowColor: BWColors.shadow,
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.1,
       shadowRadius: 8,
@@ -1006,7 +1004,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       marginTop: 12,
       fontSize: 15,
       fontWeight: '700',
-      color: colors.text,
+      color: BWColors.text,
       textAlign: 'center',
       lineHeight: 20,
     },
@@ -1015,13 +1013,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       alignItems: 'center',
       justifyContent: 'center',
       padding: 16,
-      backgroundColor: colors.card,
+      backgroundColor: BWColors.surface,
       borderRadius: 16,
       marginTop: 24,
       marginBottom: 24,
       borderWidth: 2,
-      borderColor: colors.border,
-      shadowColor: colors.shadow,
+      borderColor: BWColors.borderLight,
+      shadowColor: BWColors.shadow,
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.1,
       shadowRadius: 8,
@@ -1029,12 +1027,12 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     },
     syncStatusText: {
       marginLeft: 8,
-      color: colors.textSecondary,
+      color: BWColors.textSecondary,
       fontSize: 15,
       fontWeight: '600',
     },
     pendingIndicator: {
-      backgroundColor: colors.surface,
+      backgroundColor: BWColors.surfaceDark,
       paddingHorizontal: 10,
       paddingVertical: 6,
       borderRadius: 12,
@@ -1042,23 +1040,23 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       flexDirection: 'row',
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: BWColors.borderLight,
     },
     pendingText: {
       marginLeft: 4,
-      color: colors.textSecondary,
+      color: BWColors.textSecondary,
       fontSize: 13,
       fontWeight: '700',
     },
     categoryTitle: {
       fontSize: 20,
       fontWeight: '800',
-      color: colors.text,
+      color: BWColors.text,
       marginBottom: 8,
     },
     categoryDescription: {
       fontSize: 14,
-      color: colors.textSecondary,
+      color: BWColors.textSecondary,
       marginBottom: 16,
       lineHeight: 20,
     },
@@ -1069,19 +1067,19 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     agencyName: {
       fontSize: 16,
       fontWeight: '700',
-      color: colors.text,
+      color: BWColors.text,
       marginBottom: 4,
     },
     majuriDescription: {
       fontSize: 14,
-      color: colors.textSecondary,
+      color: BWColors.textSecondary,
       lineHeight: 18,
     },
     addButton: {
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: colors.primary,
+      backgroundColor: BWColors.primary,
       justifyContent: 'center',
       alignItems: 'center',
       elevation: 2,
@@ -1089,32 +1087,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.2,
       shadowRadius: 2,
-    },
-    themeOption: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      marginRight: 8,
-      borderRadius: 8,
-      backgroundColor: colors.inputBackground,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    themeOptionSelected: {
-      backgroundColor: colors.inputBackground,
-      borderColor: colors.primary,
-      borderWidth: 2,
-    },
-    themeOptionText: {
-      fontSize: 13,
-      color: colors.textSecondary,
-      marginLeft: 6,
-      fontWeight: '500',
-    },
-    themeOptionTextSelected: {
-      color: colors.primary,
-      fontWeight: '700',
     },
   });
 
@@ -1130,9 +1102,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           styles.dateSummaryItem,
           isSelected && styles.selectedDateItem,
           {
-            backgroundColor: isSelected ? colors.primary : colors.card,
+            backgroundColor: isSelected ? BWColors.primary : BWColors.surface,
             borderWidth: isSelected ? 0 : 1,
-            borderColor: isSelected ? 'transparent' : colors.border,
+            borderColor: isSelected ? 'transparent' : BWColors.borderLight,
           }
         ]}
         activeOpacity={0.8}
@@ -1226,7 +1198,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     console.log('[HOME] Waiting for context... contextLoading=' + contextLoading + ' officeLoading=' + officeLoading);
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={BWColors.primary} />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
@@ -1236,7 +1208,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle={isDark ? "light-content" : "light-content"} backgroundColor={colors.headerBackground} />
+      <StatusBar barStyle="light-content" backgroundColor={BWColors.primary} />
       <View style={styles.appBar}>
         <View style={{ flex: 1, marginRight: 12 }}>
           <Text style={styles.appBarTitle} numberOfLines={1}>Yash Roadlines</Text>
@@ -1295,18 +1267,18 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         <RefreshControl 
           refreshing={refreshing} 
           onRefresh={onRefresh}
-          colors={[colors.primary]}
-          tintColor={colors.primary}
+          colors={[BWColors.primary]}
+          tintColor={BWColors.primary}
         />
       }
     >
       {/* Header with Full Dashboard Button */}
       <View style={[styles.sectionHeaderRow, { marginBottom: 16 }]}>
-        <Text style={[styles.sectionTitle, { fontSize: 24, color: colors.primary }]}>मजूर डैशबोर्ड</Text>
+        <Text style={[styles.sectionTitle, { fontSize: 24, color: BWColors.primary }]}>मजूर डैशबोर्ड</Text>
         <TouchableOpacity 
           onPress={() => navigate('MajurDashboard')}
           style={{
-            backgroundColor: colors.primary,
+            backgroundColor: BWColors.primary,
             paddingHorizontal: 16,
             paddingVertical: 8,
             borderRadius: 12,
@@ -1328,7 +1300,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           style={styles.navButton}
           activeOpacity={0.7}
         >
-          <Icon name="chevron-back" size={24} color={colors.primary} />
+          <Icon name="chevron-back" size={24} color={BWColors.primary} />
         </TouchableOpacity>
         
         <View style={styles.dateDisplay}>
@@ -1343,7 +1315,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           style={styles.navButton}
           activeOpacity={0.7}
         >
-          <Icon name="chevron-forward" size={24} color={colors.primary} />
+          <Icon name="chevron-forward" size={24} color={BWColors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -1362,7 +1334,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         nestedScrollEnabled={true}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Icon name="calendar-outline" size={48} color={colors.textTertiary} />
+            <Icon name="calendar-outline" size={48} color={BWColors.textTertiary} />
             <Text style={styles.emptyText}>कोई एंट्री नहीं मिली</Text>
           </View>
         }
@@ -1377,7 +1349,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
       {majurLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={BWColors.primary} />
           <Text style={styles.loadingText}>लोड हो रहा है...</Text>
         </View>
       ) : (viewMode === 'all' ? combinedData : filteredData).length > 0 ? (
@@ -1402,7 +1374,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                         {item.description}
                       </Text>
                     ) : null}
-                    <Text style={[styles.majuriType, { color: colors.textSecondary }]}>
+                    <Text style={[styles.majuriType, { color: BWColors.textSecondary }]}>
                       {item.type === 'majuri' ? 'मजूरी' : item.entry_type === 'credit' ? 'जमा' : 'उप्पद'}
                     </Text>
                   </View>
@@ -1422,7 +1394,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         </View>
       ) : (
         <View style={styles.emptyContainer}>
-          <Icon name="document-text-outline" size={64} color={colors.textTertiary} />
+          <Icon name="document-text-outline" size={64} color={BWColors.textTertiary} />
           <Text style={styles.emptyText}>
             {viewMode === 'all' 
               ? 'कोई मजूरी एंट्री नहीं मिली' 
@@ -1460,7 +1432,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="cash-outline" size={28} color={colors.primary} />
+                      <Icon name="cash-outline" size={28} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Paid Section</Text>
                   </TouchableOpacity>
@@ -1473,7 +1445,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="hammer-outline" size={26} color={colors.primary} />
+                      <Icon name="hammer-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Add Majuri</Text>
                   </TouchableOpacity>
@@ -1486,7 +1458,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="business-outline" size={26} color={colors.primary} />
+                      <Icon name="business-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Agency Entry</Text>
                   </TouchableOpacity>
@@ -1499,7 +1471,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="journal-outline" size={26} color={colors.primary} />
+                      <Icon name="journal-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>General Entry</Text>
                   </TouchableOpacity>
@@ -1512,7 +1484,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="people-outline" size={26} color={colors.primary} />
+                      <Icon name="people-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Uppad/Jama</Text>
                   </TouchableOpacity>
@@ -1526,7 +1498,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="wallet-outline" size={26} color={colors.primary} />
+                      <Icon name="wallet-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>My Uppad / Jama</Text>
                   </TouchableOpacity>
@@ -1539,7 +1511,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="car-outline" size={26} color={colors.primary} />
+                      <Icon name="car-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Mumbai Delivery</Text>
                   </TouchableOpacity>
@@ -1552,7 +1524,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="time-outline" size={26} color={colors.primary} />
+                      <Icon name="time-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Backdated Entry</Text>
                   </TouchableOpacity>
@@ -1565,7 +1537,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="calculator-outline" size={26} color={colors.primary} />
+                      <Icon name="calculator-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Daily Entries</Text>
                   </TouchableOpacity>
@@ -1589,7 +1561,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="person-circle-outline" size={26} color={colors.primary} />
+                      <Icon name="person-circle-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Driver Account</Text>
                   </TouchableOpacity>
@@ -1602,7 +1574,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="water-outline" size={26} color={colors.primary} />
+                      <Icon name="water-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Add Truck Fuel</Text>
                   </TouchableOpacity>
@@ -1628,7 +1600,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="list-outline" size={26} color={colors.primary} />
+                      <Icon name="list-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Statement</Text>
                   </TouchableOpacity>
@@ -1641,7 +1613,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="calendar-outline" size={26} color={colors.primary} />
+                      <Icon name="calendar-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Monthly Statement</Text>
                   </TouchableOpacity>
@@ -1654,7 +1626,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="document-text-outline" size={26} color={colors.primary} />
+                      <Icon name="document-text-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>Daily Report</Text>
                   </TouchableOpacity>
@@ -1667,7 +1639,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     activeOpacity={0.8}
                   >
                     <View style={styles.iconContainer}>
-                      <Icon name="time-outline" size={26} color={colors.primary} />
+                      <Icon name="time-outline" size={26} color={BWColors.primary} />
                     </View>
                     <Text style={styles.gridButtonText}>History Log</Text>
                   </TouchableOpacity>
@@ -1690,7 +1662,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                       activeOpacity={0.8}
                     >
                       <View style={styles.iconContainer}>
-                        <Icon name="wallet-outline" size={26} color={colors.primary} />
+                        <Icon name="wallet-outline" size={26} color={BWColors.primary} />
                       </View>
                       <Text style={styles.gridButtonText}>Setup Cash Amount</Text>
                     </TouchableOpacity>
@@ -1704,7 +1676,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                       activeOpacity={0.8}
                     >
                       <View style={styles.iconContainer}>
-                        <Icon name="checkmark-circle-outline" size={26} color={colors.primary} />
+                        <Icon name="checkmark-circle-outline" size={26} color={BWColors.primary} />
                       </View>
                       <Text style={styles.gridButtonText}>Verify Cash</Text>
                     </TouchableOpacity>
@@ -1718,7 +1690,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                       activeOpacity={0.8}
                     >
                       <View style={styles.iconContainer}>
-                        <Icon name="receipt-outline" size={26} color={colors.primary} />
+                        <Icon name="receipt-outline" size={26} color={BWColors.primary} />
                       </View>
                       <Text style={styles.gridButtonText}>Cash History</Text>
                     </TouchableOpacity>
@@ -1765,7 +1737,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                   setIsProfileMenuVisible(false);
                   navigate('AdminPanel');
                 }} style={styles.menuItem}>
-                    <Icon name="cog-outline" size={20} color={colors.text} style={styles.menuIcon} />
+                    <Icon name="cog-outline" size={20} color={BWColors.text} style={styles.menuIcon} />
                     <Text style={styles.menuItemText}>Admin Panel</Text>
                   </TouchableOpacity>
                 )}
@@ -1777,7 +1749,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                   setIsProfileMenuVisible(false);
                   navigate('UserAccessManagementScreen');
                 }} style={styles.menuItem}>
-                    <Icon name="people-outline" size={20} color={colors.text} style={styles.menuIcon} />
+                    <Icon name="people-outline" size={20} color={BWColors.text} style={styles.menuIcon} />
                     <Text style={styles.menuItemText}>User Access Management</Text>
                   </TouchableOpacity>
                 )}
@@ -1788,7 +1760,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                   setIsProfileMenuVisible(false);
                   navigate('PageManagement');
                 }} style={styles.menuItem}>
-                    <Icon name="layers-outline" size={20} color={colors.text} style={styles.menuIcon} />
+                    <Icon name="layers-outline" size={20} color={BWColors.text} style={styles.menuIcon} />
                     <Text style={styles.menuItemText}>Page Management</Text>
                   </TouchableOpacity>
                 )}
@@ -1799,79 +1771,20 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                       setIsProfileMenuVisible(false);
                       navigate('TotalPaid');
                     }} style={styles.menuItem}>
-                      <Icon name="cash-outline" size={20} color={colors.text} style={styles.menuIcon} />
+                      <Icon name="cash-outline" size={20} color={BWColors.text} style={styles.menuIcon} />
                       <Text style={styles.menuItemText}>Total Paid</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => {
                       setIsProfileMenuVisible(false);
                       navigate('EWayBillConsolidated');
                     }} style={styles.menuItem}>
-                      <Icon name="document-text-outline" size={20} color={colors.text} style={styles.menuIcon} />
+                      <Icon name="document-text-outline" size={20} color={BWColors.text} style={styles.menuIcon} />
                       <Text style={styles.menuItemText}>Consolidated E-Way Bill</Text>
                     </TouchableOpacity>
                   </Fragment>
                 )}
-
-                {/* Theme Selection */}
-                <View style={[styles.menuItem, { flexDirection: 'column', alignItems: 'flex-start', paddingVertical: 12 }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                    <Icon name="color-palette-outline" size={20} color={colors.text} style={styles.menuIcon} />
-                    <Text style={styles.menuItemText}>Theme</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', width: '100%', paddingLeft: 40 }}>
-                    <TouchableOpacity
-                      onPress={() => setTheme('light')}
-                      style={[
-                        styles.themeOption,
-                        currentTheme === 'light' && styles.themeOptionSelected
-                      ]}
-                    >
-                      <Icon name="sunny-outline" size={18} color={currentTheme === 'light' ? colors.primary : colors.textSecondary} />
-                      <Text style={[
-                        styles.themeOptionText,
-                        currentTheme === 'light' && styles.themeOptionTextSelected
-                      ]}>Light</Text>
-                      {currentTheme === 'light' && (
-                        <Icon name="checkmark-circle" size={16} color={colors.primary} style={{ marginLeft: 4 }} />
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setTheme('dark')}
-                      style={[
-                        styles.themeOption,
-                        currentTheme === 'dark' && styles.themeOptionSelected
-                      ]}
-                    >
-                      <Icon name="moon-outline" size={18} color={currentTheme === 'dark' ? colors.primary : colors.textSecondary} />
-                      <Text style={[
-                        styles.themeOptionText,
-                        currentTheme === 'dark' && styles.themeOptionTextSelected
-                      ]}>Dark</Text>
-                      {currentTheme === 'dark' && (
-                        <Icon name="checkmark-circle" size={16} color={colors.primary} style={{ marginLeft: 4 }} />
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setTheme('system')}
-                      style={[
-                        styles.themeOption,
-                        currentTheme === 'system' && styles.themeOptionSelected
-                      ]}
-                    >
-                      <Icon name="phone-portrait-outline" size={18} color={currentTheme === 'system' ? colors.primary : colors.textSecondary} />
-                      <Text style={[
-                        styles.themeOptionText,
-                        currentTheme === 'system' && styles.themeOptionTextSelected
-                      ]}>System</Text>
-                      {currentTheme === 'system' && (
-                        <Icon name="checkmark-circle" size={16} color={colors.primary} style={{ marginLeft: 4 }} />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
                 <TouchableOpacity onPress={handleLogout} style={styles.menuItem}>
-                  <Icon name="log-out-outline" size={20} color={colors.text} style={styles.menuIcon} />
+                  <Icon name="log-out-outline" size={20} color={BWColors.text} style={styles.menuIcon} />
                   <Text style={styles.menuItemText}>Logout</Text>
                 </TouchableOpacity>
               </View>
@@ -1895,7 +1808,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
               value={profileNameInput}
               onChangeText={setProfileNameInput}
               placeholder="Your name"
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={BWColors.textSecondary}
               autoCapitalize="words"
               maxLength={50}
             />
@@ -1921,5 +1834,3 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   );
 }
 export default HomeScreen;
-
-

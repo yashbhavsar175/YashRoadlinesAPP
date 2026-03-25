@@ -6,14 +6,13 @@ import NotificationService from './NotificationService';
 import { supabase } from '../supabase';
 import { AppState, AppStateStatus } from 'react-native';
 import { getApp } from '@react-native-firebase/app';
-import { getMessaging, getToken, onTokenRefresh, onMessage, onNotificationOpenedApp, requestPermission, AuthorizationStatus } from '@react-native-firebase/messaging';
-import messaging from '@react-native-firebase/messaging';
+import { getMessaging, getToken, onTokenRefresh, onMessage, onNotificationOpenedApp, getInitialNotification, requestPermission, AuthorizationStatus } from '@react-native-firebase/messaging';
 import { navigationRef } from '../../App';
 
 export interface PushNotificationData {
   title: string;
   message: string;
-  type: 'add' | 'edit' | 'delete' | 'system' | 'login_request';
+  type: 'add' | 'edit' | 'delete' | 'system';
   severity?: 'info' | 'warning' | 'success' | 'error';
   data?: any;
 }
@@ -358,8 +357,7 @@ class PushNotificationService {
           });
 
           // Handle notification tap when app was killed (cold start)
-          // Use the old API for getInitialNotification since modular API doesn't have it
-          messaging().getInitialNotification().then((remoteMessage) => {
+          getInitialNotification(fcmMessaging).then((remoteMessage) => {
             if (remoteMessage) {
               console.log('👆 FCM notification opened (cold start):', remoteMessage);
               const type = remoteMessage.data?.type;

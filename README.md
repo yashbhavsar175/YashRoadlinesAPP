@@ -29,26 +29,6 @@ A React Native mobile application for managing transport and logistics business 
 3. Run: `npm install`
 4. Run: `npx react-native run-android`
 
-## Development Scripts
-
-- `npm run android` - Run on Android device/emulator
-- `npm run ios` - Run on iOS device/simulator
-- `npm start` - Start Metro bundler
-- `npm run reset` - Start Metro with cache reset
-- `npm run clean` - Clean Android build
-- `npm run build:release` - Build Android release APK
-- `npm run lint` - Run ESLint
-- `npm run test` - Run tests
-- `npm run type-check` - TypeScript type checking
-
-## Supabase CLI
-
-The `supabase` package in devDependencies is a CLI-only tool for database migrations and local development. It's not bundled with the app. Use it with:
-
-```bash
-npx supabase [command]
-```
-
 ## Environment Variables
 
 See `.env.example` for required variables.
