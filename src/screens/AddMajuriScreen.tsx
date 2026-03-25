@@ -7,7 +7,6 @@ import { RootStackParamList } from '../../App';
 import { saveAgencyMajuri, getAgencyMajuri, AgencyMajuri, getAgencies, Agency, syncAllDataFixed } from '../data/Storage';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import NotificationService from '../services/NotificationService';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
 // ✨ Optimized: Using common components
@@ -96,9 +95,6 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
       const userDataString = await AsyncStorage.getItem('user_profile');
       const userData = userDataString ? JSON.parse(userDataString) : null;
       const userName = userData?.name || 'User';
-      
-      // Send notification to admin
-      await NotificationService.notifyAdd('agency_majuri', `New majuri entry: ₹${amount} for ${selectedAgency}`);
       
       // Send device notification to admin
       await DeviceNotificationService.notifyAdminEntryAdded(

@@ -21,7 +21,6 @@ import {
   deleteTransactionByIdImproved
 } from '../data/Storage';
 import UppadJamaStatement from '../components/UppadJamaStatement'; // Added import
-import ActivityNotificationService from '../services/ActivityNotificationService';
 
 
 type UppadJamaScreenNavigationProp = NavigationProp<RootStackParamList, 'UppadJama'>;
@@ -208,14 +207,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         const entryToDelete = entries.find(entry => entry.id === id);
         const ok = await deleteTransactionByIdImproved(id, OFFLINE_KEYS.UPPAD_JAMA_ENTRIES);
         if (ok) {
-          // Send delete notification to admin
-          if (entryToDelete) {
-            await ActivityNotificationService.notifyUppadJama(
-              'delete',
-              entryToDelete.amount,
-              `Deleted ${entryToDelete.entry_type} entry for ${entryToDelete.person_name}`
-            );
-          }
+          // Notification handled by AdminEntryNotificationService in Storage.ts
           
           await loadEntries();
           showAlert('Entry deleted.');
@@ -283,12 +275,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         return;
       }
 
-      // Send push notification to admin
-      await ActivityNotificationService.notifyUppadJama(
-        'add',
-        num,
-        `${entryType.toUpperCase()}: ${selectedPersonName}${description?.trim() ? ` - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}` : ''}`
-      );
+      // Notification handled by AdminEntryNotificationService in Storage.ts
 
       // Clear form
       setAmount('');

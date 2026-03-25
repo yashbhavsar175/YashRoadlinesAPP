@@ -6,7 +6,6 @@ import { RootStackParamList } from '../../App';
 import { saveAgency, getAgencies, Agency } from '../data/Storage';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import NotificationService from '../services/NotificationService';
 // ✨ Optimized: Using common components
 import { CommonHeader, CommonInput, LoadingSpinner, EmptyState } from '../components';
 
@@ -55,11 +54,6 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
     const success = await saveAgency(trimmedAgencyName);
 
     if (success) {
-      // Send notification to admin
-      await NotificationService.notifyAdd('agency_entry', 
-        `${trimmedAgencyName} agency was added by user`
-      );
-      
       showAlert(`Agency "${trimmedAgencyName}" added successfully!`, 2000);
       setAgencyName('');
       loadAgencies();

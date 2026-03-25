@@ -10,7 +10,6 @@ import Dropdown from '../components/Dropdown';
 import { saveTruckFuel, getTruckFuelEntries, TruckFuelEntry, deleteTransactionByIdImproved, syncAllDataFixed } from '../data/Storage';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
-import NotificationService from '../services/NotificationService';
 import { useOffice } from '../context/OfficeContext';
 
 interface DriverFuelEntry {
@@ -121,9 +120,6 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
     try {
       const success = await saveTruckFuel(newEntry);
       if (success) {
-        // Send notification to admin
-        await NotificationService.notifyAdd('fuel_entry', `New fuel entry: ₹${numAmount} ${fuelType} for ${driverName.trim()}`);
-        
         showAlert('Fuel entry saved successfully!');
         setDriverName('');
         setAmount('');
@@ -154,11 +150,6 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
             try {
               const success = await deleteTransactionByIdImproved(id, 'offline_truck_fuel');
               if (success) {
-                // Send notification to admin
-                if (entryToDelete) {
-                  await NotificationService.notifyDelete('fuel_entry', `Deleted fuel entry: ₹${entryToDelete.amount} ${entryToDelete.fuelType} for ${entryToDelete.driverName}`);
-                }
-                
                 Alert.alert('Success ✅', 'Entry deleted successfully!', [
                   { text: 'OK', onPress: loadFuelEntries }
                 ]);

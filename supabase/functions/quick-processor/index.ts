@@ -268,6 +268,28 @@ Deno.serve(async (req) => {
       if (!token) return badRequest('Missing token');
 
       const svc = getServiceClient();
+      
+      // First, delete any old tokens for this user to ensure one user = one token
+      // This prevents accumulation of stale tokens when FCM refreshes
+      try {
+        const { error: deleteError } = await svc
+          .from('device_tokens')
+          .delete()
+          .eq('user_id', user.id)
+          .neq('token', token); // Don't delete the token we're about to insert
+        
+        if (deleteError) {
+          console.warn('⚠️ Failed to delete old tokens:', deleteError);
+          // Continue anyway - upsert will still work
+        } else {
+          console.log('🧹 Cleaned up old tokens for user:', user.id);
+        }
+      } catch (cleanupErr) {
+        console.warn('⚠️ Error during old token cleanup:', cleanupErr);
+        // Continue anyway
+      }
+      
+      // Now insert/update the new token
       const payload = {
         token,
         user_id: user.id,
@@ -277,7 +299,9 @@ Deno.serve(async (req) => {
       } as const;
       const { error } = await svc.from('device_tokens').upsert(payload, { onConflict: 'token' });
       if (error) return serverError(error.message || 'DB error');
-      return json({ ok: true });
+      
+      console.log('✅ Token registered successfully for user:', user.id);
+      return json({ ok: true, message: 'Token registered and old tokens cleaned up' });
     }
 
     // ===== PUSH: SEND NOTIFICATION TO ADMIN VIA FCM =====
@@ -383,19 +407,33 @@ Deno.serve(async (req) => {
 
       // Helper: base64url
       const svc = getServiceClient();
-      const targetEmail = ((body.target_email as string) || Deno.env.get('ADMIN_EMAIL') || Deno.env.get('ADMIN') || '').toLowerCase();
-      if (!targetEmail) {
-        console.error('❌ [FCM] No target email');
-        return badRequest('No target admin email configured');
+      
+      // Get all admin users' device tokens
+      console.log('🔍 [FCM] Fetching admin device tokens...');
+      const { data: adminProfiles, error: adminErr } = await svc
+        .from('user_profiles')
+        .select('id')
+        .eq('is_admin', true);
+      
+      if (adminErr) {
+        console.error('❌ [FCM] Error fetching admin profiles:', adminErr);
+        return serverError(adminErr.message || 'DB error');
       }
       
-      console.log(`🎯 [FCM] Target email: ${targetEmail}`);
-
+      if (!adminProfiles || adminProfiles.length === 0) {
+        console.warn('⚠️ [FCM] No admin users found');
+        return json({ ok: false, reason: 'no-admins' });
+      }
+      
+      const adminIds = adminProfiles.map((p: any) => p.id);
+      console.log(`👥 [FCM] Found ${adminIds.length} admin user(s)`);
+      
       const { data: tokens, error: tErr } = await svc
         .from('device_tokens')
         .select('token')
-        .eq('email', targetEmail)
+        .in('user_id', adminIds)
         .limit(200);
+      
       if (tErr) {
         console.error('❌ [FCM] Database error:', tErr);
         return serverError(tErr.message || 'DB error');
@@ -403,13 +441,20 @@ Deno.serve(async (req) => {
       const registrationTokens = (tokens || []).map((t: any) => t.token).filter(Boolean);
       console.log(`📱 [FCM] Found ${registrationTokens.length} device token(s)`);
       if (!registrationTokens.length) {
-        console.warn('⚠️ [FCM] No device tokens found for target email');
+        console.warn('⚠️ [FCM] No device tokens found for admin users');
         return json({ ok: false, reason: 'no-tokens' });
       }
 
       const title = (body.title || '').toString();
-      const message = (body.body || '').toString();
+      // ✅ Accept both 'body' and 'message' fields for flexibility
+      const message = (body.body || body.message || '').toString();
       const data = (body.data || {}) as Record<string, unknown>;
+      
+      console.log('📝 [FCM] Notification content:', {
+        title,
+        messageLength: message.length,
+        messagePreview: message.substring(0, 100),
+      });
 
       const payload = {
         registration_ids: registrationTokens,
@@ -447,13 +492,30 @@ Deno.serve(async (req) => {
         }
 
         const results: any[] = [];
+        const invalidTokens: string[] = [];
         console.log(`📤 Sending to ${registrationTokens.length} device(s)`);
+        
         for (const reg of registrationTokens) {
           const msg = {
             message: {
               token: reg,
-              notification: { title: title || '', body: message || '' },
+              notification: { 
+                title: title || '', 
+                body: message || ''  // ✅ This is the notification body that shows in system tray
+              },
               data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)])),
+              android: {
+                priority: 'high' as const,
+                notification: {
+                  channel_id: 'admin-notifications',  // ✅ Fixed: Use admin channel, not user
+                  sound: 'default',
+                  // ✅ Android-specific notification styling
+                  title: title || '',
+                  body: message || '',
+                  priority: 'high' as const,
+                  visibility: 'public' as const,
+                },
+              },
             },
           };
           try {
@@ -466,18 +528,77 @@ Deno.serve(async (req) => {
               body: JSON.stringify(msg),
             });
             const bodyText = await res.text().catch(() => '');
+            
             if (res.ok) {
               console.log(`✅ Notification sent successfully to device`);
+              results.push({ status: res.status, body: bodyText, ok: res.ok, token: reg });
             } else {
               console.error(`❌ FCM error ${res.status}:`, bodyText);
+              
+              // Parse error response to check for UNREGISTERED tokens
+              try {
+                const errorData = JSON.parse(bodyText);
+                const errorCode = errorData?.error?.details?.[0]?.errorCode || errorData?.error?.status;
+                
+                // FCM V1 API error codes for invalid tokens:
+                // - UNREGISTERED: Token is no longer valid
+                // - INVALID_ARGUMENT: Token format is invalid
+                // - NOT_FOUND: Token not found (404)
+                if (
+                  errorCode === 'UNREGISTERED' || 
+                  errorCode === 'INVALID_ARGUMENT' ||
+                  res.status === 404 ||
+                  bodyText.includes('UNREGISTERED') ||
+                  bodyText.includes('not a valid FCM registration token')
+                ) {
+                  console.warn(`🗑️ Invalid token detected, marking for deletion: ${reg.substring(0, 20)}...`);
+                  invalidTokens.push(reg);
+                }
+              } catch (parseErr) {
+                // If we can't parse the error, check status code
+                if (res.status === 404) {
+                  console.warn(`🗑️ 404 error, marking token for deletion: ${reg.substring(0, 20)}...`);
+                  invalidTokens.push(reg);
+                }
+              }
+              
+              results.push({ status: res.status, body: bodyText, ok: res.ok, token: reg });
             }
-            results.push({ status: res.status, body: bodyText, ok: res.ok });
           } catch (e) {
             console.error('❌ Failed to send to device:', e);
-            results.push({ error: (e as Error).message, ok: false });
+            results.push({ error: (e as Error).message, ok: false, token: reg });
           }
         }
-        return json({ ok: true, results });
+        
+        // Clean up invalid tokens from database
+        if (invalidTokens.length > 0) {
+          console.log(`🧹 Cleaning up ${invalidTokens.length} invalid token(s)...`);
+          try {
+            const { error: deleteError } = await svc
+              .from('device_tokens')
+              .delete()
+              .in('token', invalidTokens);
+            
+            if (deleteError) {
+              console.error('❌ Failed to delete invalid tokens:', deleteError);
+            } else {
+              console.log(`✅ Successfully deleted ${invalidTokens.length} invalid token(s)`);
+            }
+          } catch (cleanupErr) {
+            console.error('❌ Error during token cleanup:', cleanupErr);
+          }
+        }
+        
+        return json({ 
+          ok: true, 
+          results,
+          summary: {
+            total: registrationTokens.length,
+            successful: results.filter(r => r.ok).length,
+            failed: results.filter(r => !r.ok).length,
+            invalidTokensRemoved: invalidTokens.length
+          }
+        });
       }
 
       // Fallback: legacy server key path (if provided)

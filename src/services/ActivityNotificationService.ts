@@ -74,15 +74,8 @@ class ActivityNotificationService {
         activityData.details
       );
 
-      // Send device notification (shows in status bar)
-      await DeviceNotificationService.sendAdminDeviceNotification({
-        title,
-        message,
-        type: activityData.action,
-        screen: activityData.category,
-        userName,
-        details: activityData
-      });
+      // NOTE: DeviceNotificationService call removed - entry notifications are now
+      // handled exclusively by AdminEntryNotificationService to prevent duplicates
 
     } catch (error) {
       console.error('❌ Error sending activity notification:', error);

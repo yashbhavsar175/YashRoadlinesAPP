@@ -1,0 +1,67 @@
+========================================
+YashRoadlines App - Release Instructions
+========================================
+
+STEP 1: Update Version Numbers
+-------------------------------
+Edit this file: android/app/build.gradle
+
+Find these lines:
+    versionCode 1
+    versionName "1.0"
+
+Change to:
+    versionCode 2
+    versionName "1.1"
+
+
+STEP 2: Build the App
+----------------------
+Open Command Prompt or PowerShell in MyApp folder and run:
+
+    release.bat
+
+Choose option 2 (AAB for Play Store) or option 3 (Both APK and AAB)
+
+
+STEP 3: Test (if you built APK)
+--------------------------------
+Install APK on your device and test:
+- Login
+- Create entry
+- Check notifications (should show full details, no duplicates)
+
+
+STEP 4: Upload to Play Store
+-----------------------------
+1. Go to: https://play.google.com/console
+2. Select YashRoadlines app
+3. Go to: Production → Create new release
+4. Upload file: android/app/build/outputs/bundle/release/app-release.aab
+5. Copy release notes from QUICK_RELEASE.md
+6. Review and publish
+
+
+NEED HELP?
+----------
+- Quick guide: QUICK_RELEASE.md
+- Detailed guide: RELEASE_GUIDE.md
+- Checklist: RELEASE_CHECKLIST.md
+- Technical details: FINAL_FIXES_SUMMARY.md
+
+
+TROUBLESHOOTING
+---------------
+Build fails?
+    cd android
+    gradlew.bat clean
+    gradlew.bat bundleRelease
+
+Notifications not working?
+    Check google-services.json is in android/app/
+    Verify Firebase SHA-256 certificate
+
+
+========================================
+Ready to release! 🚀
+========================================

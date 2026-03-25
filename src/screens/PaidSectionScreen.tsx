@@ -8,7 +8,6 @@ import { useAlert } from '../context/AlertContext';
 import { useOffice } from '../context/OfficeContext';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import NotificationService from '../services/NotificationService';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
 import { CommonHeader, CommonInput, LoadingSpinner, EmptyState, Dropdown } from '../components';
@@ -113,9 +112,6 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
         const userDataString = await AsyncStorage.getItem('user_profile');
         const userData = userDataString ? JSON.parse(userDataString) : null;
         const userName = userData?.name || 'User';
-        
-        // Send notification to admin
-        await NotificationService.notifyAdd('agency_payment', `New payment: ₹${amount} for ${selectedAgency} - Bill #${billNo.trim()}`);
         
         // Send device notification to admin
         await DeviceNotificationService.notifyAdminEntryAdded(

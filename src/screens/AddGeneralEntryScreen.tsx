@@ -9,7 +9,6 @@ import { saveGeneralEntry, GeneralEntryInput, getAgencies } from '../data/Storag
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAlert } from '../context/AlertContext';
 import { useOffice } from '../context/OfficeContext';
-import NotificationService from '../services/NotificationService';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
 import { CommonHeader, CommonInput } from '../components';
@@ -71,9 +70,6 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
         // Get current user info for notifications
         const { data: { user } } = await supabase.auth.getUser();
         const userName = user?.user_metadata?.full_name || user?.email || 'User';
-        
-        // Send notification to admin
-        await NotificationService.notifyAdd('general_entry', `New ${entryType} entry: ₹${numAmount} - ${description.trim().slice(0, 30)}${description.trim().length > 30 ? '...' : ''}`);
         
         // Send device notification to admin
         await DeviceNotificationService.notifyAdminEntryAdded(

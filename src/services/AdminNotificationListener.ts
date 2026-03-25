@@ -1,7 +1,7 @@
 // AdminNotificationListener.ts - Real-time notification listener for Admin
+// ⚠️ IMPORTANT: This listener is ONLY for in-app UI updates (badge count, notification list refresh)
+// It does NOT show push notifications - those are handled by FCM via AdminEntryNotificationService
 import { supabase } from '../supabase';
-import PushNotification from 'react-native-push-notification';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 class AdminNotificationListener {
   private subscription: any = null;
@@ -9,7 +9,7 @@ class AdminNotificationListener {
   private shownNotifications = new Set<string>(); // Track shown notifications to prevent duplicates
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private baseReconnectDelay = 1000; // Start with 1 second
   private maxReconnectDelay = 30000; // Max 30 seconds
 
@@ -51,8 +51,15 @@ class AdminNotificationListener {
             table: 'admin_notifications',
           },
           (payload) => {
-            console.log('🔔 New notification received via realtime:', payload.new);
+            console.log('🔔 Realtime DB insert detected:', payload.new?.title);
+            console.log('ℹ️  FCM push already sent by AdminEntryNotificationService');
+            console.log('ℹ️  This listener is for in-app UI updates only');
+            
+            // Track notification to prevent duplicates
             this.showLocalNotification(payload.new);
+            
+            // If you need to update UI (badge count, notification list), do it here
+            // Example: EventEmitter.emit('newNotification', payload.new);
           }
         )
         .subscribe((status) => {
@@ -84,13 +91,6 @@ class AdminNotificationListener {
     try {
       const title = notification.title || '';
       
-      // Skip database trigger notifications by title pattern
-      const triggerTitles = ['💳 New Payment Added', '🗑️ General Entry Deleted', '✏️ Entry Updated'];
-      if (triggerTitles.some(t => title.includes(t) || title.startsWith('💳') || title.startsWith('🗑️') || title.startsWith('✏️'))) {
-        console.log('⏭️ Skipping database trigger notification:', title);
-        return;
-      }
-      
       // Prevent duplicate notifications
       const notificationKey = `${notification.id}_${notification.created_at}`;
       if (this.shownNotifications.has(notificationKey)) {
@@ -99,42 +99,23 @@ class AdminNotificationListener {
       }
       this.shownNotifications.add(notificationKey);
       
-      console.log('📱 Showing local notification for admin:', title);
+      // ✅ CRITICAL FIX: Don't show local notification here!
+      // FCM push notification is already sent by AdminEntryNotificationService
+      // This realtime listener is ONLY for in-app UI updates (badge count, notification list refresh)
+      // Showing local notification here causes DUPLICATE notifications
       
-      // Force notification to show even in foreground
-      PushNotification.localNotification({
-        channelId: 'admin-notifications',
-        id: notification.id || Math.floor(Math.random() * 1000000).toString(),
-        title: notification.title || 'New Activity',
-        message: notification.message || 'A user performed an action',
-        playSound: true,
-        soundName: 'default',
-        importance: 'high',
-        priority: 'high',
-        vibrate: true,
-        autoCancel: true,
-        largeIcon: 'ic_launcher',
-        smallIcon: 'ic_launcher',
-        bigText: notification.message,
-        subText: notification.user_name || 'User Activity',
-        color: '#2196F3',
-        group: 'admin-notifications',
-        ongoing: false,
-        invokeApp: false, // Changed to false so it shows in status bar
-        when: Date.now(),
-        usesChronometer: false,
-        visibility: 'public', // Make notification visible on lock screen
-        ignoreInForeground: false, // Force show in foreground
-        userInfo: {
-          notificationId: notification.id,
-          type: notification.type,
-          severity: notification.severity
-        }
-      });
-
-      console.log('✅ Local notification shown successfully');
+      console.log('📱 Realtime notification received from DB:', title);
+      console.log('✅ FCM push already handled by AdminEntryNotificationService');
+      console.log('ℹ️  This listener is for in-app UI updates only (not push notifications)');
+      
+      // If you have a callback for UI updates (badge count, notification list), call it here
+      // Example: this.onNewNotification?.(notification);
+      
+      // DO NOT show local notification - it duplicates the FCM push
+      // PushNotification.localNotification({ ... }); // ❌ REMOVED - causes duplicates
+      
     } catch (error) {
-      console.error('❌ Error showing local notification:', error);
+      console.error('❌ Error in showLocalNotification:', error);
     }
   }
 
@@ -203,7 +184,7 @@ class AdminNotificationListener {
   async reconnect() {
     console.log('🔄 Manual reconnection requested...');
     this.reconnectAttempts = 0;
-    await this.stop();
+    this.stop();
     await this.start();
   }
 }

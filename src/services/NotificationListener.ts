@@ -27,11 +27,18 @@ class NotificationListener {
 
   async initialize() {
     try {
+      // Check if user is authenticated before setting up subscription
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) {
+        console.log('ℹ️ No authenticated user, skipping notification listener');
+        return;
+      }
+
       // Get current user ID
       await this.getCurrentUserId();
       
       if (!this.currentUserId) {
-        console.log('🚫 No current user, skipping notification listener');
+        console.log('ℹ️ No current user ID found, skipping notification listener');
         return;
       }
 
@@ -57,7 +64,7 @@ class NotificationListener {
       this.setupNotificationSubscription();
       console.log('✅ Notification listener initialized for user:', this.currentUserId);
     } catch (error) {
-      console.error('❌ Error initializing notification listener:', error);
+      console.log('ℹ️ Error initializing notification listener:', error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
@@ -95,7 +102,7 @@ class NotificationListener {
         this.currentUserId = user.id;
       }
     } catch (error) {
-      console.error('❌ Error getting current user ID:', error);
+      console.log('ℹ️ Error getting current user ID:', error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
@@ -136,24 +143,24 @@ class NotificationListener {
           this.consecutiveFailures = 0; // Reset consecutive failures
           console.log('✅ Notification subscription active');
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Notification subscription error:', err);
+          console.warn('⚠️ Notification subscription error:', err || 'Unknown error');
           this.consecutiveFailures++;
           if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
-            console.error(`❌ Too many consecutive failures (${this.consecutiveFailures}). Stopping reconnection.`);
+            console.log(`ℹ️ Notification subscription stopped after ${this.consecutiveFailures} consecutive failures`);
             return;
           }
           this.handleReconnection();
         } else if (status === 'CLOSED') {
-          console.warn('⚠️ Notification channel closed');
+          console.log('ℹ️ Notification channel closed');
           this.consecutiveFailures++;
           // Only reconnect if we didn't manually close it and haven't failed too many times
           if (this.subscription && this.consecutiveFailures < this.maxConsecutiveFailures) {
             this.handleReconnection();
           } else if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
-            console.error(`❌ Too many consecutive failures (${this.consecutiveFailures}). Stopping reconnection.`);
+            console.log(`ℹ️ Notification subscription stopped after ${this.consecutiveFailures} consecutive failures`);
           }
         } else if (status === 'TIMED_OUT') {
-          console.warn('⏱️ Notification subscription timed out');
+          console.log('ℹ️ Notification subscription timed out, will retry');
           this.handleReconnection();
         }
       });
@@ -166,7 +173,7 @@ class NotificationListener {
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('❌ Max reconnection attempts reached for NotificationListener. Stopping reconnection.');
+      console.log('ℹ️ Max reconnection attempts reached for NotificationListener. Stopping reconnection.');
       return;
     }
 
@@ -190,16 +197,23 @@ class NotificationListener {
           this.subscription = null;
         }
         
+        // Verify user is still authenticated before reconnecting
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) {
+          console.log('ℹ️ No authenticated user, stopping reconnection');
+          return;
+        }
+        
         // Verify user ID is still valid before reconnecting
         await this.getCurrentUserId();
         if (!this.currentUserId) {
-          console.error('❌ No valid user ID, stopping reconnection');
+          console.log('ℹ️ No valid user ID, stopping reconnection');
           return;
         }
         
         this.setupNotificationSubscription();
       } catch (error) {
-        console.error('❌ Reconnection attempt failed:', error);
+        console.log('ℹ️ Reconnection attempt failed:', error instanceof Error ? error.message : 'Unknown error');
         // Only retry if we haven't hit max attempts
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.handleReconnection();
@@ -214,7 +228,7 @@ class NotificationListener {
 
       // Only show if this notification is actually for the current user
       if (notification.recipient_id !== this.currentUserId) {
-        console.log('🚫 Notification not for current user, skipping');
+        console.log('ℹ️ Notification not for current user, skipping');
         return;
       }
 
@@ -242,7 +256,7 @@ class NotificationListener {
 
       console.log('✅ Notification shown to recipient');
     } catch (error) {
-      console.error('❌ Error showing notification to user:', error);
+      console.log('ℹ️ Error showing notification to user:', error instanceof Error ? error.message : 'Unknown error');
     }
   }
 

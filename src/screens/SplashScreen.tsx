@@ -18,6 +18,7 @@ interface SplashScreenProps {
 const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const hasNavigated = useRef(false);
 
   useEffect(() => {
     // Start animation for the main content
@@ -38,9 +39,66 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
         checkSessionAndNavigate();
       }, 500);
     });
-  }, [fadeAnim, scaleAnim]);
+
+    // ✅ FIX: Listen for auth state changes including TOKEN_REFRESHED
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔐 Auth event on splash:', event);
+      
+      // Handle TOKEN_REFRESHED, SIGNED_IN, and INITIAL_SESSION
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (session?.user && !hasNavigated.current) {
+          console.log('✅ Session active, navigating from splash...');
+          await checkSessionAndNavigate();
+        }
+      }
+      
+      if (event === 'SIGNED_OUT' && !hasNavigated.current) {
+        console.log('🚪 Signed out, navigating to login...');
+        hasNavigated.current = true;
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: 'Login' }],
+          })
+        );
+      }
+    });
+
+    // ✅ FIX: Timeout fallback - if stuck on splash for 5 seconds, force check
+    const timeoutId = setTimeout(async () => {
+      if (!hasNavigated.current) {
+        console.log('⏱️ Splash timeout - forcing session check...');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          console.log('✅ Session found after timeout, navigating...');
+          hasNavigated.current = true;
+          await checkSessionAndNavigate();
+        } else {
+          console.log('❌ No session after timeout, navigating to login...');
+          hasNavigated.current = true;
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            })
+          );
+        }
+      }
+    }, 5000); // 5 second fallback
+
+    return () => {
+      authListener.subscription.unsubscribe();
+      clearTimeout(timeoutId);
+    };
+  }, [fadeAnim, scaleAnim, navigation]);
 
   const checkSessionAndNavigate = async () => {
+    // Prevent multiple navigations
+    if (hasNavigated.current) {
+      console.log('⏭️ Already navigated, skipping...');
+      return;
+    }
+
     const { data: { session } } = await supabase.auth.getSession();
     let screen: keyof RootStackParamList = 'Login';
     try {
@@ -93,6 +151,7 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
       screen = 'Login';
     }
 
+    hasNavigated.current = true;
     navigation.dispatch(
       CommonActions.reset({
         index: 0,

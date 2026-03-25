@@ -5,6 +5,7 @@ import { supabase, SUPABASE_URL } from '../supabase';
 import * as Keychain from 'react-native-keychain';
 import * as CryptoJS from 'crypto-js';
 import { queryPerformanceAnalyzer } from '../utils/performanceMonitor';
+import { sendAdminNotification, getOfficeName } from '../services/AdminEntryNotificationService';
 
 export interface Office {
   id: string;
@@ -133,6 +134,7 @@ export interface UserProfile {
   screen_access?: string[];
   office_id?: string;
   office_name?: string;
+  fcm_token?: string; // Firebase Cloud Messaging token for push notifications
   created_at: string;
   updated_at?: string;
 }
@@ -848,8 +850,28 @@ export const saveUppadJamaEntry = async (entry: Partial<UppadJamaEntry> & {
 
       if (!isUpdate && data) {
         await logHistory('add', 'uppad_jama_entries', data.id, entryData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'added',
+          entryType: 'Uppad/Jama',
+          userName: '', // Will be fetched from current user
+          amount: entry.amount,
+          officeName: await getOfficeName(entry.office_id),
+          entrySubType: entry.entry_type,
+          description: `${entry.person_name}${entry.description ? ' - ' + entry.description : ''}`,
+        }).catch(err => console.warn('Notification failed:', err));
       } else if (isUpdate) {
         await logHistory('update', 'uppad_jama_entries', entry.id!, entryData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'updated',
+          entryType: 'Uppad/Jama',
+          userName: '', // Will be fetched from current user
+          amount: entry.amount,
+          officeName: await getOfficeName(entry.office_id),
+          entrySubType: entry.entry_type,
+          description: `${entry.person_name}${entry.description ? ' - ' + entry.description : ''}`,
+        }).catch(err => console.warn('Notification failed:', err));
       }
       return true;
     } else {
@@ -3027,8 +3049,28 @@ export const saveAgencyPayment = async (payment: Partial<AgencyPayment> & { agen
 
       if ((!isUpdate || (payment.id && payment.id.startsWith('temp_'))) && data) {
         await logHistory('add', 'agency_payments', data.id, paymentData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'added',
+          entryType: 'Agency Payment',
+          userName: '', // Will be fetched from current user
+          amount: payment.amount,
+          officeName: await getOfficeName(payment.office_id),
+          agencyName: payment.agency_name,
+          billNo: payment.bill_no,
+        }).catch(err => console.warn('Notification failed:', err));
       } else if (isUpdate && payment.id && !payment.id.startsWith('temp_')) {
         await logHistory('update', 'agency_payments', payment.id, paymentData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'updated',
+          entryType: 'Agency Payment',
+          userName: '', // Will be fetched from current user
+          amount: payment.amount,
+          officeName: await getOfficeName(payment.office_id),
+          agencyName: payment.agency_name,
+          billNo: payment.bill_no,
+        }).catch(err => console.warn('Notification failed:', err));
       }
 
       return true;
@@ -3201,8 +3243,28 @@ export const saveAgencyMajuri = async (majuri: Partial<AgencyMajuri> & { agency_
       
       if (!isUpdate && data) {
         await logHistory('add', 'agency_majuri', data.id, majuriData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'added',
+          entryType: 'Majuri',
+          userName: '', // Will be fetched from current user
+          amount: majuri.amount,
+          officeName: await getOfficeName(majuri.office_id),
+          driverName: majuri.agency_name, // In majuri, agency_name is often driver name
+          description: majuri.description,
+        }).catch(err => console.warn('Notification failed:', err));
       } else if (isUpdate) {
         await logHistory('update', 'agency_majuri', majuri.id!, majuriData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'updated',
+          entryType: 'Majuri',
+          userName: '', // Will be fetched from current user
+          amount: majuri.amount,
+          officeName: await getOfficeName(majuri.office_id),
+          driverName: majuri.agency_name,
+          description: majuri.description,
+        }).catch(err => console.warn('Notification failed:', err));
       }
       
       return true;
@@ -3358,8 +3420,30 @@ export const saveDriverTransaction = async (transaction: Partial<DriverTransacti
       
       if (!isUpdate && data) {
         await logHistory('add', 'driver_transactions', data.id, transactionData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'added',
+          entryType: 'Driver Transaction',
+          userName: '', // Will be fetched from current user
+          amount: transaction.amount,
+          officeName: await getOfficeName(transaction.office_id),
+          driverName: transaction.driver_name,
+          entrySubType: transaction.transaction_type,
+          description: transaction.description,
+        }).catch(err => console.warn('Notification failed:', err));
       } else if (isUpdate) {
         await logHistory('update', 'driver_transactions', transaction.id!, transactionData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'updated',
+          entryType: 'Driver Transaction',
+          userName: '', // Will be fetched from current user
+          amount: transaction.amount,
+          officeName: await getOfficeName(transaction.office_id),
+          driverName: transaction.driver_name,
+          entrySubType: transaction.transaction_type,
+          description: transaction.description,
+        }).catch(err => console.warn('Notification failed:', err));
       }
       
       return true;
@@ -3513,8 +3597,30 @@ export const saveTruckFuel = async (fuelEntry: Partial<TruckFuelEntry> & {
       
       if (!isUpdate && data) {
         await logHistory('add', 'truck_fuel_entries', data.id, fuelData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'added',
+          entryType: 'Fuel Entry',
+          userName: '', // Will be fetched from current user
+          amount: fuelEntry.total_price,
+          officeName: await getOfficeName(fuelEntry.office_id),
+          truckNo: fuelEntry.truck_number,
+          litres: fuelEntry.quantity,
+          fuelType: fuelEntry.fuel_type,
+        }).catch(err => console.warn('Notification failed:', err));
       } else if (isUpdate) {
         await logHistory('update', 'truck_fuel_entries', fuelEntry.id!, fuelData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'updated',
+          entryType: 'Fuel Entry',
+          userName: '', // Will be fetched from current user
+          amount: fuelEntry.total_price,
+          officeName: await getOfficeName(fuelEntry.office_id),
+          truckNo: fuelEntry.truck_number,
+          litres: fuelEntry.quantity,
+          fuelType: fuelEntry.fuel_type,
+        }).catch(err => console.warn('Notification failed:', err));
       }
       
       return true;
@@ -3693,8 +3799,26 @@ export const saveGeneralEntry = async (entry: GeneralEntryInput): Promise<boolea
       
       if (!isUpdate && data?.id) {
         await logHistory('add', 'general_entries', data.id, entryData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'added',
+          entryType: 'General Entry',
+          userName: '', // Will be fetched from current user
+          amount: entry.amount,
+          officeName: await getOfficeName(entry.office_id),
+          description: entry.description,
+        }).catch(err => console.warn('Notification failed:', err));
       } else if (isUpdate && entry.id) {
         await logHistory('update', 'general_entries', entry.id, entryData);
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'updated',
+          entryType: 'General Entry',
+          userName: '', // Will be fetched from current user
+          amount: entry.amount,
+          officeName: await getOfficeName(entry.office_id),
+          description: entry.description,
+        }).catch(err => console.warn('Notification failed:', err));
       }
       
       return true;
@@ -3818,6 +3942,18 @@ export const saveAgencyEntry = async (entry: Omit<AgencyEntry, 'id' | 'created_a
       if (error) throw error;
       await saveToOfflineStorage(OFFLINE_KEYS.AGENCY_ENTRIES, data);
       await logHistory('add', 'agency_entries', data.id, entryData);
+      
+      // Send admin notification with specific details
+      sendAdminNotification({
+        action: 'added',
+        entryType: entry.agency_name === 'Mumbai' ? 'Mumbai Delivery' : 'Agency Entry',
+        userName: '', // Will be fetched from current user
+        amount: entry.amount,
+        officeName: await getOfficeName(entry.office_id),
+        agencyName: entry.agency_name,
+        description: entry.description,
+      }).catch(err => console.warn('Notification failed:', err));
+      
       return true;
     } else {
       const tempId = `temp_${Date.now()}`;
@@ -4009,6 +4145,19 @@ export const saveDeliveryRecord = async (
         
         await logHistory('update', 'agency_entries', data.id, deliveryData);
         console.log('✅ Local cache updated');
+        
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'updated',
+          entryType: 'Mumbai Delivery',
+          userName: '', // Will be fetched from current user
+          amount: record.amount,
+          officeName: await getOfficeName(record.office_id),
+          consigneeName: record.consignee_name,
+          itemDescription: record.item_description,
+          billNo: record.billty_no,
+        }).catch(err => console.warn('Notification failed:', err));
+        
         return true;
       } else {
         // Create new record in agency_entries table
@@ -4041,6 +4190,19 @@ export const saveDeliveryRecord = async (
         
         await logHistory('add', 'agency_entries', data.id, deliveryData);
         console.log('✅ Local cache updated');
+        
+        // Send admin notification with specific details
+        sendAdminNotification({
+          action: 'added',
+          entryType: 'Mumbai Delivery',
+          userName: '', // Will be fetched from current user
+          amount: record.amount,
+          officeName: await getOfficeName(record.office_id),
+          consigneeName: record.consignee_name,
+          itemDescription: record.item_description,
+          billNo: record.billty_no,
+        }).catch(err => console.warn('Notification failed:', err));
+        
         return true;
       }
     } else {
@@ -4805,6 +4967,25 @@ export const deleteTransactionByIdImproved = async (id: string, key: string): Pr
       if (!deleteError) {
         supabaseDeleteSuccess = true;
         await logHistory('delete', tableName, id, { deleted_data: record });
+        
+        // Send admin notification
+        const entryTypeMap: { [key: string]: string } = {
+          'agency_payments': 'Agency Payment',
+          'agency_majuri': 'Majuri',
+          'driver_transactions': 'Driver Transaction',
+          'truck_fuel_entries': 'Fuel Entry',
+          'general_entries': 'General Entry',
+          'agency_entries': 'Mumbai Delivery',
+          'uppad_jama_entries': 'Uppad/Jama',
+        };
+        const entryType = entryTypeMap[tableName] || 'Entry';
+        sendAdminNotification({
+          action: 'deleted',
+          entryType,
+          userName: '', // Will be fetched from current user
+          amount: record?.amount,
+          officeName: await getOfficeName(record?.office_id),
+        }).catch(err => console.warn('Notification failed:', err));
       }
     }
 
@@ -5298,6 +5479,16 @@ export const saveLeaveCashRecord = async (recordData: Omit<CashRecord, 'id' | 'c
     }
 
     console.log('💰 Cash record saved successfully');
+    
+    // Send admin notification with specific details
+    sendAdminNotification({
+      action: 'added',
+      entryType: 'Cash Record',
+      userName: '', // Will be fetched from current user
+      amount: recordData.expected_amount,
+      officeName: await getOfficeName(recordData.office_id),
+      description: `Expected: ₹${recordData.expected_amount.toLocaleString('en-IN')}`,
+    }).catch(err => console.warn('Notification failed:', err));
   } catch (error) {
     console.error('💥 Error saving cash record:', error);
     throw error;
@@ -5403,6 +5594,16 @@ export const updateCashRecord = async (id: string, updates: Partial<CashRecord>)
     }
 
     console.log('💰 Cash record updated successfully');
+    
+    // Send admin notification with specific details
+    sendAdminNotification({
+      action: 'updated',
+      entryType: 'Cash Record',
+      userName: '', // Will be fetched from current user
+      amount: updates.actual_amount || updates.expected_amount,
+      officeName: await getOfficeName(updatedRecord.office_id),
+      description: updates.actual_amount ? `Actual: ₹${updates.actual_amount.toLocaleString('en-IN')}` : undefined,
+    }).catch(err => console.warn('Notification failed:', err));
   } catch (error) {
     console.error('💥 Error updating cash record:', error);
     throw error;
@@ -5458,6 +5659,13 @@ export const deleteCashRecord = async (id: string): Promise<void> => {
     }
 
     console.log('💰 Cash record deleted successfully');
+    
+    // Send admin notification
+    sendAdminNotification({
+      action: 'deleted',
+      entryType: 'Cash Record',
+      userName: '', // Will be fetched from current user
+    }).catch(err => console.warn('Notification failed:', err));
   } catch (error) {
     console.error('💥 Error deleting cash record:', error);
     throw error;
@@ -6289,6 +6497,16 @@ export async function saveDailyEntry(
     console.log('✅ Daily entry saved successfully:', data);
     await logHistory('add', 'daily_entries', data.id, entryData);
     
+    // Send admin notification with specific details
+    sendAdminNotification({
+      action: 'added',
+      entryType: 'Daily Entry',
+      userName: '', // Will be fetched from current user
+      amount: netProfit,
+      officeName: await getOfficeName(officeId),
+      description: `Credit: ₹${totalCredit.toLocaleString('en-IN')}, Debit: ₹${totalDebit.toLocaleString('en-IN')}`,
+    }).catch(err => console.warn('Notification failed:', err));
+    
     // Clear local cache
     await AsyncStorage.removeItem(OFFLINE_KEYS.DAILY_ENTRIES);
     
@@ -6422,6 +6640,15 @@ export async function updateDailyEntry(
     console.log('✅ Daily entry updated successfully');
     await logHistory('update', 'daily_entries', id, updateData);
     
+    // Send admin notification with specific details
+    sendAdminNotification({
+      action: 'updated',
+      entryType: 'Daily Entry',
+      userName: '', // Will be fetched from current user
+      amount: netProfit,
+      description: `Credit: ₹${totalCredit.toLocaleString('en-IN')}, Debit: ₹${totalDebit.toLocaleString('en-IN')}`,
+    }).catch(err => console.warn('Notification failed:', err));
+    
     // Clear cache
     await AsyncStorage.removeItem(OFFLINE_KEYS.DAILY_ENTRIES);
     
@@ -6459,6 +6686,13 @@ export async function deleteDailyEntry(id: string): Promise<boolean> {
 
     console.log('✅ Daily entry deleted successfully');
     await logHistory('delete', 'daily_entries', id, { deleted_at: new Date().toISOString() });
+    
+    // Send admin notification
+    sendAdminNotification({
+      action: 'deleted',
+      entryType: 'Daily Entry',
+      userName: '', // Will be fetched from current user
+    }).catch(err => console.warn('Notification failed:', err));
     
     // Clear ALL cache variations
     await AsyncStorage.removeItem(OFFLINE_KEYS.DAILY_ENTRIES);

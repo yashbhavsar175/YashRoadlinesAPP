@@ -98,6 +98,12 @@ class DeviceNotificationService {
 
   async sendAdminDeviceNotification(data: DeviceNotificationData) {
     try {
+      // Skip entry notifications - handled by AdminEntryNotificationService
+      if (data.type === 'add' || data.type === 'edit' || data.type === 'delete') {
+        console.log('📱 [DeviceNotification] Entry notification handled by AdminEntryNotificationService, skipping');
+        return;
+      }
+
       console.log('📱 [DeviceNotification] Sending notification:', data.title);
       console.log('📱 [DeviceNotification] Data:', JSON.stringify(data, null, 2));
       

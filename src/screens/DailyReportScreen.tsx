@@ -1777,16 +1777,8 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
               
               const detailedMessage = `BULK DELETE by ${userName} at ${new Date().toLocaleString()}\n${successCount} transactions deleted:\n${deleteSummary}`;
               
-              try {
-                // Send device notification to admin with summary
-                await DeviceNotificationService.notifyAdminEntryUpdated(
-                  `${successCount} transactions bulk deleted from Daily Report`,
-                  'delete',
-                  'daily_report'
-                );
-              } catch (notificationError) {
-                console.warn('Failed to send delete notifications:', notificationError);
-              }
+              // Note: Individual delete notifications are sent by Storage.ts deleteEntry function
+              // No need to send bulk notification here to avoid duplicates
             }
 
             showAlert(`Deleted ${successCount} item(s)`);
@@ -1856,16 +1848,8 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                   
                   const detailedMessage = `DELETED: ${deleteDetails.type} - ₹${deleteDetails.amount} | Person: ${deleteDetails.personName} | "${deleteDetails.description}" | Original Time: ${deleteDetails.time} | Deleted by: ${userName} | Deleted at: ${deleteDetails.deletedAt}`;
                   
-                  try {
-                    // Send detailed device notification to admin
-                    await DeviceNotificationService.notifyAdminEntryUpdated(
-                      `${deleteDetails.type} Deleted: ${label}`,
-                      'delete',
-                      'daily_report'
-                    );
-                  } catch (notificationError) {
-                    console.warn('Failed to send delete notifications:', notificationError);
-                  }
+                  // Note: Delete notification is sent by Storage.ts deleteEntry function
+                  // No need to send notification here to avoid duplicates
                 }
               } else {
                 showAlert('Failed to delete transaction');

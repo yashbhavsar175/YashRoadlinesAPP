@@ -12,7 +12,7 @@ import { navigationRef } from '../../App';
 export interface PushNotificationData {
   title: string;
   message: string;
-  type: 'add' | 'edit' | 'delete' | 'system';
+  type: 'add' | 'edit' | 'delete' | 'system' | 'login_request';
   severity?: 'info' | 'warning' | 'success' | 'error';
   data?: any;
 }
@@ -66,13 +66,59 @@ class PushNotificationService {
       // Set up real-time subscription for admin
       this.setupRealtimeSubscription();
       
+      // ✅ FIX: Listen for auth state changes to refresh FCM token on TOKEN_REFRESHED
+      this.setupAuthStateListener();
+      
       this.isInitialized = true;
-  // Listen to app state changes to re-register token on resume
-  AppState.addEventListener('change', this.handleAppStateChange.bind(this));
+      // Listen to app state changes to re-register token on resume
+      AppState.addEventListener('change', this.handleAppStateChange.bind(this));
       console.log('✅ PushNotificationService initialized successfully for admin');
     } catch (error) {
       console.error('❌ Error initializing PushNotificationService:', error);
     }
+  }
+
+  private setupAuthStateListener() {
+    // Listen for auth state changes, especially TOKEN_REFRESHED
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔐 Auth event in PushNotificationService:', event);
+      
+      // When token is refreshed or user signs in, re-register FCM token
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+        console.log('🔄 Auth token changed, re-registering FCM token...');
+        
+        try {
+          // Get current FCM token
+          const fcmMessaging = getMessaging(getApp());
+          const token = await getToken(fcmMessaging);
+          
+          if (token && session?.user) {
+            console.log('📱 Re-registering FCM token after auth change...');
+            
+            // Update user_profiles table
+            const { error: profileError } = await supabase
+              .from('user_profiles')
+              .update({ 
+                fcm_token: token,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', session.user.id);
+            
+            if (profileError) {
+              console.warn('⚠️ Failed to update fcm_token in user_profiles:', profileError);
+            } else {
+              console.log('✅ FCM token refreshed in user_profiles');
+            }
+            
+            // Also register with edge function
+            await this.registerTokenWithServer(token);
+            console.log('✅ FCM token re-registered after auth change');
+          }
+        } catch (error) {
+          console.error('❌ Error re-registering FCM token on auth change:', error);
+        }
+      }
+    });
   }
 
   private async handleAppStateChange(nextAppState: AppStateStatus) {
@@ -103,6 +149,27 @@ class PushNotificationService {
 
   private async registerTokenWithServer(tokenValue: string) {
     try {
+      console.log('🔄 Registering token with server:', tokenValue.substring(0, 20) + '...');
+      
+      // Step 1: Update user_profiles.fcm_token (for backward compatibility)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error: profileError } = await supabase
+          .from('user_profiles')
+          .update({ 
+            fcm_token: tokenValue,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+        
+        if (profileError) {
+          console.warn('⚠️ Failed to update fcm_token in user_profiles:', profileError);
+        } else {
+          console.log('✅ fcm_token saved to user_profiles');
+        }
+      }
+      
+      // Step 2: Register with edge function (updates device_tokens table)
       const res = await supabase.functions.invoke('quick-processor', {
         body: {
           action: 'register_token',
@@ -112,12 +179,15 @@ class PushNotificationService {
       });
 
       if ((res as any)?.error) {
-        console.warn('⚠️ register_token re-register returned error:', (res as any).error);
+        console.warn('⚠️ register_token returned error:', (res as any).error);
       } else {
-        console.log('🔁 register_token re-register succeeded', (res as any).data || null);
+        console.log('✅ Token registered successfully:', (res as any).data || null);
+        // Store token locally for reference
+        await AsyncStorage.setItem('fcm_token', tokenValue);
+        await AsyncStorage.setItem('fcm_token_registered_at', new Date().toISOString());
       }
     } catch (err) {
-      console.warn('⚠️ Failed to re-invoke register_token function:', err);
+      console.warn('⚠️ Failed to invoke register_token function:', err);
     }
   }
 
@@ -300,27 +370,52 @@ class PushNotificationService {
           // Get FCM token
           const token = await getToken(fcmMessaging);
           if (token) {
-            console.log('📱 FCM Token:', token);
-            await AsyncStorage.setItem('fcm_token', token);
+            console.log('📱 FCM Token obtained:', token.substring(0, 20) + '...');
             await this.registerTokenWithServer(token);
           }
 
-          // Listen for token refresh
+          // Listen for token refresh - CRITICAL for handling token expiration
           onTokenRefresh(fcmMessaging, async (newToken) => {
-            console.log('🔄 FCM Token refreshed:', newToken);
-            await AsyncStorage.setItem('fcm_token', newToken);
+            console.log('🔄 FCM Token refreshed! Old token expired, new token:', newToken.substring(0, 20) + '...');
+            
+            // Get old token for logging
+            const oldToken = await AsyncStorage.getItem('fcm_token');
+            if (oldToken) {
+              console.log('🗑️ Old token being replaced:', oldToken.substring(0, 20) + '...');
+            }
+            
+            // Register new token (this updates both user_profiles and device_tokens)
             await this.registerTokenWithServer(newToken);
+            
+            console.log('✅ Token refresh complete - old tokens cleaned up on server');
           });
 
           // Handle foreground messages
           onMessage(fcmMessaging, async (remoteMessage) => {
-            console.log('🔔 FCM foreground message:', remoteMessage);
-
+            console.log('🔔 FCM foreground message received:', remoteMessage.notification?.title);
+            console.log('📝 Full FCM message:', JSON.stringify(remoteMessage, null, 2));
+            
+            // ✅ CRITICAL: FCM doesn't auto-show notifications when app is in FOREGROUND
+            // We MUST show local notification manually for foreground messages
+            // Background: FCM shows automatically ✅
+            // Foreground: We show manually ✅
+            
             if (remoteMessage.notification) {
+              console.log('📱 App in foreground - showing local notification');
+              
+              // ✅ Try multiple sources for notification body (fallback chain)
+              const notificationBody = 
+                remoteMessage.notification.body ||                    // FCM notification.body (primary)
+                (typeof remoteMessage.data?.body === 'string' ? remoteMessage.data.body : '') ||      // data.body (fallback 1)
+                (typeof remoteMessage.data?.message === 'string' ? remoteMessage.data.message : '') || // data.message (fallback 2)
+                'New notification';                                   // default (fallback 3)
+              
+              console.log('📝 Notification body:', notificationBody);
+              
               PushNotification.localNotification({
                 channelId: 'admin-notifications',
                 title: remoteMessage.notification.title || 'YashRoadlines',
-                message: remoteMessage.notification.body || 'New notification',
+                message: notificationBody,
                 playSound: true,
                 soundName: 'default',
                 importance: 'high',
@@ -329,7 +424,7 @@ class PushNotificationService {
                 autoCancel: false,
                 largeIcon: 'ic_launcher',
                 smallIcon: 'ic_notification',
-                bigText: remoteMessage.notification.body,
+                bigText: notificationBody,  // ✅ Expanded view shows full text
                 subText: `YashRoadlines - ${new Date().toLocaleTimeString()}`,
                 color: '#2196F3',
                 group: 'admin-notifications',
@@ -337,10 +432,16 @@ class PushNotificationService {
                 userInfo: {
                   ...remoteMessage.data,
                   remote: true,
+                  foreground: true,
                   timestamp: Date.now(),
                 },
               });
+              
+              console.log('✅ Foreground notification shown');
             }
+            
+            // Update badge count
+            this.updateBadgeCount();
           });
 
           // Handle notification tap when app is in background (not killed)
@@ -387,18 +488,35 @@ class PushNotificationService {
       return;
     }
 
-    console.log('🔗 Setting up real-time subscription for push notifications...');
+    // ✅ CRITICAL FIX: Realtime subscription DISABLED to prevent duplicates
+    // 
+    // This was causing DUPLICATE notifications:
+    // 1. AdminEntryNotificationService sends FCM push → Notification 1 ✅
+    // 2. DB insert triggers this subscription → showPushNotification() → Notification 2 ❌
+    //
+    // Flow that was causing duplicates:
+    // Entry Add → FCM Push (AdminEntryNotificationService) → Notification 1 ✅
+    //          → admin_notifications insert
+    //              → NotificationService.subscribeToNotifications fires
+    //                  → showPushNotification() → localNotification() → Notification 2 ❌
+    //
+    // FCM already handles ALL push notifications via AdminEntryNotificationService
+    // This realtime subscription is NOT needed for push notifications
     
-    NotificationService.subscribeToNotifications((notification) => {
-      console.log('📬 New notification received for push:', notification);
-      this.showPushNotification({
-        title: notification.title,
-        message: notification.message,
-        type: notification.type,
-        severity: notification.severity,
-        data: notification
-      });
-    });
+    console.log('ℹ️  Realtime subscription disabled - FCM handles all push notifications');
+    console.log('ℹ️  AdminNotificationListener handles in-app UI updates');
+    
+    // DO NOT subscribe here - it causes duplicates
+    // NotificationService.subscribeToNotifications((notification) => {
+    //   console.log('📬 New notification received for push:', notification);
+    //   this.showPushNotification({
+    //     title: notification.title,
+    //     message: notification.message,
+    //     type: notification.type,
+    //     severity: notification.severity,
+    //     data: notification
+    //   });
+    // });
   }
 
   // Show local push notification

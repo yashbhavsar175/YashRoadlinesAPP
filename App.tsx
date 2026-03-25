@@ -740,10 +740,12 @@ function App(): React.JSX.Element {
             // DeviceNotificationService is auto-initialized via constructor
             log('📱 DeviceNotificationService ready');
             
-            // Start AdminNotificationListener for admin users
-            const AdminNotificationListener = (await import('./src/services/AdminNotificationListener')).default;
-            await AdminNotificationListener.start();
-            log('✅ AdminNotificationListener started');
+            // ✅ AdminNotificationListener DISABLED - FCM handles all push notifications
+            // This listener was causing timeout errors and is not needed
+            // FCM via AdminEntryNotificationService handles all admin notifications
+            // const AdminNotificationListener = (await import('./src/services/AdminNotificationListener')).default;
+            // await AdminNotificationListener.start();
+            log('ℹ️  AdminNotificationListener disabled - FCM handles all notifications');
             
             // Fix notification channels and configuration
             try {
@@ -870,12 +872,12 @@ function App(): React.JSX.Element {
           log('⏱️ TIME CHECK: backgroundTime =', backgroundTime, 'timeSinceBackground =', timeSinceBackground, 'ms');
           
           // IMPORTANT: Don't reset navigation if camera was active
-          const shouldResetNavigation = !isCameraActiveRef.current && 
-                                        (!wasInBackgroundRef.current || timeSinceBackground > 5000);
+          // Only reset navigation on fresh app launch (not on background resume)
+          const shouldResetNavigation = !isCameraActiveRef.current && !wasInBackgroundRef.current;
           
           if (shouldResetNavigation) {
             log('🔄 FRESH LAUNCH DETECTED: Checking for pending login request before navigating...');
-            log('   Reason:', !wasInBackgroundRef.current ? 'wasInBackgroundRef is false' : `timeSinceBackground (${timeSinceBackground}ms) > 5000ms`);
+            log('   Reason: wasInBackgroundRef is false (fresh app launch)');
 
             // SECURITY FIX: Check if user has a pending login request before resetting to Home
             let hasPendingRequest = false;
