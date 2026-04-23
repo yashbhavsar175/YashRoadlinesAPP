@@ -1490,20 +1490,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                   </TouchableOpacity>
                 )}
 
-                {/* My Uppad/Jama — visible to non-admin normal users only */}
-                {!contextIsAdmin && (
-                  <TouchableOpacity
-                    onPress={() => navigate('UserUppadJama')}
-                    style={styles.gridButton}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.iconContainer}>
-                      <Icon name="wallet-outline" size={26} color={BWColors.primary} />
-                    </View>
-                    <Text style={styles.gridButtonText}>My Uppad / Jama</Text>
-                  </TouchableOpacity>
-                )}
-
                 {(contextIsAdmin || hasScreenAccess('MumbaiDeliveryEntryScreen')) && (
                   <TouchableOpacity 
                     onPress={() => navigate('MumbaiDelivery')} 

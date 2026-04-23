@@ -60,8 +60,15 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
   const loadEntries = useCallback(async () => {
     try {
       setLoadingEntries(true);
-      const officeId = currentOffice?.id;
+      // OPTION: Remove office filter to show all entries
+      // const officeId = currentOffice?.id;
+      const officeId = undefined; // Show all entries regardless of office
+      console.log('📥 UppadJamaScreen - Loading entries for office:', officeId, currentOffice?.name);
       const list = await getUppadJamaEntries(officeId);
+      console.log('📥 UppadJamaScreen - Loaded entries:', list?.length || 0);
+      if (list && list.length > 0) {
+        console.log('📥 Sample entry:', list[0]);
+      }
       if (list) {
         // Force a re-render by updating the state
         setEntries(list);
@@ -168,12 +175,18 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
     };
   }, [memoizedLoadPersons, memoizedLoadEntries, activeTab]);
   
-  // Uppad/Jama dropdown using debit/credit values
   // Entry type state
   const [entryType, setEntryType] = useState<'debit' | 'credit'>('debit');
   const entryTypeOptions = [
     { label: 'Uppad (Debit)', value: 'debit' },
     { label: 'Jama (Credit)', value: 'credit' },
+  ];
+
+  // Payment source state
+  const [paymentSource, setPaymentSource] = useState<'business_cash' | 'personal_wallet'>('business_cash');
+  const paymentSourceOptions = [
+    { label: 'Business Cash (Daily Report में दिखेगा)', value: 'business_cash' },
+    { label: 'Personal Wallet (Daily Report में नहीं दिखेगा)', value: 'personal_wallet' },
   ];
 
   // Amount (required) and Description (optional)
@@ -268,6 +281,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         entry_type: entryType,
         description: description?.trim() || undefined,
         office_id: currentOffice?.id,
+        payment_source: paymentSource, // Re-enabled after DB migration
       });
 
       if (!success) {
@@ -393,6 +407,14 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
               selectedValue={entryType}
               onValueChange={(v) => setEntryType(v as 'debit' | 'credit')}
               placeholder="Select type (Uppad / Jama)"
+            />
+
+            <Text style={styles.inputLabel}>Payment Source</Text>
+            <Dropdown
+              options={paymentSourceOptions}
+              selectedValue={paymentSource}
+              onValueChange={(v) => setPaymentSource(v as 'business_cash' | 'personal_wallet')}
+              placeholder="Select payment source"
             />
 
             <CommonInput

@@ -170,24 +170,56 @@ class PushNotificationService {
       }
       
       // Step 2: Register with edge function (updates device_tokens table)
-      const res = await supabase.functions.invoke('quick-processor', {
-        body: {
-          action: 'register_token',
-          token: tokenValue,
-          platform: Platform.OS === 'ios' ? 'ios' : 'android',
-        },
-      });
+      // Add retry logic with exponential backoff
+      let retries = 3;
+      let delay = 1000;
+      
+      while (retries > 0) {
+        try {
+          const res = await supabase.functions.invoke('quick-processor', {
+            body: {
+              action: 'register_token',
+              token: tokenValue,
+              platform: Platform.OS === 'ios' ? 'ios' : 'android',
+            },
+          });
 
-      if ((res as any)?.error) {
-        console.warn('⚠️ register_token returned error:', (res as any).error);
-      } else {
-        console.log('✅ Token registered successfully:', (res as any).data || null);
-        // Store token locally for reference
-        await AsyncStorage.setItem('fcm_token', tokenValue);
-        await AsyncStorage.setItem('fcm_token_registered_at', new Date().toISOString());
+          if ((res as any)?.error) {
+            console.warn('⚠️ register_token returned error:', (res as any).error);
+            
+            // If it's a server error, retry
+            if (retries > 1) {
+              console.log(`🔄 Retrying in ${delay}ms... (${retries - 1} retries left)`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              delay *= 2; // Exponential backoff
+              retries--;
+              continue;
+            }
+          } else {
+            console.log('✅ Token registered successfully:', (res as any).data || null);
+            // Store token locally for reference
+            await AsyncStorage.setItem('fcm_token', tokenValue);
+            await AsyncStorage.setItem('fcm_token_registered_at', new Date().toISOString());
+            return; // Success, exit
+          }
+        } catch (invokeError) {
+          console.warn('⚠️ Failed to invoke register_token function:', invokeError);
+          
+          if (retries > 1) {
+            console.log(`🔄 Retrying in ${delay}ms... (${retries - 1} retries left)`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2;
+            retries--;
+            continue;
+          }
+        }
+        
+        break; // Exit loop if no more retries
       }
+      
+      console.warn('⚠️ Failed to register token after all retries, but continuing...');
     } catch (err) {
-      console.warn('⚠️ Failed to invoke register_token function:', err);
+      console.warn('⚠️ Failed to register token with server:', err);
     }
   }
 

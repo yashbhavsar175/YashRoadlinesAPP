@@ -671,14 +671,16 @@ function App(): React.JSX.Element {
         const initializeApp = async () => {
           if (!isMounted) return;
           try {
-            log('🚀 Initializing app services...');
+            log('🔍 [SPLASH DEBUG] initializeApp started');
             
-            // Initialize Supabase storage first
-            await initializeSupabaseStorage();
-            log('✅ Supabase storage initialized');
+            // Non-blocking - splash screen won't wait for this
+            initializeSupabaseStorage().catch(e => {
+              warn('⚠️ [SPLASH DEBUG] Storage init failed (non-critical):', e);
+            });
+            log('✅ [SPLASH DEBUG] Storage init fired (background)');
             
             // Setup notification channels for local notifications
-            log('📱 Setting up push notifications...');
+            log('📱 [SPLASH DEBUG] Setting up notifications...');
             
             PushNotification.configure({
               onRegister: function (token) {
@@ -756,21 +758,27 @@ function App(): React.JSX.Element {
               warn('⚠️ Could not fix notification channels:', fixError);
             }
             
-            log('✅ All notification services initialized');
+            log('✅ [SPLASH DEBUG] All notification services initialized');
             
             // Ensure Mumbai agency exists in database
             try {
               const { ensureMumbaiAgency } = await import('./src/utils/ensureMumbaiAgency');
               await ensureMumbaiAgency();
-              log('✅ Mumbai agency verified');
+              log('✅ [SPLASH DEBUG] Mumbai agency verified');
             } catch (agencyError) {
-              warn('⚠️ Could not verify Mumbai agency:', agencyError);
+              warn('⚠️ [SPLASH DEBUG] Could not verify Mumbai agency:', agencyError);
             }
             
             await checkSyncStatus();
+            log('✅ [SPLASH DEBUG] Sync status done');
+            
             await checkActiveUser();
+            log('✅ [SPLASH DEBUG] Active user done');
+            
+            log('🎉 [SPLASH DEBUG] initializeApp COMPLETE');
           } catch (error) {
-            err('❌ App initialization failed:', error);
+            err('❌ [SPLASH DEBUG] App initialization failed:', error);
+            // Error ke baad bhi app gracefully chalti rahe
           }
         };
         initializeApp();

@@ -494,6 +494,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             return;
           }
 
+          // Filter out UppadJama entries from Personal Wallet (not business cash)
+          if ('person_name' in item && 'entry_type' in item && (item as any).payment_source === 'personal_wallet') {
+            console.log('🚫 Skipping personal wallet entry:', item);
+            return;
+          }
+
           if ('bill_no' in item && 'agency_name' in item) {
             const agencyName = item.agency_name;
             const currentTotal = groupedPayments.get(agencyName) || { amount: 0, count: 0, date: dateKey, transactions: [] };
@@ -1361,6 +1367,13 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
               return false; // Skip this duplicate entry
             }
           }
+          
+          // ✅ FIX: Filter out Personal Wallet entries (same as auto-refresh)
+          if ('person_name' in item && 'entry_type' in item && (item as any).payment_source === 'personal_wallet') {
+            console.log('🚫 MANUAL REFRESH: Skipping personal wallet entry:', item);
+            return false; // Skip this entry
+          }
+          
           return true; // Keep all other entries
         })
         .map(item => {
@@ -1526,7 +1539,8 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         };
       });
 
-      const validTransactions = [...processedGroupedTransactions, ...processedOtherTransactions, ...processedAgencyEntries].filter(t => t && t.amount > 0);
+      const validTransactions = [...processedGroupedTransactions, ...processedOtherTransactions, ...processedAgencyEntries]
+        .filter(t => t && t.amount > 0);
 
       console.log('📊 MANUAL REFRESH: Valid transactions after filtering:', validTransactions.length);
       console.log('📊 MANUAL REFRESH: Valid transactions details:', JSON.stringify(validTransactions, null, 2));

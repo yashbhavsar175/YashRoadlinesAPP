@@ -225,6 +225,7 @@ export interface UppadJamaEntry {
   created_by?: string;
   created_at: string;
   updated_at: string;
+  payment_source?: 'business_cash' | 'personal_wallet'; // Track payment source
   // source?: 'home_screen' | 'admin_panel'; // Field doesn't exist in database
 }
 
@@ -785,6 +786,7 @@ export const saveUppadJamaEntry = async (entry: Partial<UppadJamaEntry> & {
   description?: string;
   entry_date?: string;
   office_id?: string;
+  payment_source?: 'business_cash' | 'personal_wallet';
   // source?: 'home_screen' | 'admin_panel'; // Removed - not in DB
 }): Promise<boolean> => {
   try {
@@ -807,6 +809,7 @@ export const saveUppadJamaEntry = async (entry: Partial<UppadJamaEntry> & {
       recorded_by: recordedBy,
       entry_date: entry.entry_date || new Date().toISOString(),
       office_id: entry.office_id || null,
+      payment_source: entry.payment_source || 'business_cash', // Re-enabled after DB migration
       updated_at: new Date().toISOString(),
       // source: entry.source || 'home_screen', // Removed - column doesn't exist in DB
       ...(!isUpdate && user && { 
@@ -942,14 +945,16 @@ export const getUppadJamaEntries = async (officeId?: string): Promise<UppadJamaE
       console.log('Storage - getUppadJamaEntries - Making Supabase query...');
       let query = supabase
         .from('uppad_jama_entries')
-        .select('*');
+        .select('*')
+        .order('entry_date', { ascending: false })
+        .limit(500); // Add limit to prevent fetching too many records
       
       // Apply office filter if provided
       if (officeId) {
         query = query.eq('office_id', officeId);
       }
       
-      const { data, error } = await query.order('entry_date', { ascending: false });
+      const { data, error } = await query;
       
       console.log('Storage - getUppadJamaEntries - Supabase response:', { 
         dataLength: data?.length || 0, 
@@ -3128,7 +3133,7 @@ export const getAgencyPaymentsLocal = async (officeId?: string): Promise<AgencyP
           .from('agency_payments')
           .select('id, amount, payment_date, agency_id, office_id, description, created_at, agency_name, payment_type')
           .order('payment_date', { ascending: false })
-          .limit(100);
+          .limit(500); // Increased from 100 to 500 for better coverage
 
         // Apply office filter if provided
         if (officeId) {
@@ -5268,11 +5273,20 @@ const endISO = endOfDayIST.toISOString();
 // =====================================================
 export const initializeSupabaseStorage = async (): Promise<void> => {
   try {
-    await syncAllDataFixed();
+    console.log('🔄 [INIT] Starting storage initialization...');
+    
+    // Fire and forget - don't block splash screen
+    syncAllDataFixed().catch(e => {
+      console.warn('⚠️ [INIT] Background sync failed (non-critical):', e);
+    });
+    
     const realtimeManager = new RealTimeManager();
     realtimeManager.subscribeToAllTables(() => {});
+    
+    console.log('✅ [INIT] Storage initialized (sync running in background)');
   } catch (error) {
-    console.error('💥 Initialization failed:', error);
+    console.error('💥 [INIT] Initialization failed:', error);
+    // Don't throw - let app continue gracefully
   }
 };
 

@@ -10,6 +10,7 @@ export interface ScreenAccess {
   UppadJamaScreen: boolean;
   MumbaiDeliveryEntryScreen: boolean;
   BackdatedEntryScreen: boolean;
+  DailyEntriesScreen: boolean; // Added missing screen
   AgencyPaymentsScreen: boolean;
   AddAgencyScreen: boolean;
   
@@ -147,6 +148,7 @@ class UserAccessHelper {
       UppadJamaScreen: false,
       MumbaiDeliveryEntryScreen: false,
       BackdatedEntryScreen: false,
+      DailyEntriesScreen: false, // Added missing screen
       AgencyPaymentsScreen: false,
       AddAgencyScreen: false,
       
@@ -196,6 +198,7 @@ class UserAccessHelper {
       UppadJamaScreen: true,
       MumbaiDeliveryEntryScreen: true,
       BackdatedEntryScreen: true,
+      DailyEntriesScreen: true, // Added missing screen
       AgencyPaymentsScreen: true,
       AddAgencyScreen: true,
       

@@ -37,7 +37,23 @@ const UppadJamaStatement: React.FC<UppadJamaStatementProps> = ({
 
   const filteredEntries = useMemo(() => {
     const personName = personOptions.find(o => o.value === statementPersonId)?.label || '';
-    const personEntries = entries.filter(e => e.person_name === personName);
+    console.log('🔍 UppadJamaStatement - Filtering:', {
+      statementPersonId,
+      personName,
+      totalEntries: entries.length,
+      personOptions: personOptions.map(p => p.label),
+      sampleEntry: entries[0]
+    });
+    
+    const personEntries = entries.filter(e => {
+      const matches = e.person_name === personName;
+      if (!matches && entries.length > 0) {
+        console.log('❌ No match:', { entryPersonName: e.person_name, searchingFor: personName });
+      }
+      return matches;
+    });
+    
+    console.log('✅ Filtered entries:', personEntries.length);
 
     return statementFilter === 'all'
       ? personEntries

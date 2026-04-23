@@ -19,13 +19,17 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const hasNavigated = useRef(false);
+  const animationComplete = useRef(false);
+  const navigationTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    console.log('🚀 SplashScreen mounted');
+    
     // Start animation for the main content
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 3000, // 3-second fade-in
+        duration: 2000, // Reduced to 2 seconds for faster response
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
@@ -34,25 +38,41 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
         useNativeDriver: true,
       }),
     ]).start(() => {
+      // Mark animation as complete
+      animationComplete.current = true;
+      console.log('✨ Splash animation complete');
+      
       // After animation, navigate to the correct screen with a small delay
-      setTimeout(() => {
+      navigationTimer.current = setTimeout(() => {
         checkSessionAndNavigate();
-      }, 500);
+      }, 300); // Reduced delay for faster navigation
     });
 
     // ✅ FIX: Listen for auth state changes including TOKEN_REFRESHED
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔐 Auth event on splash:', event);
+      console.log('🔐 Auth event on splash:', event, 'hasNavigated:', hasNavigated.current);
+      
+      // Ignore auth events if we've already navigated
+      if (hasNavigated.current) {
+        console.log('⏭️ Already navigated, ignoring auth event');
+        return;
+      }
+      
+      // Don't navigate until animation is complete
+      if (!animationComplete.current) {
+        console.log('⏳ Animation not complete, waiting...');
+        return;
+      }
       
       // Handle TOKEN_REFRESHED, SIGNED_IN, and INITIAL_SESSION
       if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (session?.user && !hasNavigated.current) {
+        if (session?.user) {
           console.log('✅ Session active, navigating from splash...');
           await checkSessionAndNavigate();
         }
       }
       
-      if (event === 'SIGNED_OUT' && !hasNavigated.current) {
+      if (event === 'SIGNED_OUT') {
         console.log('🚪 Signed out, navigating to login...');
         hasNavigated.current = true;
         navigation.dispatch(
@@ -64,31 +84,33 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
       }
     });
 
-    // ✅ FIX: Timeout fallback - if stuck on splash for 5 seconds, force check
+    // ✅ FIX: Timeout fallback with proper cleanup
     const timeoutId = setTimeout(async () => {
+      if (hasNavigated.current) {
+        console.log('⏭️ Already navigated, skipping timeout');
+        return;
+      }
+      
+      // Wait for animation if it's still running
+      if (!animationComplete.current) {
+        console.log('⏳ Timeout triggered but waiting for animation...');
+        // Wait up to 2.5s for animation (2s animation + 0.5s buffer)
+        await new Promise(resolve => setTimeout(resolve, 2500));
+      }
+      
       if (!hasNavigated.current) {
         console.log('⏱️ Splash timeout - forcing session check...');
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          console.log('✅ Session found after timeout, navigating...');
-          hasNavigated.current = true;
-          await checkSessionAndNavigate();
-        } else {
-          console.log('❌ No session after timeout, navigating to login...');
-          hasNavigated.current = true;
-          navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{ name: 'Login' }],
-            })
-          );
-        }
+        await checkSessionAndNavigate();
       }
-    }, 5000); // 5 second fallback
+    }, 4000); // 4 second timeout (reduced from 5s)
 
     return () => {
+      console.log('🧹 SplashScreen cleanup');
       authListener.subscription.unsubscribe();
       clearTimeout(timeoutId);
+      if (navigationTimer.current) {
+        clearTimeout(navigationTimer.current);
+      }
     };
   }, [fadeAnim, scaleAnim, navigation]);
 

@@ -77,7 +77,7 @@ if [[ $CLEAN_BUILD =~ ^[Yy]$ ]]; then
     echo ""
 fi
 
-# Build based on choice
+# Build based on choice 
 case $choice in
     1)
         echo "📦 Building APK..."
