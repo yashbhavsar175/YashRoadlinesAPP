@@ -9,6 +9,8 @@ import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { supabase } from '../supabase';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type HistoryScreenNavigationProp = NavigationProp<RootStackParamList, 'History'>;
 
@@ -35,17 +37,17 @@ const formatActionText = (action: string, table: string) => {
 
 function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
   const { goBack } = navigation;
-  
+
   // Admin check
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminLoading, setAdminLoading] = useState<boolean>(true);
-  
+
   const [historyLogs, setHistoryLogs] = useState<HistoryLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Check admin status on mount
   useEffect(() => {
     const checkAdminAccess = async () => {
@@ -56,16 +58,16 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
           goBack();
           return;
         }
-        
+
         const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
         const isUserAdmin = user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-        
+
         if (!isUserAdmin) {
           Alert.alert('Access Denied', 'This feature is only available to administrators.');
           goBack();
           return;
         }
-        
+
         setIsAdmin(true);
       } catch (error) {
         console.error('Error checking admin access:', error);
@@ -75,7 +77,7 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
         setAdminLoading(false);
       }
     };
-    
+
     checkAdminAccess();
   }, [goBack]);
 
@@ -103,7 +105,7 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
       return () => {};
     }, [loadHistory, selectedDate])
   );
-  
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -113,7 +115,7 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
     }
     await loadHistory(selectedDate);
   };
-  
+
   const handleDateChange = (event: any, newDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');
     if (newDate) {

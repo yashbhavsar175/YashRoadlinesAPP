@@ -14,6 +14,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { saveLeaveCashRecord } from '../data/Storage';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 const LeaveCashSetupScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -58,7 +60,7 @@ const LeaveCashSetupScreen: React.FC = () => {
               showAlert('Cash amount set successfully!');
               setExpectedAmount('');
               setNotes('');
-              
+
               // Navigate to verification screen
               navigation.navigate('CashVerificationScreen' as never);
             } catch (error) {
@@ -76,11 +78,11 @@ const LeaveCashSetupScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       {/* Header */}
       <View style={styles.navigationHeader}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
           <Icon name="arrow-back" size={24} color="#000" />
@@ -89,8 +91,8 @@ const LeaveCashSetupScreen: React.FC = () => {
         <View style={styles.headerRight} />
       </View>
 
-      <KeyboardAvoidingView 
-        style={styles.keyboardContainer} 
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>

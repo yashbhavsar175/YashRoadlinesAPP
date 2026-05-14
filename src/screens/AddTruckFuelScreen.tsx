@@ -11,6 +11,8 @@ import { saveTruckFuel, getTruckFuelEntries, TruckFuelEntry, deleteTransactionBy
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useOffice } from '../context/OfficeContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 interface DriverFuelEntry {
   id: string;
@@ -81,7 +83,7 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
   const handleFuelTypeChange = (itemValue: string) => {
     setFuelType(itemValue as 'Diesel' | 'Petrol' | 'CNG');
   };
-  
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -134,10 +136,10 @@ function AddTruckFuelScreen({ navigation }: AddTruckFuelScreenProps): React.JSX.
       setSaving(false);
     }
   };
-  
+
   const handleDeleteEntry = async (id: string) => {
     const entryToDelete = fuelEntries.find(entry => entry.id === id);
-    
+
     Alert.alert(
       "Confirm Delete",
       "Are you sure you want to permanently delete this entry?",

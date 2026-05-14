@@ -13,6 +13,8 @@ import CommonHeader from '../components/CommonHeader';
 import CommonInput from '../components/CommonInput';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type AddAgencyScreenNavigationProp = NavigationProp<RootStackParamList, 'AddAgency'>;
 
@@ -59,10 +61,10 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
     const success = await saveAgency(trimmedAgencyName);
 
     if (success) {
-      await NotificationService.notifyAdd('agency_entry', 
+      await NotificationService.notifyAdd('agency_entry',
         `${trimmedAgencyName} agency was added by user`
       );
-      
+
       showAlert(`Agency "${trimmedAgencyName}" added successfully!`, 2000);
       setAgencyName('');
       loadAgencies();
@@ -80,7 +82,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
   );
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={GlobalStyles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -88,7 +90,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
 
       <CommonHeader title="Add Agency" onBackPress={goBack} />
 
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollViewContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -96,7 +98,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
         <View style={GlobalStyles.card}>
           <View style={styles.cardContent}>
             <Text style={GlobalStyles.title}>Add New Agency</Text>
-            
+
             <CommonInput
               label="Agency Name"
               required
@@ -106,9 +108,9 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
               editable={!saving}
             />
 
-            <TouchableOpacity 
-              onPress={handleAddAgency} 
-              disabled={saving} 
+            <TouchableOpacity
+              onPress={handleAddAgency}
+              disabled={saving}
               style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}
             >
               <Text style={GlobalStyles.buttonPrimaryText}>
@@ -119,7 +121,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
         </View>
 
         <Text style={styles.listSectionTitle}>Existing Agencies ({agencies.length})</Text>
-        
+
         {loading ? (
           <LoadingSpinner message="Loading agencies..." />
         ) : agencies.length > 0 ? (

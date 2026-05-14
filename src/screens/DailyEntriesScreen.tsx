@@ -23,14 +23,16 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../supabase';
-import { 
-  saveDailyEntry, 
-  getDailyEntries, 
+import {
+  saveDailyEntry,
+  getDailyEntries,
   deleteDailyEntry,
-  DailyEntry 
+  DailyEntry
 } from '../data/Storage';
 import { useOffice } from '../context/OfficeContext';
 import { useAlert } from '../context/AlertContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type DailyEntriesScreenNavigationProp = NavigationProp<RootStackParamList, 'DailyEntries'>;
 
@@ -63,10 +65,10 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
   const { goBack } = navigation;
   const { getCurrentOfficeId } = useOffice();
   const { showAlert } = useAlert();
-  
+
   // Tab state
   const [activeTab, setActiveTab] = useState<'entry' | 'statement'>('entry');
-  
+
   // Entry form state
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
@@ -74,14 +76,14 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
   const [totalCredit, setTotalCredit] = useState<number>(0);
   const [totalDebit, setTotalDebit] = useState<number>(0);
   const [netProfit, setNetProfit] = useState<number>(0);
-  
+
   // Statement state
   const [savedEntries, setSavedEntries] = useState<DailyEntry[]>([]);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
-  
+
   // Edit dialog state
   const [showEditDialog, setShowEditDialog] = useState<boolean>(false);
   const [editDialogData, setEditDialogData] = useState<{
@@ -129,15 +131,11 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
 
   const loadSavedEntries = async (forceRefresh: boolean = false) => {
     try {
-      console.log('📊 Loading saved entries...', forceRefresh ? '(force refresh)' : '');
       setLoading(true);
       const officeId = getCurrentOfficeId();
-      console.log('🏢 Office ID:', officeId);
       const entries = await getDailyEntries(officeId || undefined, forceRefresh);
-      console.log('✅ Loaded entries:', entries.length);
-      console.log('📋 Entries data:', JSON.stringify(entries, null, 2));
       setSavedEntries(entries);
-      
+
       // Cleanup duplicates on first load
       if (entries.length > 0 && !forceRefresh) {
         await cleanupDuplicateEntries();
@@ -185,8 +183,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
 
   const cleanupDuplicateEntries = async () => {
     try {
-      console.log('🧹 Checking for duplicate entries...');
-      
+
       // Group entries by date
       const entriesByDate: Record<string, DailyEntry[]> = {};
       savedEntries.forEach(entry => {
@@ -195,36 +192,32 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
         }
         entriesByDate[entry.entry_date].push(entry);
       });
-      
+
       // Find dates with duplicates
       const duplicateDates = Object.entries(entriesByDate).filter(([_, entries]) => entries.length > 1);
-      
+
       if (duplicateDates.length === 0) {
-        console.log('✅ No duplicate entries found');
         return;
       }
-      
-      console.log(`⚠️ Found ${duplicateDates.length} dates with duplicate entries`);
-      
+
+
       // For each date with duplicates, keep the latest one and delete others
       for (const [date, entries] of duplicateDates) {
         // Sort by updated_at descending (latest first)
-        const sorted = entries.sort((a, b) => 
+        const sorted = entries.sort((a, b) =>
           new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
         );
-        
+
         const toKeep = sorted[0];
         const toDelete = sorted.slice(1);
-        
-        console.log(`🗑️ Deleting ${toDelete.length} duplicate entries for ${date}`);
-        
+
+
         // Delete duplicates
         for (const entry of toDelete) {
           await supabase.from('daily_entries').delete().eq('id', entry.id);
         }
       }
-      
-      console.log('✅ Duplicate cleanup complete');
+
       await AsyncStorage.removeItem('offline_daily_entries');
       await loadSavedEntries(true);
     } catch (error) {
@@ -250,7 +243,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
   const handleSave = async () => {
     // Check if at least one entry has been made
     const hasEntries = Object.values(amounts).some(val => val && parseFloat(val) > 0);
-    
+
     if (!hasEntries) {
       showAlert('Please add at least one entry before saving.');
       return;
@@ -268,17 +261,16 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
       });
 
       const officeId = getCurrentOfficeId();
-      
+
       // Format date to YYYY-MM-DD for database
       const formattedDate = selectedDate.toISOString().split('T')[0];
-      
+
       // Check if entry already exists for this date
       const existingEntry = savedEntries.find(e => e.entry_date === formattedDate);
-      
+
       if (existingEntry) {
         // Update existing entry
-        console.log('📝 Updating existing entry for date:', formattedDate);
-        
+
         const { error } = await supabase
           .from('daily_entries')
           .update({
@@ -289,18 +281,16 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
             updated_at: new Date().toISOString()
           })
           .eq('id', existingEntry.id);
-        
+
         if (error) {
           console.error('❌ Update error:', error);
           throw error;
         }
-        
-        console.log('✅ Entry updated successfully');
+
         showAlert('Entries updated successfully!');
       } else {
         // Create new entry
-        console.log('➕ Creating new entry for date:', formattedDate);
-        
+
         const result = await saveDailyEntry(
           numericEntries,
           totalCredit,
@@ -314,11 +304,10 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
           showAlert('Failed to save entries. Please try again.');
           return;
         }
-        
-        console.log('✅ Entry created successfully');
+
         showAlert('Entries saved successfully!');
       }
-      
+
       // Clear form and refresh
       setAmounts({});
       setSelectedDate(new Date());
@@ -338,7 +327,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
     if (event) {
       event.stopPropagation();
     }
-    
+
     Alert.alert(
       'Delete Entry',
       'Are you sure you want to delete this entry?',
@@ -349,9 +338,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('🗑️ Deleting entry:', entryId);
               const success = await deleteDailyEntry(entryId);
-              console.log('Delete result:', success);
               if (success) {
                 showAlert('Entry deleted successfully!');
                 await loadSavedEntries(true); // Force refresh after delete
@@ -380,7 +367,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Save',
-            onPress: async (value) => {
+            onPress: async (value: string | undefined) => {
               if (value && !isNaN(parseFloat(value))) {
                 await updateCategoryEntry(date, categoryId, parseFloat(value));
               }
@@ -412,13 +399,13 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
 
   const handleSaveEditDialog = async () => {
     if (!editDialogData) return;
-    
+
     const amount = parseFloat(editAmount);
     if (isNaN(amount) || amount < 0) {
       showAlert('Please enter a valid amount');
       return;
     }
-    
+
     setShowEditDialog(false);
     await updateCategoryEntry(editDialogData.date, editDialogData.categoryId, amount);
     setEditDialogData(null);
@@ -427,7 +414,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
 
   const handleDeleteFromDialog = async () => {
     if (!editDialogData) return;
-    
+
     Alert.alert(
       'Delete Entry',
       `Remove ${editDialogData.categoryLabel} from this date?`,
@@ -450,25 +437,25 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
   const updateCategoryEntry = async (date: string, categoryId: string, amount: number) => {
     try {
       setSaving(true);
-      
+
       // Find existing entry for this date
       const existingEntry = savedEntries.find(e => e.entry_date === date);
-      
+
       if (existingEntry) {
         // Update existing entry
         const updatedEntries = { ...existingEntry.entries };
-        
+
         // If amount is 0 or negative, remove the category
         if (amount <= 0) {
           delete updatedEntries[categoryId];
         } else {
           updatedEntries[categoryId] = amount;
         }
-        
+
         // Recalculate totals
         let newCredit = 0;
         let newDebit = 0;
-        
+
         ENTRY_CATEGORIES.forEach(cat => {
           const val = updatedEntries[cat.id] || 0;
           if (val > 0) {
@@ -476,17 +463,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
             else newDebit += val;
           }
         });
-        
-        console.log('🔄 Updating entry:', {
-          id: existingEntry.id,
-          date,
-          categoryId,
-          amount,
-          updatedEntries,
-          newCredit,
-          newDebit
-        });
-        
+
         const { data, error } = await supabase
           .from('daily_entries')
           .update({
@@ -499,15 +476,14 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
           .eq('id', existingEntry.id)
           .select()
           .single();
-        
+
         if (error) {
           console.error('❌ Update error:', error);
           throw error;
         }
-        
-        console.log('✅ Entry updated:', data);
+
         showAlert('Entry updated successfully!');
-        
+
         // Clear cache and reload
         await AsyncStorage.removeItem('offline_daily_entries');
         await loadSavedEntries(true);
@@ -515,28 +491,20 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
         // Create new entry for this date
         const category = ENTRY_CATEGORIES.find(c => c.id === categoryId);
         if (!category) return;
-        
+
         if (amount <= 0) {
           showAlert('Please enter a valid amount');
           return;
         }
-        
+
         const entries = { [categoryId]: amount };
         const credit = category.type === 'credit' ? amount : 0;
         const debit = category.type === 'debit' ? amount : 0;
-        
-        console.log('➕ Creating new entry:', {
-          date,
-          categoryId,
-          amount,
-          entries
-        });
-        
+
         const officeId = getCurrentOfficeId();
         const result = await saveDailyEntry(entries, credit, debit, credit - debit, officeId || undefined, date);
-        
+
         if (result) {
-          console.log('✅ Entry created:', result);
           showAlert('Entry added successfully!');
           await AsyncStorage.removeItem('offline_daily_entries');
           await loadSavedEntries(true);
@@ -580,10 +548,10 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
           style={[styles.tab, activeTab === 'entry' && styles.activeTab]}
           onPress={() => setActiveTab('entry')}
         >
-          <Icon 
-            name="create-outline" 
-            size={20} 
-            color={activeTab === 'entry' ? Colors.primary : Colors.textSecondary} 
+          <Icon
+            name="create-outline"
+            size={20}
+            color={activeTab === 'entry' ? Colors.primary : Colors.textSecondary}
           />
           <Text style={[styles.tabText, activeTab === 'entry' && styles.activeTabText]}>
             Entry
@@ -593,10 +561,10 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
           style={[styles.tab, activeTab === 'statement' && styles.activeTab]}
           onPress={() => setActiveTab('statement')}
         >
-          <Icon 
-            name="list-outline" 
-            size={20} 
-            color={activeTab === 'statement' ? Colors.primary : Colors.textSecondary} 
+          <Icon
+            name="list-outline"
+            size={20}
+            color={activeTab === 'statement' ? Colors.primary : Colors.textSecondary}
           />
           <Text style={[styles.tabText, activeTab === 'statement' && styles.activeTabText]}>
             Statement
@@ -613,7 +581,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
           <View style={styles.dialogContainer}>
             <Text style={styles.dialogTitle}>Edit Entry</Text>
             <Text style={styles.dialogSubtitle}>{editDialogData.categoryLabel}</Text>
-            
+
             <View style={styles.dialogInputContainer}>
               <Text style={styles.dialogCurrencySymbol}>₹</Text>
               <TextInput
@@ -746,7 +714,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
                 </Text>
               )}
             </View>
-            
+
             {ENTRY_CATEGORIES.map((category, index) => (
               <View key={category.id}>
                 <View style={styles.entryRow}>
@@ -820,8 +788,8 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
         <ScrollView
           contentContainerStyle={styles.emptyContainer}
           refreshControl={
-            <RefreshControl 
-              refreshing={refreshing} 
+            <RefreshControl
+              refreshing={refreshing}
               onRefresh={onRefresh}
               colors={[Colors.primary]}
               tintColor={Colors.primary}
@@ -831,7 +799,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
           <Icon name="document-text-outline" size={64} color={Colors.textSecondary} />
           <Text style={styles.emptyText}>No entries saved yet</Text>
           <Text style={styles.emptySubText}>Add entries from the Entry tab</Text>
-          
+
           <TouchableOpacity
             style={styles.emptyActionButton}
             onPress={() => setActiveTab('entry')}
@@ -839,7 +807,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
             <Icon name="add-circle-outline" size={20} color={Colors.surface} />
             <Text style={styles.emptyActionButtonText}>Create First Entry</Text>
           </TouchableOpacity>
-          
+
           <Text style={[styles.emptySubText, { marginTop: 24, fontSize: 12, fontStyle: 'italic' }]}>
             Pull down to refresh
           </Text>
@@ -865,7 +833,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
     }, {} as Record<string, DailyEntry>);
 
     // Sort dates in descending order
-    const sortedDates = Object.keys(groupedEntries).sort((a, b) => 
+    const sortedDates = Object.keys(groupedEntries).sort((a, b) =>
       new Date(b).getTime() - new Date(a).getTime()
     );
 
@@ -874,8 +842,8 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
         data={sortedDates}
         keyExtractor={(date) => date}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             colors={[Colors.primary]}
             tintColor={Colors.primary}
@@ -884,7 +852,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
         contentContainerStyle={styles.statementList}
         renderItem={({ item: date }) => {
           const entry = groupedEntries[date];
-          
+
           return (
             <View style={styles.dateCard}>
               {/* Date Header - Clickable to expand/collapse */}
@@ -914,10 +882,10 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
                   >
                     <Icon name="trash-outline" size={20} color={Colors.error} />
                   </TouchableOpacity>
-                  <Icon 
-                    name={expandedDate === date ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color={Colors.textSecondary} 
+                  <Icon
+                    name={expandedDate === date ? "chevron-up" : "chevron-down"}
+                    size={20}
+                    color={Colors.textSecondary}
                   />
                 </View>
               </TouchableOpacity>
@@ -955,7 +923,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
                   {ENTRY_CATEGORIES.map((category, index) => {
                     const amount = entry.entries[category.id];
                     const hasValue = amount !== undefined && amount > 0;
-                    
+
                     return (
                       <View key={category.id}>
                         <TouchableOpacity
@@ -1083,10 +1051,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-  },
-  dateCard: {
-    padding: 16,
-    marginBottom: 16,
   },
   dateCardHeaderRow: {
     flexDirection: 'row',

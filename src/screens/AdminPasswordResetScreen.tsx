@@ -15,6 +15,8 @@ import { NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { Colors } from '../theme/colors';
 import UserPasswordService, { PasswordResetRequest } from '../services/UserPasswordService';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 // Temporary navigation type - will be updated in App.tsx
 type RootStackParamList = {
@@ -37,7 +39,7 @@ interface UserWithPassword {
 
 const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps): React.JSX.Element => {
   const { goBack } = navigation;
-  
+
   const [usersWithPasswords, setUsersWithPasswords] = useState<UserWithPassword[]>([]);
   const [resetRequests, setResetRequests] = useState<PasswordResetRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +55,7 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
     try {
       // Load users with passwords
       const usersData = await UserPasswordService.getUsersWithPasswords();
-      
+
       // Mock users for demo - replace with actual user API
       const mockUsers: UserWithPassword[] = [
         { userId: 'user1@example.com', userName: 'Yash Bhavsar', hasPassword: false },
@@ -132,8 +134,8 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
           onPress: async () => {
             try {
               const success = await UserPasswordService.processResetRequest(
-                request.userId, 
-                'admin', 
+                request.userId,
+                'admin',
                 action
               );
               if (success) {
@@ -157,15 +159,15 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
       <View style={styles.userAvatar}>
         <Text style={styles.userAvatarText}>{item.userName.charAt(0).toUpperCase()}</Text>
       </View>
-      
+
       <View style={styles.userInfo}>
         <Text style={styles.userName}>{item.userName}</Text>
         <Text style={styles.userEmail}>{item.userId}</Text>
         <View style={styles.passwordStatus}>
-          <Icon 
-            name={item.hasPassword ? 'shield-checkmark' : 'shield-outline'} 
-            size={16} 
-            color={item.hasPassword ? '#4CAF50' : '#999'} 
+          <Icon
+            name={item.hasPassword ? 'shield-checkmark' : 'shield-outline'}
+            size={16}
+            color={item.hasPassword ? '#4CAF50' : '#999'}
           />
           <Text style={[
             styles.passwordStatusText,
@@ -180,7 +182,7 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
           </Text>
         )}
       </View>
-      
+
       {item.hasPassword && (
         <TouchableOpacity
           style={styles.resetButton}
@@ -207,13 +209,13 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
         </View>
         <View style={[
           styles.statusBadge,
-          { backgroundColor: item.status === 'pending' ? '#FF9800' : 
+          { backgroundColor: item.status === 'pending' ? '#FF9800' :
                            item.status === 'approved' ? '#4CAF50' : '#F44336' }
         ]}>
           <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
         </View>
       </View>
-      
+
       {item.status === 'pending' && (
         <View style={styles.requestActions}>
           <TouchableOpacity
@@ -237,16 +239,16 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Icon 
-        name={selectedTab === 'users' ? 'people' : 'document-text'} 
-        size={64} 
-        color="#DDD" 
+      <Icon
+        name={selectedTab === 'users' ? 'people' : 'document-text'}
+        size={64}
+        color="#DDD"
       />
       <Text style={styles.emptyTitle}>
         {selectedTab === 'users' ? 'No Users Found' : 'No Reset Requests'}
       </Text>
       <Text style={styles.emptyMessage}>
-        {selectedTab === 'users' 
+        {selectedTab === 'users'
           ? 'No users have set notification passwords yet.'
           : 'No password reset requests pending.'
         }
@@ -267,7 +269,7 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
@@ -303,10 +305,10 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
           style={[styles.tab, selectedTab === 'users' && styles.activeTab]}
           onPress={() => setSelectedTab('users')}
         >
-          <Icon 
-            name="people" 
-            size={20} 
-            color={selectedTab === 'users' ? '#2196F3' : '#666'} 
+          <Icon
+            name="people"
+            size={20}
+            color={selectedTab === 'users' ? '#2196F3' : '#666'}
           />
           <Text style={[
             styles.tabText,
@@ -319,10 +321,10 @@ const AdminPasswordResetScreen = ({ navigation }: AdminPasswordResetScreenProps)
           style={[styles.tab, selectedTab === 'requests' && styles.activeTab]}
           onPress={() => setSelectedTab('requests')}
         >
-          <Icon 
-            name="document-text" 
-            size={20} 
-            color={selectedTab === 'requests' ? '#2196F3' : '#666'} 
+          <Icon
+            name="document-text"
+            size={20}
+            color={selectedTab === 'requests' ? '#2196F3' : '#666'}
           />
           <Text style={[
             styles.tabText,

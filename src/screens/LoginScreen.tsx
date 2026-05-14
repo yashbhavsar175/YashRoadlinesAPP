@@ -74,7 +74,6 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
           const waitingFlag = await AsyncStorage.getItem('waiting_for_admin');
           const savedRequestId = await AsyncStorage.getItem('login_request_id');
           if (waitingFlag === 'true' && savedRequestId) {
-            console.log('🔄 Resuming pending login request:', savedRequestId);
             setLoginRequestId(savedRequestId);
             setWaitingForAdmin(true);
             // Only start polling if not already polling
@@ -83,7 +82,6 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
             }
           }
         } catch (e) {
-          console.log('Could not restore pending request:', e);
         }
       };
       checkPendingRequest();
@@ -170,7 +168,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
 
       if (error) {
         console.error('🔴 signInWithPassword error:', error);
-        
+
         // Check if it's a network/DNS issue
         if (error.message?.includes('Network request failed')) {
           Alert.alert(
@@ -195,13 +193,12 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
         return;
       }
 
-      console.log('🔍 Starting login process for user:', data.user.id);
-      
+
       // Ensure profile exists
       let profileCreated = false;
       let attempts = 0;
       const maxAttempts = 3;
-      
+
       while (!profileCreated && attempts < maxAttempts) {
         attempts++;
         try {
@@ -237,16 +234,14 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
 
       if (isAdmin) {
         // Admin: Direct login without OTP
-        console.log('[AUTH] Login complete, user id:', data.user.id);
-        console.log('✅ Admin login - bypassing OTP');
-        
+
         // Save user profile to AsyncStorage
         try {
-          const userName = profile.full_name?.trim() || 
-                          profile.username?.trim() || 
-                          data.user.email?.split('@')[0] || 
+          const userName = profile.full_name?.trim() ||
+                          profile.username?.trim() ||
+                          data.user.email?.split('@')[0] ||
                           'Admin';
-          
+
           const userProfile = {
             id: data.user.id,
             email: data.user.email,
@@ -254,22 +249,21 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
             user_type: profile.user_type || 'normal'
           };
           await AsyncStorage.setItem('user_profile', JSON.stringify(userProfile));
-          
+
           // Clear any pending approval flags
           await AsyncStorage.removeItem('waiting_for_admin');
           await AsyncStorage.removeItem('login_request_id');
           await AsyncStorage.removeItem('pending_login_request_id');
-          
+
           // Initialize NotificationService
           const NotificationService = require('../services/NotificationService').default;
           const NotificationSetup = require('../services/NotificationSetup').default;
           await NotificationService.initialize();
           await NotificationSetup.reinitialize();
-          console.log('✅ Notification services initialized');
         } catch (error) {
           console.error('❌ Error saving user profile:', error);
         }
-        
+
         // Navigate to home
         navigation.replace('Home');
         return;
@@ -288,7 +282,6 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
           .eq('status', 'pending')
           .maybeSingle();
         if (existingRequest) {
-          console.log('🔄 Found existing pending request, resuming:', savedRequestId);
           setLoginRequestId(savedRequestId);
           setSignedInUserId(data.user.id);
           setWaitingForAdmin(true);
@@ -309,13 +302,11 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       setLoginRequestId(requestId);
       setSignedInUserId(data.user.id);
       setWaitingForAdmin(true);
-      
+
       // Save state to AsyncStorage to prevent auto-login on app refresh
       await AsyncStorage.setItem('waiting_for_admin', 'true');
       await AsyncStorage.setItem('login_request_id', requestId);
-      
-      console.log('🔔 Waiting for admin approval - showing waiting screen');
-      console.log('State:', { waitingForAdmin: true, otpPhase: false, loginRequestId: requestId });
+
 
       // Start polling for admin approval
       startPollingForApproval(requestId);
@@ -334,30 +325,26 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       clearInterval(pollingIntervalRef.current);
     }
 
-    console.log('🔄 Starting polling for request:', requestId);
 
     // Poll every 3 seconds
     pollingIntervalRef.current = setInterval(async () => {
       try {
-        console.log('🔍 Polling for approval status...');
         const status = await checkLoginRequestStatus(requestId);
-        
-        console.log('📊 Status received:', status);
-        
+
+
         if (!status) {
           console.warn('⚠️ No status returned');
           return;
         }
 
         if (status.status === 'approved' && status.otp) {
-          console.log('✅ Request approved! OTP:', status.otp);
-          
+
           // Stop polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
-          
+
           setWaitingForAdmin(false);
           setOtpPhase(true);
           Alert.alert(
@@ -365,14 +352,13 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
             'Admin has approved your login request. Please enter the OTP code provided by the admin.'
           );
         } else if (status.status === 'rejected') {
-          console.log('❌ Request rejected');
-          
+
           // Stop polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
-          
+
           Alert.alert(
             'Login Rejected ❌',
             'Your login request was rejected by the admin. Please contact your administrator.',
@@ -384,14 +370,13 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
             ]
           );
         } else if (status.status === 'expired') {
-          console.log('⏰ Request expired');
-          
+
           // Stop polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
-          
+
           Alert.alert(
             'Request Expired ⏰',
             'Your login request has expired. Please try logging in again.',
@@ -403,7 +388,6 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
             ]
           );
         } else {
-          console.log('⏳ Still pending, status:', status.status);
         }
       } catch (error) {
         console.error('❌ Error polling for approval:', error);
@@ -421,7 +405,7 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
     setLoading(true);
     try {
       const isValid = await verifyAdminOtp(loginRequestId, otpInput.trim());
-      
+
       if (!isValid) {
         Alert.alert('Incorrect OTP', 'The OTP code is invalid or the request has expired.');
         return;
@@ -434,17 +418,17 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
       }
 
       try { await AsyncStorage.removeItem('otp_pending'); } catch { }
-      
+
       // Save user profile to AsyncStorage for NotificationService
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const profile = await getProfile(user.id);
-          const userName = profile?.full_name?.trim() || 
-                          profile?.username?.trim() || 
-                          user.email?.split('@')[0] || 
+          const userName = profile?.full_name?.trim() ||
+                          profile?.username?.trim() ||
+                          user.email?.split('@')[0] ||
                           'User';
-          
+
           const userProfile = {
             id: user.id,
             email: user.email,
@@ -452,28 +436,26 @@ function LoginScreen({ navigation }: LoginScreenProps): React.JSX.Element {
             user_type: profile?.user_type || 'normal'
           };
           await AsyncStorage.setItem('user_profile', JSON.stringify(userProfile));
-          console.log('✅ User profile saved to AsyncStorage for notifications');
-          
+
           // Initialize NotificationService
           const NotificationService = require('../services/NotificationService').default;
           const NotificationSetup = require('../services/NotificationSetup').default;
           await NotificationService.initialize();
           await NotificationSetup.reinitialize();
-          console.log('✅ All notification services initialized');
         }
       } catch (error) {
         console.error('❌ Error saving user profile for notifications:', error);
       }
-      
+
       setOtpPhase(false);
       setOtpInput('');
       setWaitingForAdmin(false);
-      
+
       // Clear waiting flags from AsyncStorage
       await AsyncStorage.removeItem('waiting_for_admin');
       await AsyncStorage.removeItem('login_request_id');
       await AsyncStorage.removeItem('pending_login_request_id');
-      
+
       navigation.replace('Home');
     } catch (e) {
       console.error('Verify OTP error:', e);

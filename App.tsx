@@ -1,6 +1,6 @@
 // App.tsx
 import 'react-native-url-polyfill/auto';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 // Lightweight safe math evaluator — replaces mathjs (avoids Metro ESM resolution issues)
 // Only allows digits, operators, decimals and parentheses — no arbitrary code execution
 function safeEval(expr: string): number {
@@ -56,7 +56,7 @@ function safeEval(expr: string): number {
 const log = (...args: any[]) => { if (__DEV__) { console.log(...args); } };
 const warn = (...args: any[]) => { if (__DEV__) { console.warn(...args); } };
 const err = (...args: any[]) => { if (__DEV__) { console.error(...args); } };
-import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions, Platform, AppStateStatus } from 'react-native';
+import { AppState, Alert, View, Text, TouchableOpacity, StyleSheet, Modal, PanResponder, Dimensions, Platform, AppStateStatus, BackHandler } from 'react-native';
 import { NavigationContainer, CommonActions, NavigationContainerRef, NavigationState } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 // Create navigation reference
@@ -116,12 +116,14 @@ import AdminPasswordChangeScreen from './src/screens/AdminPasswordChangeScreen';
 import AdminUserManagementScreen from './src/screens/AdminUserManagementScreen';
 import MajurDashboardScreen from './src/screens/MajurDashboardScreen';
 import OfficeManagementScreen from './src/screens/OfficeManagementScreen';
+import SplashDiagnosticsScreen from './src/screens/SplashDiagnosticsScreen';
 import { Colors } from './src/theme/colors';
 import { AlertProvider } from './src/context/AlertContext';
 import { UserAccessProvider } from './src/context/UserAccessContext';
 import { OfficeProvider } from './src/context/OfficeContext';
 import AuthLogoutService from './src/services/AuthLogoutService';
 import { LoginRequestListener } from './src/services/LoginRequestListener';
+import ErrorBoundary from './src/components/ErrorBoundary';
 
 // Define the root navigator's param list and export it for usage across screens
 type RootStackParamList = {
@@ -177,6 +179,7 @@ type RootStackParamList = {
   MajurDashboard: undefined;
   DebugScreenAccess: undefined;
   OfficeManagement: undefined;
+  SplashDiagnostics: undefined;
 };
 
 export type { RootStackParamList };
@@ -190,14 +193,15 @@ const Stack = createStackNavigator<RootStackParamList>();
 
 export const navigationRef = React.createRef<NavigationContainerRef<RootStackParamList>>();
 // Key component moved outside to prevent re-rendering issues
-const Key = ({ label, onPress, type, style }: { 
+const Key = React.memo(({ label, onPress, type, style }: { 
   label: string; 
   onPress: () => void; 
   type?: 'op' | 'num' | 'util';
   style?: any;
 }) => (
   <TouchableOpacity 
-    onPress={onPress} 
+    onPress={onPress}
+    activeOpacity={0.7}
     style={[
       stylesCalc.key, 
       type === 'op' && stylesCalc.keyOp, 
@@ -207,7 +211,7 @@ const Key = ({ label, onPress, type, style }: {
   >
     <Text style={stylesCalc.keyText}>{label}</Text>
   </TouchableOpacity>
-);
+));
 
 function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: () => void }) {
     useEffect(() => {
@@ -320,10 +324,15 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
     const [isResizing, setIsResizing] = useState(false);
     const pinchStartSize = useRef<{ w: number; h: number }>({ w: CARD_W_DEF, h: CARD_H_DEF });
     const pinchCenter = useRef<{ cx: number; cy: number }>({ cx: 0, cy: 0 });
-    const handlePinchEvent = (evt: any) => {
+    const handlePinchEvent = useCallback((evt: any) => {
       if (!isResizing) return;
       const scale = evt?.nativeEvent?.scale ?? 1;
-      if (scale < 0.1 || scale > 5) return; // Allow wider scaling range
+      if (scale < 0.1 || scale > 5) return;
+      
+      // Throttle updates for better performance
+      const now = Date.now();
+      if (now - lastUpdateTime.current < UPDATE_THROTTLE) return;
+      lastUpdateTime.current = now;
       
       const baseW = pinchStartSize.current.w;
       const baseH = pinchStartSize.current.h;
@@ -331,7 +340,6 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
       const newW = Math.max(MIN_W, Math.min(maxSize.w, baseW * scale));
       const newH = Math.max(MIN_H, Math.min(maxSize.h, baseH * scale));
       
-      // Remove threshold to make resizing smooth
       const newSize = { w: newW, h: newH };
       setSize(newSize);
       
@@ -342,17 +350,14 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
       const clampedPos = clamp(newX, newY, newSize);
       
       setPos(clampedPos);
-    };
-    const handlePinchStateChange = async ({ nativeEvent }: any) => {
-      log('[PINCH] state change -> state:', nativeEvent.state, 'oldState:', nativeEvent.oldState);
-      // When gesture becomes active, capture base size and center
+    }, [isResizing, clamp, getMaxSize]);
+    
+    const handlePinchStateChange = useCallback(async ({ nativeEvent }: any) => {
       if (nativeEvent.state === State.ACTIVE) {
         setIsResizing(true);
         pinchStartSize.current = { w: size.w, h: size.h };
         pinchCenter.current = { cx: posRef.current.x + size.w / 2, cy: posRef.current.y + size.h / 2 };
-        log('[PINCH] ACTIVE -> base size', pinchStartSize.current);
       }
-      // When gesture ends
       if (
         nativeEvent.state === State.END ||
         nativeEvent.state === State.CANCELLED ||
@@ -360,30 +365,38 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
       ) {
         setIsResizing(false);
         const { w, h } = size;
-        await AsyncStorage.multiSet([
+        // Save size asynchronously without blocking
+        AsyncStorage.multiSet([
           ['calc_overlay_w', String(w)],
           ['calc_overlay_h', String(h)],
         ]).catch(() => {});
-        log('[PINCH] END -> saved size', w, h);
       }
-    };
+    }, [size]);
     
-    // Header drag with RNGH PanGestureHandler
+    // Header drag with RNGH PanGestureHandler - OPTIMIZED
     const headerPanRef = useRef<any>(null);
     const pinchRef = useRef<any>(null);
-    const onHeaderPanEvent = (evt: any) => {
+    
+    // Throttle position updates for better performance
+    const lastUpdateTime = useRef(0);
+    const UPDATE_THROTTLE = 16; // ~60fps
+    
+    const onHeaderPanEvent = useCallback((evt: any) => {
+      const now = Date.now();
+      if (now - lastUpdateTime.current < UPDATE_THROTTLE) return;
+      lastUpdateTime.current = now;
+      
       const { translationX, translationY } = evt.nativeEvent;
       const next = clamp(dragOrigin.current.x + translationX, dragOrigin.current.y + translationY);
       setPos(next);
-      log('[DRAG-H] event tx,ty=', translationX, translationY, ' -> pos ', next);
-    };
-    const onHeaderPanStateChange = async ({ nativeEvent }: any) => {
+    }, [clamp]);
+    
+    const onHeaderPanStateChange = useCallback(async ({ nativeEvent }: any) => {
       const { state, translationX, translationY } = nativeEvent;
-      log('[DRAG-H] state change ->', state, 'tx,ty=', translationX, translationY);
+      
       if (state === State.BEGAN) {
         isDragging.current = true;
         dragOrigin.current = { x: posRef.current.x, y: posRef.current.y };
-        log('[DRAG-H] BEGAN at', dragOrigin.current);
       }
       if (state === State.ACTIVE) {
         const next = clamp(dragOrigin.current.x + translationX, dragOrigin.current.y + translationY);
@@ -394,16 +407,18 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
         const next = clamp(dragOrigin.current.x + translationX, dragOrigin.current.y + translationY);
         setPos(next);
         const p = next;
-        await AsyncStorage.multiSet([
+        // Save position asynchronously without blocking
+        AsyncStorage.multiSet([
           ['calc_overlay_x', String(p.x)],
           ['calc_overlay_y', String(p.y)],
         ]).catch(() => {});
-        log('[DRAG-H] END saved pos', p);
       }
-    };
+    }, [clamp]);
 
     const resizeOrigin = useRef<{ w: number; h: number; startX: number; startY: number }>({ w: size.w, h: size.h, startX: 0, startY: 0 });
-    const resizePan = useRef(
+    
+    // Optimized resize pan responder with throttling
+    const resizePan = useMemo(() => 
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
@@ -415,9 +430,13 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
             startX: evt.nativeEvent.pageX,
             startY: evt.nativeEvent.pageY,
           };
-          log('[RESIZE-HANDLE] grant origin', resizeOrigin.current);
         },
         onPanResponderMove: (evt) => {
+          // Throttle updates for 60fps
+          const now = Date.now();
+          if (now - lastUpdateTime.current < UPDATE_THROTTLE) return;
+          lastUpdateTime.current = now;
+          
           const deltaX = evt.nativeEvent.pageX - resizeOrigin.current.startX;
           const deltaY = evt.nativeEvent.pageY - resizeOrigin.current.startY;
           const maxSize = getMaxSize();
@@ -427,36 +446,33 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
           setSize(newSize);
           const clampedPos = clamp(posRef.current.x, posRef.current.y, newSize);
           setPos(clampedPos);
-          // console.log('[RESIZE-HANDLE] move size', newSize, 'pos', clampedPos);
         },
         onPanResponderRelease: async () => {
           setIsResizing(false);
           const { w, h } = sizeRef.current;
-          await AsyncStorage.multiSet([
+          // Save size asynchronously without blocking
+          AsyncStorage.multiSet([
             ['calc_overlay_w', String(w)],
             ['calc_overlay_h', String(h)],
           ]).catch(() => {});
-          log('[RESIZE-HANDLE] release saved size', w, h);
         },
       })
-    ).current;
+    , [clamp, getMaxSize]);
   
-    const append = (t: string) => {
-      const next = expr + t;
-      setExpr(next);
-    };
+    const append = useCallback((t: string) => {
+      setExpr(prev => prev + t);
+    }, []);
     
-    const clearAll = () => { 
+    const clearAll = useCallback(() => { 
       setExpr(''); 
       setDisplay('0'); 
-    };
+    }, []);
     
-    const back = () => { 
-      const next = expr.slice(0, -1); 
-      setExpr(next); 
-    };
+    const back = useCallback(() => { 
+      setExpr(prev => prev.slice(0, -1)); 
+    }, []);
     
-    const evaluate = () => {
+    const evaluate = useCallback(() => {
       try {
         const safe = expr.replace(/×/g, '*').replace(/÷/g, '/');
         const val = safeEval(safe || '0');
@@ -466,12 +482,19 @@ function CalculatorOverlay({ visible, onClose }: { visible: boolean; onClose: ()
       } catch {
         setDisplay('Error');
       }
-    };
+    }, [expr]);
   
   
     return (
-      <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-        <GestureHandlerRootView>
+      <Modal 
+        transparent 
+        visible={visible} 
+        animationType="none" 
+        onRequestClose={onClose}
+        hardwareAccelerated={true}
+        statusBarTranslucent={true}
+      >
+        <GestureHandlerRootView style={{ flex: 1 }}>
           <View style={stylesCalc.backdrop}>
             <View 
             style={[
@@ -608,24 +631,32 @@ function App(): React.JSX.Element {
           const closeTimeString = await AsyncStorage.getItem(APP_CLOSE_TIME_KEY);
           const closeTime = closeTimeString ? parseInt(closeTimeString) : 0;
           const timeSinceClose = Date.now() - closeTime;
+          const cameraActive = await AsyncStorage.getItem('camera_active');
           
           log('🕐 APP LAUNCH CHECK:');
           log('   Last close time:', closeTime ? new Date(closeTime).toLocaleTimeString() : 'Never');
           log('   Time since close:', timeSinceClose, 'ms');
+          log('   Camera active flag:', cameraActive);
           
-          // Only restore navigation state if app was closed recently (< 3 seconds)
-          if (closeTime > 0 && timeSinceClose < 3000) {
+          // Only restore navigation state if app was closed recently (< 3 seconds) OR if camera was active
+          if ((closeTime > 0 && timeSinceClose < 3000) || cameraActive === 'true') {
             const savedStateString = await AsyncStorage.getItem(NAVIGATION_STATE_KEY);
             if (savedStateString) {
               const state = JSON.parse(savedStateString);
               if (isMounted) {
                 setInitialNavigationState(state);
               }
-              log('✅ Navigation state restored (quick restart)');
+              log('✅ Navigation state restored (quick restart or camera return)');
             }
           } else {
             log('🏠 Fresh launch detected - starting from Home');
             await AsyncStorage.removeItem(NAVIGATION_STATE_KEY);
+          }
+
+          // If it was a fresh launch and camera was active, we should clear it so it doesn't get stuck
+          if (cameraActive === 'true') {
+            await AsyncStorage.removeItem('camera_active');
+            log('🧹 Cleaned up: camera_active flag removed on mount');
           }
         } catch (error) {
           warn('⚠️ Failed to restore navigation state:', error);
@@ -1061,13 +1092,14 @@ function App(): React.JSX.Element {
     ).current;
   
     return (
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <OfficeProvider>
-          <UserAccessProvider>
-            <AlertProvider>
-              <LoginRequestListener />
-              {isNavigationReady && (
-                <NavigationContainer
+      <ErrorBoundary>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <OfficeProvider>
+            <UserAccessProvider>
+              <AlertProvider>
+                <LoginRequestListener />
+                {isNavigationReady && (
+                  <NavigationContainer
                   ref={navigationRef as React.Ref<NavigationContainerRef<RootStackParamList>>}
                   initialState={initialNavigationState}
                   onStateChange={(state: NavigationState | undefined) => {
@@ -1086,7 +1118,11 @@ function App(): React.JSX.Element {
             <View style={styles.container}>
               <Stack.Navigator
                 initialRouteName="Splash"
-                screenOptions={{ headerShown: false }}
+                screenOptions={{ 
+                  headerShown: false,
+                  animation: 'none',
+                  detachPreviousScreen: true,
+                }}
               >
                 <Stack.Screen name="Splash" component={SplashScreen} />
                 <Stack.Screen name="Login" component={LoginScreen} />
@@ -1223,6 +1259,7 @@ function App(): React.JSX.Element {
                 <Stack.Screen name="AdminUserManagement" component={AdminUserManagementScreen} options={{ title: 'User Display Names' }} />
                 <Stack.Screen name="MajurDashboard" component={MajurDashboardScreen} options={{ title: 'Majur Dashboard' }} />
                 <Stack.Screen name="OfficeManagement" component={OfficeManagementScreen} options={{ title: 'Office Management' }} />
+                <Stack.Screen name="SplashDiagnostics" component={SplashDiagnosticsScreen} options={{ headerShown: false, title: 'Splash Diagnostics' }} />
             </Stack.Navigator>
 
               {shouldShowCalculator && fabPos && (
@@ -1245,10 +1282,11 @@ function App(): React.JSX.Element {
             </View>
             </NavigationContainer>
           )}
-          </AlertProvider>
-        </UserAccessProvider>
-      </OfficeProvider>
-      </GestureHandlerRootView>
+            </AlertProvider>
+          </UserAccessProvider>
+        </OfficeProvider>
+        </GestureHandlerRootView>
+      </ErrorBoundary>
     );
   }
   

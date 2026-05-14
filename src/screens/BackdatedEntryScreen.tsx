@@ -1,13 +1,13 @@
 // src/screens/BackdatedEntryScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StatusBar, 
-  Platform, 
+import {
+  View,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StatusBar,
+  Platform,
   KeyboardAvoidingView,
   ScrollView,
   ActivityIndicator,
@@ -19,9 +19,9 @@ import { NavigationProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import { 
-  saveAgencyEntry, 
-  saveAgencyMajuri, 
+import {
+  saveAgencyEntry,
+  saveAgencyMajuri,
   saveGeneralEntry,
   saveTruckFuel,
   saveUppadJamaEntry,
@@ -37,6 +37,8 @@ import CustomDropdown from '../components/Dropdown';
 import NotificationService from '../services/NotificationService';
 import { supabase } from '../supabase';
 import { useOffice } from '../context/OfficeContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type BackdatedEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'BackdatedEntry'>;
 
@@ -102,11 +104,11 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
   const { goBack } = navigation;
   const { showAlert } = useAlert();
   const { getCurrentOfficeId } = useOffice();
-  
+
   // Admin check
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminLoading, setAdminLoading] = useState<boolean>(true);
-  
+
   // Common states
   const [selectedEntryType, setSelectedEntryType] = useState<EntryType | null>(null);
   const [description, setDescription] = useState<string>('');
@@ -114,7 +116,7 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
   const [date, setDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
-  
+
   // Entry type specific states
   const [entryType, setEntryType] = useState<'credit' | 'debit'>('credit');
   const [selectedAgency, setSelectedAgency] = useState<string>('');
@@ -124,7 +126,7 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
   const [ratePerLiter, setRatePerLiter] = useState<string>('');
   const [personName, setPersonName] = useState<string>('');
   const [billNo, setBillNo] = useState<string>('');
-  
+
   // Check admin status on mount
   useEffect(() => {
     const checkAdminAccess = async () => {
@@ -135,16 +137,16 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
           goBack();
           return;
         }
-        
+
         const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
         const isUserAdmin = user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-        
+
         if (!isUserAdmin) {
           Alert.alert('Access Denied', 'This feature is only available to administrators.');
           goBack();
           return;
         }
-        
+
         setIsAdmin(true);
       } catch (error) {
         console.error('Error checking admin access:', error);
@@ -154,10 +156,10 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
         setAdminLoading(false);
       }
     };
-    
+
     checkAdminAccess();
   }, [goBack]);
-  
+
   // Options
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -211,23 +213,23 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
       showAlert('Enter valid amount');
       return false;
     }
-    
+
     // Specific validations
     if ((selectedEntryType === 'majuri' || selectedEntryType === 'agency') && !selectedAgency) {
       showAlert('Select agency');
       return false;
     }
-    
+
     if (selectedEntryType === 'uppad_jama' && !personName.trim()) {
       showAlert('Enter person name');
       return false;
     }
-    
+
     if (selectedEntryType === 'paid_section' && !billNo.trim()) {
       showAlert('Enter bill number');
       return false;
     }
-    
+
     if (selectedEntryType === 'fuel') {
       if (!truckNumber.trim()) {
         showAlert('Enter truck number');
@@ -242,7 +244,7 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
         return false;
       }
     }
-    
+
     return true;
   };
 
@@ -261,20 +263,13 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const day = String(date.getDate()).padStart(2, '0');
       const dateString = `${year}-${month}-${day}`;
-      
+
       // Create ISO string with noon time to avoid timezone edge cases
       const dateISO = `${dateString}T12:00:00.000Z`;
 
-      console.log('💾 Backdated Entry - Saving:');
-      console.log('   Selected Date:', date.toLocaleDateString('en-IN'));
-      console.log('   Date String:', dateString);
-      console.log('   ISO String:', dateISO);
-      console.log('   Entry Type:', selectedEntryType);
-      console.log('   Amount:', numericAmount);
 
       switch (selectedEntryType) {
         case 'majuri':
-          console.log('💾 Saving Majuri with majuri_date:', dateISO);
           success = await saveAgencyMajuri({
             agency_name: selectedAgency,
             description: description.trim(),
@@ -286,8 +281,6 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
 
         case 'agency':
           const agencyOfficeId = getCurrentOfficeId();
-          console.log('🏢 Office ID for agency entry:', agencyOfficeId);
-          console.log('💾 Saving Agency Entry with entry_date:', dateISO);
           success = await saveAgencyEntry({
             agency_name: selectedAgency,
             description: description.trim(),
@@ -300,8 +293,6 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
 
         case 'mumbai_delivery':
           const mumbaiOfficeId = getCurrentOfficeId();
-          console.log('🏢 Office ID for Mumbai delivery:', mumbaiOfficeId);
-          console.log('💾 Saving Mumbai Delivery with entry_date:', dateISO);
           success = await saveAgencyEntry({
             agency_name: 'Mumbai',
             description: description.trim(),
@@ -315,8 +306,6 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
 
         case 'general':
           const generalOfficeId = getCurrentOfficeId();
-          console.log('🏢 Office ID for general entry:', generalOfficeId);
-          console.log('💾 Saving General Entry with entry_date:', dateISO);
           success = await saveGeneralEntry({
             description: description.trim(),
             amount: numericAmount,
@@ -327,7 +316,6 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
           break;
 
         case 'paid_section':
-          console.log('💾 Saving Agency Payment with payment_date:', dateISO);
           success = await saveAgencyPayment({
             agency_name: selectedAgency,
             amount: numericAmount,
@@ -339,8 +327,6 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
 
         case 'uppad_jama':
           const uppadJamaOfficeId = getCurrentOfficeId();
-          console.log('🏢 Office ID for uppad/jama:', uppadJamaOfficeId);
-          console.log('💾 Saving Uppad/Jama with entry_date:', dateISO);
           success = await saveUppadJamaEntry({
             person_name: personName.trim(),
             amount: numericAmount,
@@ -353,7 +339,6 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
 
         case 'fuel':
           const fuelOfficeId = getCurrentOfficeId();
-          console.log('🏢 Office ID for fuel:', fuelOfficeId);
           const calculatedAmount = parseFloat(fuelQuantity) * parseFloat(ratePerLiter);
           success = await saveTruckFuel({
             truck_number: truckNumber.trim(),
@@ -368,13 +353,12 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
 
       if (success) {
         // Clear cache to ensure fresh data is loaded in Daily Report
-        console.log('🧹 Clearing cache after backdated entry save...');
         await clearAllCache();
-        
+
         // Send notification to admin
         const entryTypeName = entryTypeOptions.find(t => t.value === selectedEntryType)?.label || selectedEntryType;
         await NotificationService.notifyAdd(selectedEntryType as any, `Backdated ${entryTypeName}: ₹${numericAmount} for ${date.toLocaleDateString('en-IN')}`);
-        
+
         showAlert(`${entryTypeName} saved successfully for ${date.toLocaleDateString('en-IN')}!`);
         resetForm();
       } else {
@@ -438,7 +422,7 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
         <Text style={styles.formTitle}>
           {entryTypeOptions.find(t => t.value === selectedEntryType)?.label} - Backdated Entry
         </Text>
-        
+
         {/* Date Field with DateTimePicker */}
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Date <Text style={styles.requiredStar}>*</Text></Text>
@@ -607,7 +591,7 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
                 onPress={() => setEntryType('debit')}
               >
                 <Text style={[styles.radioText, entryType === 'debit' && styles.radioTextSelected]}>
-                  {selectedEntryType === 'general' ? 'Expense' : 
+                  {selectedEntryType === 'general' ? 'Expense' :
                    selectedEntryType === 'uppad_jama' ? 'Given' : 'Debit'}
                 </Text>
               </TouchableOpacity>
@@ -616,7 +600,7 @@ function BackdatedEntryScreen({ navigation }: BackdatedEntryScreenProps): React.
                 onPress={() => setEntryType('credit')}
               >
                 <Text style={[styles.radioText, entryType === 'credit' && styles.radioTextSelected]}>
-                  {selectedEntryType === 'general' ? 'Income' : 
+                  {selectedEntryType === 'general' ? 'Income' :
                    selectedEntryType === 'uppad_jama' ? 'Received' : 'Credit'}
                 </Text>
               </TouchableOpacity>

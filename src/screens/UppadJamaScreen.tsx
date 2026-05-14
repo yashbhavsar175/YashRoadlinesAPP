@@ -10,11 +10,13 @@ import { RootStackParamList } from '../../App';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import { CommonHeader, CommonInput, Dropdown } from '../components';
-import { 
-  getPersons, 
-  Person, 
-  saveUppadJamaEntry, 
-  getUppadJamaEntries, 
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
+import {
+  getPersons,
+  Person,
+  saveUppadJamaEntry,
+  getUppadJamaEntries,
   UppadJamaEntry,
   syncAllDataFixed,
   OFFLINE_KEYS,
@@ -63,11 +65,8 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
       // OPTION: Remove office filter to show all entries
       // const officeId = currentOffice?.id;
       const officeId = undefined; // Show all entries regardless of office
-      console.log('📥 UppadJamaScreen - Loading entries for office:', officeId, currentOffice?.name);
       const list = await getUppadJamaEntries(officeId);
-      console.log('📥 UppadJamaScreen - Loaded entries:', list?.length || 0);
       if (list && list.length > 0) {
-        console.log('📥 Sample entry:', list[0]);
       }
       if (list) {
         // Force a re-render by updating the state
@@ -152,7 +151,6 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         console.error('Error in subscription setup:', error);
         if (retryCount < maxRetries && isMounted) {
           retryCount++;
-          console.log(`Retrying setup (${retryCount}/${maxRetries})...`);
           setTimeout(() => {
             if (isMounted) setupSubscription();
           }, 1000 * retryCount);
@@ -174,7 +172,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
       }
     };
   }, [memoizedLoadPersons, memoizedLoadEntries, activeTab]);
-  
+
   // Entry type state
   const [entryType, setEntryType] = useState<'debit' | 'credit'>('debit');
   const entryTypeOptions = [
@@ -221,7 +219,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         const ok = await deleteTransactionByIdImproved(id, OFFLINE_KEYS.UPPAD_JAMA_ENTRIES);
         if (ok) {
           // Notification handled by AdminEntryNotificationService in Storage.ts
-          
+
           await loadEntries();
           showAlert('Entry deleted.');
         } else {
@@ -234,7 +232,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
   const renderSummary = () => {
     const totalCredit = entries.filter(e => e.entry_type === 'credit').reduce((s, e) => s + (e.amount || 0), 0);
     const totalDebit = entries.filter(e => e.entry_type === 'debit').reduce((s, e) => s + (e.amount || 0), 0);
-    const net = totalCredit - totalDebit; 
+    const net = totalCredit - totalDebit;
     return (
       <View style={{ marginTop: 8, marginBottom: 8 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -294,19 +292,19 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
       // Clear form
       setAmount('');
       setDescription('');
-      
+
       // Force reload of all data
       await Promise.all([
         loadEntries(),
         loadPersons()
       ]);
-      
+
       // Show success message
       showAlert('Entry saved successfully!');
-      
+
       // Sync with server
       await syncAllDataFixed();
-      
+
       // Manual broadcast to trigger refresh on majur dashboards - only for jama (credit) entries
       if (entryType === 'credit') {
         try {
@@ -326,22 +324,22 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
           console.error('UppadJamaScreen - Broadcast failed:', broadcastError);
         }
       }
-      
+
       // Reload data one more time after sync
       await Promise.all([
         loadEntries(),
         loadPersons()
       ]);
-      
+
       // Show temporary success indication without alert popup
       setJustSaved(true);
       setTimeout(() => {
         setJustSaved(false);
       }, 3000); // Hide after 3 seconds
-      
+
       // Reset person selection for next entry
       setSelectedPersonId('');
-      
+
     } catch (e) {
       console.error('Error saving entry:', e);
       Alert.alert('Error', 'Failed to save entry. Please try again.');
@@ -376,7 +374,7 @@ function UppadJamaScreen({ navigation }: UppadJamaScreenProps): React.JSX.Elemen
         {activeTab === 'entry' ? (
           <View style={GlobalStyles.card}>
             <Text style={GlobalStyles.title}>Uppad/Jama Entry</Text>
-            
+
             <View style={styles.labelRow}>
               <Text style={styles.inputLabel}>Person</Text>
               <TouchableOpacity onPress={loadPersons} disabled={loadingPersons}>

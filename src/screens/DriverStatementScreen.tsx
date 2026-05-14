@@ -1,7 +1,6 @@
 // DriverStatementScreen.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Platform, StatusBar, RefreshControl } from 'react-native';
-import { Text } from 'react-native';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { getDriverTransactions, DriverTransaction, syncAllDataFixed } from '../data/Storage';
@@ -9,6 +8,8 @@ import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type DriverStatementScreenNavigationProp = NavigationProp<RootStackParamList, 'DriverStatement'>;
 
@@ -41,7 +42,7 @@ const DriverStatementScreen = ({ navigation }: DriverStatementScreenProps): Reac
       return () => {};
     }, [loadTransactions])
   );
-  
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -51,7 +52,7 @@ const DriverStatementScreen = ({ navigation }: DriverStatementScreenProps): Reac
     }
     await loadTransactions();
   };
-  
+
   const renderItem = ({ item, index }: { item: DriverTransaction; index: number }) => (
     <View style={GlobalStyles.card}>
       <View style={styles.cardHeader}>
@@ -163,7 +164,7 @@ const DriverStatementScreen = ({ navigation }: DriverStatementScreenProps): Reac
       ) : (
         renderEmptyState()
       )}
-      
+
       {driverTransactions.length > 0 && (
         <TouchableOpacity
           onPress={goBack}

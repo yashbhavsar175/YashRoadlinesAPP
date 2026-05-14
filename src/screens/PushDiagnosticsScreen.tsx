@@ -11,6 +11,8 @@ import {
 import { Colors } from '../theme/colors';
 import { supabase } from '../supabase';
 import PushNotification from 'react-native-push-notification';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 const PushDiagnosticsScreen = ({ navigation }: any) => {
   const [currentToken, setCurrentToken] = useState<string>('');
@@ -23,11 +25,9 @@ const PushDiagnosticsScreen = ({ navigation }: any) => {
     // Get current FCM token
     PushNotification.configure({
       onRegister: function (token) {
-        console.log('TOKEN:', token);
         setCurrentToken(token.token || 'No token');
       },
       onNotification: function (notification) {
-        console.log('NOTIFICATION:', notification);
       },
       permissions: {
         alert: true,
@@ -46,7 +46,7 @@ const PushDiagnosticsScreen = ({ navigation }: any) => {
       const { count, error } = await supabase
         .from('device_tokens')
         .select('*', { count: 'exact', head: true });
-      
+
       if (error) {
         console.error('Error loading token count:', error);
       } else {
@@ -150,14 +150,14 @@ const PushDiagnosticsScreen = ({ navigation }: any) => {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🧪 Test Notifications</Text>
-        
+
         <TextInput
           style={styles.input}
           placeholder="Notification Title"
           value={testTitle}
           onChangeText={setTestTitle}
         />
-        
+
         <TextInput
           style={styles.input}
           placeholder="Notification Message"
@@ -170,8 +170,8 @@ const PushDiagnosticsScreen = ({ navigation }: any) => {
           <Text style={styles.buttonText}>Send Local Notification</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.button, styles.primaryButton]} 
+        <TouchableOpacity
+          style={[styles.button, styles.primaryButton]}
           onPress={sendTestPush}
           disabled={isSending}
         >

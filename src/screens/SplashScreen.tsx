@@ -1,6 +1,6 @@
 // src/screens/SplashScreen.tsx
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, StatusBar } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, StatusBar, TouchableOpacity } from 'react-native';
 import { NavigationProp, CommonActions } from '@react-navigation/native';
 import { supabase } from '../supabase';
 import { RootStackParamList } from '../../App';
@@ -8,6 +8,7 @@ import { Colors } from '../theme/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BiometricAuthService } from '../services/BiometricAuthService';
 import { responsiveFontSize, responsiveSpacing } from '../utils/responsive';
+import SplashDiag from '../services/SplashDiagnosticsService';
 
 type SplashScreenNavigationProp = NavigationProp<RootStackParamList, 'Splash'>;
 
@@ -21,15 +22,18 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
   const hasNavigated = useRef(false);
   const animationComplete = useRef(false);
   const navigationTimer = useRef<NodeJS.Timeout | null>(null);
+  const [showRetry, setShowRetry] = useState(false);
 
   useEffect(() => {
-    console.log('🚀 SplashScreen mounted');
-    
-    // Start animation for the main content
+    // Start diagnostics session for this launch
+    SplashDiag.startSession();
+
+    // Start animation
+    SplashDiag.beginStep('animation');
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 2000, // Reduced to 2 seconds for faster response
+        duration: 2000,
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
@@ -38,157 +42,208 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // Mark animation as complete
       animationComplete.current = true;
-      console.log('✨ Splash animation complete');
-      
-      // After animation, navigate to the correct screen with a small delay
+      SplashDiag.endStep('animation');
+
       navigationTimer.current = setTimeout(() => {
         checkSessionAndNavigate();
-      }, 300); // Reduced delay for faster navigation
+      }, 300);
     });
 
-    // ✅ FIX: Listen for auth state changes including TOKEN_REFRESHED
+    // Auth state listener
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔐 Auth event on splash:', event, 'hasNavigated:', hasNavigated.current);
-      
-      // Ignore auth events if we've already navigated
-      if (hasNavigated.current) {
-        console.log('⏭️ Already navigated, ignoring auth event');
-        return;
-      }
-      
-      // Don't navigate until animation is complete
-      if (!animationComplete.current) {
-        console.log('⏳ Animation not complete, waiting...');
-        return;
-      }
-      
-      // Handle TOKEN_REFRESHED, SIGNED_IN, and INITIAL_SESSION
+      if (hasNavigated.current) return;
+      if (!animationComplete.current) return;
+
+      SplashDiag.info(`authStateChange event: ${event}`);
+
       if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (session?.user) {
-          console.log('✅ Session active, navigating from splash...');
           await checkSessionAndNavigate();
         }
       }
-      
+
       if (event === 'SIGNED_OUT') {
-        console.log('🚪 Signed out, navigating to login...');
         hasNavigated.current = true;
+        await SplashDiag.finishSession('Login (SIGNED_OUT event)');
         navigation.dispatch(
-          CommonActions.reset({
-            index: 0,
-            routes: [{ name: 'Login' }],
-          })
+          CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
         );
       }
     });
 
-    // ✅ FIX: Timeout fallback with proper cleanup
+    // 4s fallback — checkSessionAndNavigate call karo
     const timeoutId = setTimeout(async () => {
-      if (hasNavigated.current) {
-        console.log('⏭️ Already navigated, skipping timeout');
-        return;
-      }
-      
-      // Wait for animation if it's still running
+      if (hasNavigated.current) return;
+
+      SplashDiag.info('4s fallback triggered — animation may still be running');
+
       if (!animationComplete.current) {
-        console.log('⏳ Timeout triggered but waiting for animation...');
-        // Wait up to 2.5s for animation (2s animation + 0.5s buffer)
-        await new Promise(resolve => setTimeout(resolve, 2500));
+        // Wait for animation to finish if it's slow
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
-      
+
       if (!hasNavigated.current) {
-        console.log('⏱️ Splash timeout - forcing session check...');
         await checkSessionAndNavigate();
       }
-    }, 4000); // 4 second timeout (reduced from 5s)
+
+      // Show retry button after 8 seconds if still not navigated
+      setTimeout(() => {
+        if (!hasNavigated.current) {
+          setShowRetry(true);
+          SplashDiag.info('Stuck detected — showing Retry button');
+        }
+      }, 4000);
+
+      // Hard fallback — agar checkSessionAndNavigate bhi hang ho
+      setTimeout(async () => {
+        if (!hasNavigated.current) {
+          hasNavigated.current = true;
+          await SplashDiag.forceFinishSession('Hard 12s fallback — everything hung');
+          navigation.dispatch(
+            CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
+          );
+        }
+      }, 8000);
+    }, 4000);
 
     return () => {
-      console.log('🧹 SplashScreen cleanup');
       authListener.subscription.unsubscribe();
       clearTimeout(timeoutId);
-      if (navigationTimer.current) {
-        clearTimeout(navigationTimer.current);
-      }
+      if (navigationTimer.current) clearTimeout(navigationTimer.current);
     };
   }, [fadeAnim, scaleAnim, navigation]);
 
-  const checkSessionAndNavigate = async () => {
-    // Prevent multiple navigations
-    if (hasNavigated.current) {
-      console.log('⏭️ Already navigated, skipping...');
-      return;
-    }
+  // Helper: Promise with timeout — returns fallback if ms exceeded
+  const withTimeout = <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
+    ]);
 
-    const { data: { session } } = await supabase.auth.getSession();
+  const checkSessionAndNavigate = async () => {
+    if (hasNavigated.current) return;
+
     let screen: keyof RootStackParamList = 'Login';
+
     try {
+      // Step 1: getSession - try local cache first (instant), then network
+      SplashDiag.beginStep('getSession');
+      
+      let finalSession = null;
+      
+      try {
+        const sessionResult = await withTimeout(
+          supabase.auth.getSession(),
+          10000, // Increased to 10s - Supabase cold start can take time
+          { data: { session: null }, error: null } as any
+        );
+        finalSession = sessionResult.data?.session ?? null;
+        
+        if (!finalSession) {
+          SplashDiag.timeoutStep('getSession', 'No session on first attempt, retrying...');
+          // Retry once more
+          try {
+            const retryResult = await withTimeout(
+              supabase.auth.getSession(),
+              5000,
+              { data: { session: null }, error: null } as any
+            );
+            finalSession = retryResult.data?.session ?? null;
+            SplashDiag.info(finalSession ? `Retry succeeded: user ${finalSession.user.id}` : 'Retry also no session');
+          } catch {
+            SplashDiag.info('Retry failed');
+          }
+        } else {
+          SplashDiag.endStep('getSession', `user: ${finalSession.user.id}`);
+        }
+      } catch (e) {
+        SplashDiag.timeoutStep('getSession', `getSession threw: ${e}`);
+      }
+
+      // Step 2: AsyncStorage checks
+      SplashDiag.beginStep('asyncStorage_checks');
       const otpPending = await AsyncStorage.getItem('otp_pending');
-      if (session && otpPending === '1') {
-        // If a previous login had pending OTP, do not auto-login on restart
+      SplashDiag.endStep('asyncStorage_checks', `otp_pending: ${otpPending}`);
+
+      if (finalSession && otpPending === '1') {
+        SplashDiag.info('OTP pending — signing out');
         await supabase.auth.signOut();
         screen = 'Login';
-      } else if (session) {
-        // Check if user is admin or has completed approval process
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('is_admin')
-          .eq('id', session.user.id)
-          .single();
-
-        const isAdmin = profile?.is_admin === true;
+      } else if (finalSession) {
+        // Step 3: Profile fetch with 4s timeout
+        SplashDiag.beginStep('fetchProfile');
+        let isAdmin = false;
+        try {
+          const profileResult = await withTimeout(
+            supabase
+              .from('user_profiles')
+              .select('is_admin')
+              .eq('id', finalSession.user.id)
+              .single() as any,
+            4000,
+            { data: null, error: null }
+          );
+          
+          if (!profileResult.data) {
+            SplashDiag.timeoutStep('fetchProfile', 'user_profiles fetch timed out — treating as non-admin');
+          } else {
+            isAdmin = (profileResult.data as any)?.is_admin === true;
+            SplashDiag.endStep('fetchProfile', `is_admin: ${isAdmin}`);
+          }
+        } catch {
+          SplashDiag.timeoutStep('fetchProfile', 'fetchProfile threw — treating as non-admin');
+        }
 
         if (!isAdmin) {
-          // For non-admin users, check if they have a completed login
-          // If they have a session but no completed approval, sign them out
+          SplashDiag.beginStep('loginRequest_check');
           const loginRequestId = await AsyncStorage.getItem('login_request_id');
           const waitingForAdmin = await AsyncStorage.getItem('waiting_for_admin');
-          
+          SplashDiag.endStep('loginRequest_check',
+            `waitingForAdmin: ${waitingForAdmin}, loginRequestId: ${loginRequestId ? 'exists' : 'null'}`);
+
           if (waitingForAdmin === 'true' || loginRequestId) {
-            // User was waiting for approval, don't auto-login
+            SplashDiag.info('Non-admin waiting for approval — signing out');
             await supabase.auth.signOut();
             await AsyncStorage.removeItem('login_request_id');
             await AsyncStorage.removeItem('waiting_for_admin');
             screen = 'Login';
           } else {
-            // User has completed approval process
+            SplashDiag.beginStep('biometric_check');
             const biometricEnabled = await BiometricAuthService.isBiometricAuthEnabled();
+            SplashDiag.endStep('biometric_check', `enabled: ${biometricEnabled}`);
             screen = biometricEnabled ? 'BiometricAuth' : 'Home';
           }
         } else {
-          // Admin user - allow direct login
+          SplashDiag.beginStep('biometric_check');
           const biometricEnabled = await BiometricAuthService.isBiometricAuthEnabled();
+          SplashDiag.endStep('biometric_check', `enabled: ${biometricEnabled}`);
           screen = biometricEnabled ? 'BiometricAuth' : 'Home';
         }
       } else {
+        SplashDiag.info('No session — going to Login');
         screen = 'Login';
       }
     } catch (error) {
-      console.error('Error checking session:', error);
-      if (session) {
-        // Fallback: sign out on error to be safe
-        await supabase.auth.signOut();
-      }
+      const msg = error instanceof Error ? error.message : String(error);
+      SplashDiag.errorStep('checkSessionAndNavigate', error);
+      console.error('Error checking session:', msg);
       screen = 'Login';
     }
 
     hasNavigated.current = true;
+    await SplashDiag.finishSession(screen);
     navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{ name: screen }],
-      })
+      CommonActions.reset({ index: 0, routes: [{ name: screen }] })
     );
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.primaryDark} />
-      
       <Animated.View style={[styles.mainContent, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
         <View style={styles.titleContainer}>
-          <Text 
+          <Text
             style={styles.appName}
             numberOfLines={1}
             adjustsFontSizeToFit={true}
@@ -198,6 +253,18 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
           </Text>
         </View>
         <Text style={styles.tagline}>Financial Management</Text>
+        
+        {showRetry && (
+          <Animated.View style={styles.retryContainer}>
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={() => navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] }))}
+            >
+              <Text style={styles.retryText}>Proceed to Login</Text>
+            </TouchableOpacity>
+            <Text style={styles.retryHint}>Taking longer than usual...</Text>
+          </Animated.View>
+        )}
       </Animated.View>
     </View>
   );
@@ -235,6 +302,29 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textAlign: 'center',
     marginTop: responsiveSpacing(5),
+  },
+  retryContainer: {
+    marginTop: responsiveSpacing(40),
+    alignItems: 'center',
+  },
+  retryButton: {
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    paddingVertical: responsiveSpacing(10),
+    paddingHorizontal: responsiveSpacing(20),
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+  },
+  retryText: {
+    color: Colors.accent,
+    fontWeight: 'bold',
+    fontSize: responsiveFontSize(16),
+  },
+  retryHint: {
+    color: Colors.surface,
+    opacity: 0.5,
+    fontSize: responsiveFontSize(12),
+    marginTop: responsiveSpacing(8),
   },
 });
 

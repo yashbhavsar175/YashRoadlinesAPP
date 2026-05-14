@@ -27,6 +27,8 @@ import PaymentConfirmationPopup from '../components/PaymentConfirmationPopup';
 import { isLegacyRecord, getLegacyRecordTooltip } from '../utils/legacyRecordHelper';
 import { logError, logInfo } from '../utils/ErrorLogger';
 import NotificationService from '../services/NotificationService';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type PaymentConfirmationScreenNavigationProp = NavigationProp<
   MumbaiDeliveryTabParamList,
@@ -88,7 +90,7 @@ function PaymentConfirmationScreen({
  const handleTap = (record: DeliveryRecord) => {
   const now = Date.now();
   const lastTap = lastTapRef.current[record.id] || 0;
-  
+
   if (now - lastTap < DOUBLE_TAP_DELAY) {
     lastTapRef.current[record.id] = 0;
     setSelectedRecord(record);
@@ -130,7 +132,7 @@ useEffect(() => {
           const userDataString = await AsyncStorage.getItem('user_profile');
           const userData = userDataString ? JSON.parse(userDataString) : null;
           const userName = userData?.name || 'User';
-          
+
           // Send in-app notification
           const NotificationService = (await import('../services/NotificationService')).default;
           const billtyNo = selectedRecord?.billty_no || 'Unknown';
@@ -138,7 +140,7 @@ useEffect(() => {
             'mumbai_delivery',
             `Payment confirmed: Billty No ${billtyNo}, Amount ₹${confirmation.confirmed_amount}`
           );
-          
+
           // Send device notification to admin
           const DeviceNotificationService = (await import('../services/DeviceNotificationService')).default;
           await DeviceNotificationService.notifyAdminPaymentConfirmed(
@@ -150,8 +152,7 @@ useEffect(() => {
               consigneeName: selectedRecord?.consignee_name || 'N/A',
             }
           );
-          
-          console.log('✅ Notifications sent to admin');
+
         } catch (notifError) {
           logError(notifError instanceof Error ? notifError : new Error('Notification failed'), {
             functionName: 'PaymentConfirmationScreen.handleConfirmPayment',
@@ -182,9 +183,9 @@ useEffect(() => {
 
   const handleDeleteEntry = (record: DeliveryRecord) => {
     const isConfirmed = record.confirmation_status === 'confirmed';
-    
+
     const title = isConfirmed ? "Delete Confirmed Payment?" : "Confirm Delete";
-    const message = isConfirmed 
+    const message = isConfirmed
       ? "This payment has been confirmed with photos. Deleting it will also remove the credit entry from Daily Report. Are you sure?"
       : "Are you sure you want to permanently delete this delivery record?";
 
@@ -192,8 +193,8 @@ useEffect(() => {
       title,
       message,
       [
-        { 
-          text: "Cancel", 
+        {
+          text: "Cancel",
           style: "cancel"
         },
         {
@@ -202,10 +203,10 @@ useEffect(() => {
           onPress: async () => {
             try {
               const success = await deleteTransactionByIdImproved(record.id, OFFLINE_KEYS.AGENCY_ENTRIES);
-              
+
               if (success) {
                 await NotificationService.notifyDelete(
-                  'mumbai_delivery', 
+                  'mumbai_delivery',
                   `Deleted Mumbai delivery: Billty ${record.billty_no} - ₹${record.amount}`
                 );
 
@@ -233,7 +234,7 @@ useEffect(() => {
   return (
     <GestureHandlerRootView style={GlobalStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
-      
+
       <CommonHeader title="Payment Confirmation" onBackPress={goBack} />
 
       <ScrollView
@@ -280,7 +281,6 @@ useEffect(() => {
                   key={record.id}
                   onHandlerStateChange={({ nativeEvent }) => {
                     if (nativeEvent.state === State.ACTIVE) {
-                      console.log('🔴 Long press detected on pending record:', record.id);
                       handleDeleteEntry(record);
                     }
                   }}
@@ -312,7 +312,7 @@ useEffect(() => {
                         ₹{record.amount.toFixed(2)}
                       </Text>
                       <Text style={[styles.tableCell, styles.cashTypeColumn]} numberOfLines={1}>
-                        {record.payment_type === 'cash' ? 'Cash' : 
+                        {record.payment_type === 'cash' ? 'Cash' :
                          record.payment_type === 'gpay_sapan' ? 'GPay (S)' :
                          record.payment_type === 'gpay_yash' ? 'GPay (Y)' : '-'}
                       </Text>
@@ -334,7 +334,6 @@ useEffect(() => {
                   key={record.id}
                   onHandlerStateChange={({ nativeEvent }) => {
                     if (nativeEvent.state === State.ACTIVE) {
-                      console.log('🔴 Long press detected on confirmed record:', record.id);
                       handleDeleteEntry(record);
                     }
                   }}
@@ -369,7 +368,7 @@ useEffect(() => {
                         </Text>
                       </View>
                       <Text style={[styles.tableCell, styles.cashTypeColumn]} numberOfLines={1}>
-                        {record.payment_type === 'cash' ? 'Cash' : 
+                        {record.payment_type === 'cash' ? 'Cash' :
                          record.payment_type === 'gpay_sapan' ? 'GPay (S)' :
                          record.payment_type === 'gpay_yash' ? 'GPay (Y)' : '-'}
                       </Text>

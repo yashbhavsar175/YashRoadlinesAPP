@@ -15,6 +15,8 @@ import { NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { Colors } from '../theme/colors';
 import { supabase } from '../supabase';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type PageManagementScreenNavigationProp = NavigationProp<any, 'PageManagement'>;
 
@@ -37,7 +39,7 @@ interface CustomPage {
 
 const PageManagementScreen = ({ navigation }: PageManagementScreenProps): React.JSX.Element => {
   const { goBack } = navigation;
-  
+
   const [pages, setPages] = useState<CustomPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,7 +69,6 @@ const PageManagementScreen = ({ navigation }: PageManagementScreenProps): React.
       }
 
       setPages(data || []);
-      console.log('✅ Loaded pages:', data?.length || 0);
     } catch (error) {
       console.error('❌ Error loading pages:', error);
       Alert.alert('Error', 'Failed to load pages');
@@ -91,13 +92,12 @@ const PageManagementScreen = ({ navigation }: PageManagementScreenProps): React.
       }
 
       // Update local state
-      setPages(pages.map(page => 
-        page.id === pageId 
+      setPages(pages.map(page =>
+        page.id === pageId
           ? { ...page, is_active: !currentStatus }
           : page
       ));
 
-      console.log('✅ Page status updated');
     } catch (error) {
       console.error('❌ Error updating page status:', error);
       Alert.alert('Error', 'Failed to update page status');
@@ -128,7 +128,6 @@ const PageManagementScreen = ({ navigation }: PageManagementScreenProps): React.
 
               // Update local state
               setPages(pages.filter(page => page.id !== pageId));
-              console.log('✅ Page deleted');
               Alert.alert('Success', 'Page deleted successfully');
             } catch (error) {
               console.error('❌ Error deleting page:', error);
@@ -169,7 +168,7 @@ const PageManagementScreen = ({ navigation }: PageManagementScreenProps): React.
         <Text style={styles.pageOrder}>
           Display Order: {page.sort_order}
         </Text>
-        
+
         {/* Status Badge */}
         <View style={[
           styles.statusBadge,
@@ -187,10 +186,10 @@ const PageManagementScreen = ({ navigation }: PageManagementScreenProps): React.
           style={[styles.actionButton, styles.toggleButton]}
           onPress={() => togglePageStatus(page.id, page.is_active)}
         >
-          <Icon 
-            name={page.is_active ? 'pause' : 'play'} 
-            size={16} 
-            color="#FFFFFF" 
+          <Icon
+            name={page.is_active ? 'pause' : 'play'}
+            size={16}
+            color="#FFFFFF"
           />
           <Text style={styles.actionButtonText}>
             {page.is_active ? 'Deactivate' : 'Activate'}
@@ -238,7 +237,7 @@ const PageManagementScreen = ({ navigation }: PageManagementScreenProps): React.
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
@@ -251,8 +250,8 @@ const PageManagementScreen = ({ navigation }: PageManagementScreenProps): React.
       </View>
 
       {/* Content */}
-      <ScrollView 
-        style={styles.content} 
+      <ScrollView
+        style={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => loadPages(true)} />

@@ -35,6 +35,8 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 // Custom Dropdown component
 interface CustomDropdownProps {
@@ -139,7 +141,7 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
           setSelectedAgency('');
         }
       }
-      
+
       const allEntries = await getAgencyEntry();
       if (isMountedRef.current) {
         const agencyEntries = allEntries.filter(entry => entry.agency_name === selectedAgency);
@@ -169,7 +171,7 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
       return () => {};
     }, [loadData])
   );
-  
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -205,7 +207,7 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
       const success = await saveAgencyEntry(entryData);
       if (success) {
         // Notification handled by AdminEntryNotificationService in Storage.ts
-        
+
         // Using a small timeout to ensure the alert is shown after the state updates
         setTimeout(() => {
           showAlert('Entry saved successfully!');
@@ -223,7 +225,7 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
       setSaving(false);
     }
   };
-  
+
   const handleDeleteEntry = (id: string) => {
     Alert.alert(
       "Confirm Delete",
@@ -239,7 +241,7 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
               const success = await deleteTransactionByIdImproved(id, OFFLINE_KEYS.AGENCY_ENTRIES);
               if (success) {
                 // Notification handled by AdminEntryNotificationService in Storage.ts
-                
+
                 const updatedEntries = recentEntries.filter(entry => entry.id !== id);
                 setRecentEntries(updatedEntries);
                 showAlert('Entry deleted successfully!');
@@ -255,17 +257,17 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
       ]
     );
   };
-  
+
   const onDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');
     if (selectedDate) {
       setDate(selectedDate);
     }
   };
-  
+
   const renderEntryItem = ({ item }: { item: AgencyEntry }) => {
     const isCredit = item.entry_type === 'credit';
-    
+
     return (
       <LongPressGestureHandler
         onHandlerStateChange={({ nativeEvent }) => {
@@ -309,16 +311,16 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
           <TouchableOpacity onPress={goBack} style={styles.backButton}>
             <Text style={styles.backButtonText}>{'<'}</Text>
           </TouchableOpacity>
-          
+
           {/* Center: Title */}
           <View style={styles.titleContainer}>
             <Text style={styles.headerTitle} numberOfLines={1}>Agency Entry</Text>
           </View>
-          
+
           {/* Right: Spacer */}
           <View style={styles.headerSpacer} />
         </View>
-        
+
         <FlatList
           data={recentEntries}
           renderItem={renderEntryItem}
@@ -332,7 +334,7 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
             <View style={GlobalStyles.card}>
               <View style={styles.cardContent}>
                 <Text style={[GlobalStyles.title, styles.cardTitle]}>Add New Agency Entry</Text>
-                
+
                 <CustomDropdown
                   label="Select Agency"
                   options={agencyOptions}
@@ -349,7 +351,7 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
                   value={description}
                   onChangeText={setDescription}
                 />
-                
+
                 <Text style={styles.inputLabel}>Amount <Text style={styles.requiredStar}>*</Text></Text>
                 <TextInput
                   style={GlobalStyles.input}
@@ -385,9 +387,9 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
                   <Text style={styles.dateInputText}>{date.toLocaleDateString('en-IN')}</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity 
-                  onPress={handleSaveEntry} 
-                  disabled={saving} 
+                <TouchableOpacity
+                  onPress={handleSaveEntry}
+                  disabled={saving}
                   style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}
                 >
                   <Text style={GlobalStyles.buttonPrimaryText}>{saving ? 'Saving...' : 'Save Entry'}</Text>
@@ -411,7 +413,7 @@ const AgencyEntryScreen = ({ navigation }: AgencyEntryScreenProps): React.JSX.El
             );
           }}
         />
-        
+
         {showDatePicker && (
           <DateTimePicker
             value={date}

@@ -31,6 +31,8 @@ import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
 import { useOffice } from '../context/OfficeContext';
 import PaymentConfirmationPopup from '../components/PaymentConfirmationPopup';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 type MumbaiDeliveryEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'MumbaiDelivery'>;
 
 interface MumbaiDeliveryEntryScreenProps {
@@ -59,7 +61,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   // Log device info and keyboard events
   useEffect(() => {
     const { width, height } = Dimensions.get('window');
-    console.log('📱 Mumbai Screen - Device Info:', {
+    console.log('📱 Device info:', {
       width,
       height,
       platform: Platform.OS,
@@ -67,34 +69,28 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
     });
 
     const keyboardWillShow = Keyboard.addListener('keyboardWillShow', (e) => {
-      console.log('⌨️ Mumbai - Keyboard WILL Show:', {
+      console.log('⌨️ Keyboard will show:', {
         height: e.endCoordinates.height,
         duration: e.duration
       });
     });
 
     const keyboardDidShow = Keyboard.addListener('keyboardDidShow', (e) => {
-      console.log('⌨️ Mumbai - Keyboard DID Show:', {
+      console.log('⌨️ Keyboard did show:', {
         height: e.endCoordinates.height,
         screenY: e.endCoordinates.screenY
       });
     });
 
-    const keyboardWillHide = Keyboard.addListener('keyboardWillHide', (e) => {
-      console.log('⌨️ Mumbai - Keyboard WILL Hide:', {
-        duration: e.duration
-      });
+    const keyboardWillHide = Keyboard.addListener('keyboardWillHide', () => {
     });
 
     const keyboardDidHide = Keyboard.addListener('keyboardDidHide', () => {
-      console.log('⌨️ Mumbai - Keyboard DID Hide');
     });
 
     // Log component mount
-    console.log('🎬 Mumbai Screen - Component Mounted');
 
     return () => {
-      console.log('🎬 Mumbai Screen - Component Unmounting');
       keyboardWillShow.remove();
       keyboardDidShow.remove();
       keyboardWillHide.remove();
@@ -102,14 +98,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
     };
   }, []);
 
-  // Log every render
-  console.log('🔄 Mumbai Screen - Rendering...', {
-    loading,
-    saving,
-    entriesCount: recentEntries.length,
-    descriptionLength: description.length,
-    amountLength: amount.length
-  });
+  // Log every render - removed broken log call
 
   const loadData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -182,15 +171,13 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         office_id: currentOfficeId || undefined,
       };
 
-      console.log('💾 Saving Mumbai entry:', entryData);
       const success = await saveAgencyEntry(entryData);
-      console.log('💾 Save result:', success);
       if (success) {
         // Get current user info for notifications from AsyncStorage
         const userDataString = await AsyncStorage.getItem('user_profile');
         const userData = userDataString ? JSON.parse(userDataString) : null;
         const userName = userData?.name || 'User';
-        
+
         // Send notification to admin
         await NotificationService.notifyAdd('mumbai_delivery', `New Mumbai delivery: ₹${numericAmount} - ${billtyNo.trim()}`);
 
@@ -276,40 +263,29 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
     updated_at: ''
   });
   const handleDeleteEntry = (id: string) => {
-    console.log('🗑️ handleDeleteEntry called for ID:', id);
-    
+
     const entryToDelete = recentEntries.find(entry => entry.id === id);
-    
+
     if (!entryToDelete) {
-      console.log('❌ Entry not found in recentEntries');
       return;
     }
 
-    console.log('📋 Entry to delete:', {
-      id: entryToDelete.id,
-      description: entryToDelete.description,
-      amount: entryToDelete.amount,
-      confirmation_status: entryToDelete.confirmation_status
-    });
-
     // Check if entry is confirmed
     const isConfirmed = entryToDelete.confirmation_status === 'confirmed';
-    
-    console.log('✅ Is confirmed?', isConfirmed);
-    
+
+
     const title = isConfirmed ? "Delete Confirmed Payment?" : "Confirm Delete";
-    const message = isConfirmed 
+    const message = isConfirmed
       ? "This payment has been confirmed with photos. Deleting it will also remove the credit entry from Daily Report. Are you sure?"
       : "Are you sure you want to permanently delete this Mumbai delivery entry?";
 
-    console.log('🔔 Showing alert dialog:', title);
 
     Alert.alert(
       title,
       message,
       [
-        { 
-          text: "Cancel", 
+        {
+          text: "Cancel",
           style: "cancel",
           onPress: () => console.log('❌ Delete cancelled')
         },
@@ -317,20 +293,16 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            console.log('🔄 Delete confirmed, starting deletion...');
             try {
               const success = await deleteTransactionByIdImproved(id, OFFLINE_KEYS.AGENCY_ENTRIES);
-              console.log('📊 Delete result:', success);
-              
+
               if (success) {
                 // Send notification to admin
                 if (entryToDelete) {
-                  console.log('📢 Sending delete notification to admin');
                   await NotificationService.notifyDelete('mumbai_delivery', `Deleted Mumbai delivery: ₹${entryToDelete.amount} - ${entryToDelete.description.slice(0, 30)}${entryToDelete.description.length > 30 ? '...' : ''}`);
                 }
 
                 const updatedEntries = recentEntries.filter(entry => entry.id !== id);
-                console.log('✅ Entry deleted, updating list. Remaining entries:', updatedEntries.length);
                 setRecentEntries(updatedEntries);
                 showAlert('Entry deleted successfully!');
               } else {
@@ -357,7 +329,6 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         key={item.id}
         onHandlerStateChange={({ nativeEvent }) => {
           if (nativeEvent.state === State.ACTIVE) {
-            console.log('🔴 Long press detected on entry:', item.id);
             handleDeleteEntry(item.id);
           }
         }}
@@ -366,7 +337,6 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
         <TapGestureHandler
           numberOfTaps={2}
           onActivated={() => {
-            console.log('🔵 Double tap detected on entry:', item.id);
             setSelectedEntry(item);
             setShowPaymentPopup(true);
           }}
@@ -420,16 +390,27 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
   const handlePaymentConfirm = async (confirmation: PaymentConfirmation) => {
     try {
       if (!selectedEntry) return;
-      
-      console.log('🔄 Confirming payment for entry:', selectedEntry.id);
-      
+
+      console.log('💰 Confirming payment for Mumbai Delivery:', {
+        delivery_record_id: confirmation.delivery_record_id,
+        amount: confirmation.confirmed_amount,
+        payment_type: confirmation.payment_type,
+      });
+
       // Use confirmDeliveryPayment which creates the daily report entry
       const success = await confirmDeliveryPayment(confirmation);
-      
+
       if (success) {
-        console.log('✅ Payment confirmed successfully');
         await loadData(false);
-        showAlert('Payment confirmed! Credit entry added to Daily Report.');
+        
+        // Show appropriate message based on payment type
+        if (confirmation.payment_type === 'gpay_yash') {
+          showAlert('Payment confirmed! Both Credit (+) and Debit (-) entries added to Daily Report.');
+        } else if (confirmation.payment_type === 'cash') {
+          showAlert('Payment confirmed! Credit entry added to Daily Report.');
+        } else {
+          showAlert('Payment confirmed successfully!');
+        }
       } else {
         console.error('❌ Payment confirmation failed');
         showAlert('Failed to confirm payment');
@@ -526,7 +507,7 @@ function MumbaiDeliveryEntryScreen({ navigation }: MumbaiDeliveryEntryScreenProp
       <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={Colors.primary} translucent={false} />
 
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}

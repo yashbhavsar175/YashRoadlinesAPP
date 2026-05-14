@@ -16,10 +16,12 @@ import { NavigationProp, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { Colors } from '../theme/colors';
 import UserPasswordService from '../services/UserPasswordService';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 // Temporary navigation type - will be updated when integrated
 type RootStackParamList = {
-  NotificationPassword: { 
+  NotificationPassword: {
     notificationId?: string;
     title?: string;
     message?: string;
@@ -38,7 +40,7 @@ interface NotificationPasswordScreenProps {
 const NotificationPasswordScreen = ({ navigation, route }: NotificationPasswordScreenProps): React.JSX.Element => {
   const { goBack } = navigation;
   const { notificationId, title, message } = route.params || {};
-  
+
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -71,12 +73,12 @@ const NotificationPasswordScreen = ({ navigation, route }: NotificationPasswordS
         Alert.alert('Error', 'Please confirm your password');
         return;
       }
-      
+
       if (password !== confirmPassword) {
         Alert.alert('Error', 'Passwords do not match');
         return;
       }
-      
+
       if (password.length < 4) {
         Alert.alert('Error', 'Password must be at least 4 characters long');
         return;
@@ -105,7 +107,7 @@ const NotificationPasswordScreen = ({ navigation, route }: NotificationPasswordS
         // Verify existing password
         await new Promise(resolve => setTimeout(resolve, 1000));
         const isValid = true; // Mock validation - replace with actual verification
-        
+
         if (isValid) {
           Alert.alert(
             'Access Granted',
@@ -150,12 +152,12 @@ const NotificationPasswordScreen = ({ navigation, route }: NotificationPasswordS
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
@@ -184,7 +186,7 @@ const NotificationPasswordScreen = ({ navigation, route }: NotificationPasswordS
             {isFirstTime ? 'Set Your Notification Password' : 'Enter Your Password'}
           </Text>
           <Text style={styles.securityDescription}>
-            {isFirstTime 
+            {isFirstTime
               ? 'Create a secure password to access your notifications. This password will be required every time you view notification details.'
               : 'Please enter your notification password to view the details.'
             }
@@ -211,10 +213,10 @@ const NotificationPasswordScreen = ({ navigation, route }: NotificationPasswordS
                 onPress={() => setShowPassword(!showPassword)}
                 style={styles.eyeButton}
               >
-                <Icon 
-                  name={showPassword ? 'eye-off' : 'eye'} 
-                  size={20} 
-                  color="#666" 
+                <Icon
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color="#666"
                 />
               </TouchableOpacity>
             </View>
@@ -237,10 +239,10 @@ const NotificationPasswordScreen = ({ navigation, route }: NotificationPasswordS
                   onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                   style={styles.eyeButton}
                 >
-                  <Icon 
-                    name={showConfirmPassword ? 'eye-off' : 'eye'} 
-                    size={20} 
-                    color="#666" 
+                  <Icon
+                    name={showConfirmPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color="#666"
                   />
                 </TouchableOpacity>
               </View>
@@ -268,10 +270,10 @@ const NotificationPasswordScreen = ({ navigation, route }: NotificationPasswordS
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <>
-                <Icon 
-                  name={isFirstTime ? 'checkmark-circle' : 'unlock'} 
-                  size={20} 
-                  color="#FFFFFF" 
+                <Icon
+                  name={isFirstTime ? 'checkmark-circle' : 'unlock'}
+                  size={20}
+                  color="#FFFFFF"
                 />
                 <Text style={styles.submitButtonText}>
                   {isFirstTime ? 'Set Password' : 'Access Notification'}

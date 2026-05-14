@@ -21,6 +21,8 @@ import { GlobalStyles } from '../theme/styles';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { BiometricAuthService, BiometricCapability } from '../services/BiometricAuthService';
 import { getProfile } from '../data/Storage';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type BiometricAuthScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'BiometricAuth'>;
 
@@ -34,7 +36,7 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
   const [showPasswordInput, setShowPasswordInput] = useState<boolean>(false);
   const [password, setPassword] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
-  
+
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -86,7 +88,7 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
     try {
       setLoading(true);
       const result = await BiometricAuthService.getStoredCredentials();
-      
+
       if (result.success && result.data) {
         // Verify the stored credentials
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -133,7 +135,6 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
         showAlternativeOptions();
       } else {
         // Other error - show alternative options
-        console.log('Biometric auth failed:', result.error);
         showAlternativeOptions();
       }
     } catch (error) {
@@ -235,7 +236,7 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
 
   const getBiometricName = (): string => {
     if (!capability) return 'Biometric';
-    
+
     switch (capability.biometryType) {
       case 'TouchID':
         return 'Touch ID';
@@ -250,7 +251,7 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
 
   const getBiometricIcon = (): string => {
     if (!capability) return 'finger-print-outline';
-    
+
     switch (capability.biometryType) {
       case 'TouchID':
         return 'finger-print-outline';
@@ -267,7 +268,7 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
-        
+
         <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.header}>
             <Icon name="shield-checkmark-outline" size={60} color={Colors.primary} />
@@ -315,7 +316,7 @@ const BiometricAuthScreen = ({ navigation }: BiometricAuthScreenProps): React.JS
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
-      
+
       <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
         <View style={styles.header}>
           <Icon name="shield-checkmark-outline" size={60} color={Colors.primary} />

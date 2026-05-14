@@ -17,6 +17,8 @@ import NotificationService from '../services/NotificationService';
 import Icon from 'react-native-vector-icons/Ionicons';
 // ✨ Optimized: Using common components
 import { CommonHeader, CommonInput, LoadingSpinner } from '../components';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 const CashVerificationScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -33,7 +35,7 @@ const CashVerificationScreen: React.FC = () => {
     try {
       const access = await checkCashVerificationAccess();
       setHasAccess(access);
-      
+
       if (access) {
         loadPendingCashRecord();
       }
@@ -49,9 +51,7 @@ const CashVerificationScreen: React.FC = () => {
 
   const loadPendingCashRecord = async () => {
     try {
-      console.log('🔍 DEBUG: Loading pending cash record...');
       const record = await getPendingCashRecord();
-      console.log('🔍 DEBUG: Pending cash record result:', record);
       setCurrentRecord(record);
     } catch (error) {
       console.error('Error loading cash record:', error);
@@ -81,7 +81,7 @@ const CashVerificationScreen: React.FC = () => {
 
     let alertTitle = isCorrect ? '✅ Cash Verified Successfully!' : '⚠️ Cash Amount Mismatch!';
     let alertMessage = `Expected: ₹${expectedAmount.toFixed(2)}\nActual: ₹${amount.toFixed(2)}`;
-    
+
     if (!isCorrect) {
       const diffText = difference > 0 ? `+₹${difference.toFixed(2)} Extra` : `₹${Math.abs(difference).toFixed(2)} Short`;
       alertMessage += `\nDifference: ${diffText}`;
@@ -105,8 +105,8 @@ const CashVerificationScreen: React.FC = () => {
 
               Alert.alert(
                 'Verification Saved',
-                result.isCorrect 
-                  ? 'Cash amount verified successfully! ✅' 
+                result.isCorrect
+                  ? 'Cash amount verified successfully! ✅'
                   : `Cash verification completed. Mismatch recorded: ${result.difference > 0 ? '+' : ''}₹${result.difference.toFixed(2)} ⚠️`,
                 [
                   {
@@ -146,7 +146,7 @@ const CashVerificationScreen: React.FC = () => {
             try {
               setLoading(true);
               await deleteCashRecord(currentRecord.id);
-              
+
               // Send revocation notification
               await NotificationService.notifyAdd(
                 'general_entry',
@@ -180,11 +180,11 @@ const CashVerificationScreen: React.FC = () => {
   const sendCashVerificationNotification = async (record: CashRecord, actualAmount: number, isCorrect: boolean, difference: number) => {
     try {
       const timestamp = new Date().toLocaleString();
-      
+
       if (isCorrect) {
         // Success notification
         const successMessage = `✅ CASH VERIFIED SUCCESSFULLY\n💰 Amount: ₹${actualAmount.toFixed(2)}\n⏰ Verified at: ${timestamp}\n📝 Notes: ${record.notes || 'None'}\n✨ Status: Perfect Match!`;
-        
+
         await NotificationService.notifyAdd(
           'general_entry',
           successMessage
@@ -193,9 +193,9 @@ const CashVerificationScreen: React.FC = () => {
         // Mismatch notification with detailed audit trail
         const status = difference > 0 ? 'EXCESS CASH' : 'SHORT CASH';
         const diffAmount = Math.abs(difference);
-        
+
         const mismatchMessage = `⚠️ CASH VERIFICATION MISMATCH\n📊 Expected: ₹${record.expected_amount.toFixed(2)}\n💰 Actual: ₹${actualAmount.toFixed(2)}\n❌ Difference: ${difference > 0 ? '+' : '-'}₹${diffAmount.toFixed(2)}\n🚨 Status: ${status}\n⏰ Verified at: ${timestamp}\n📝 Notes: ${record.notes || 'None'}\n🔍 AUDIT REQUIRED!`;
-        
+
         await NotificationService.notifyAdd(
           'general_entry',
           mismatchMessage
@@ -265,19 +265,19 @@ const CashVerificationScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       {/* ✨ Optimized: Using CommonHeader component */}
       <CommonHeader title="Cash Verification" onBackPress={() => navigation.goBack()} />
 
-      <KeyboardAvoidingView 
-        style={styles.keyboardContainer} 
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16, paddingBottom: 120 }}>
           <View style={styles.contentHeader}>
             <Text style={styles.title}>🔍 Cash Verification</Text>
             <Text style={styles.subtitle}>Enter actual cash amount received</Text>
-            
+
             {/* Admin Revoke Button */}
             <TouchableOpacity
               style={styles.revokeButton}

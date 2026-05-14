@@ -162,9 +162,11 @@ class PhotoManagerService {
       }
       throw new Error('Failed to capture photo');
     } finally {
-      // Clear camera active flag
-      await AsyncStorage.removeItem('camera_active');
-      console.log('📸 Camera active flag cleared');
+      // Clear camera active flag after a delay to allow App.tsx to read it during state transition
+      setTimeout(async () => {
+        await AsyncStorage.removeItem('camera_active');
+        console.log('📸 Camera active flag cleared after delay');
+      }, 2000);
     }
   }
 

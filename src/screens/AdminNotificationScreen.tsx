@@ -3,9 +3,10 @@ import { View, StyleSheet, FlatList, Text, TouchableOpacity, StatusBar, Platform
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { AdminNotification } from '../services/NotificationService';
-import NotificationService from '../services/NotificationService';
+import NotificationService, { AdminNotification } from '../services/NotificationService';
 import { Colors } from '../theme/colors';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type AdminNotificationScreenNavigationProp = NavigationProp<RootStackParamList, 'AdminNotifications'>;
 
@@ -21,7 +22,7 @@ interface FilterOption {
 
 const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): React.JSX.Element => {
   const { goBack } = navigation;
-  
+
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [filteredNotifications, setFilteredNotifications] = useState<AdminNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +84,7 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
     try {
       const success = await NotificationService.markAsRead(notificationId);
       if (success) {
-        const updatedNotifications = notifications.map(n => 
+        const updatedNotifications = notifications.map(n =>
           n.id === notificationId ? { ...n, is_read: true } : n
         );
         setNotifications(updatedNotifications);
@@ -173,11 +174,11 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
   const renderNotificationCard = ({ item }: { item: AdminNotification }) => (
     <View style={[styles.notificationCard, !item.is_read && styles.unreadCard]}>
       {!item.is_read && <View style={styles.unreadDot} />}
-      
+
       <View style={[styles.iconContainer, { backgroundColor: getTypeColor(item.type) }]}>
         <Icon name={getTypeIcon(item.type)} size={20} color="#fff" />
       </View>
-      
+
       <View style={styles.cardContent}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle} numberOfLines={1}>
@@ -187,11 +188,11 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
             {formatTime(item.created_at)}
           </Text>
         </View>
-        
+
         <Text style={styles.cardMessage} numberOfLines={2}>
           {item.message}
         </Text>
-        
+
         <View style={styles.cardFooter}>
           <Text style={styles.cardUser}>
             👤 {item.user_name || 'System'}
@@ -201,7 +202,7 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
           </Text>
         </View>
       </View>
-      
+
       <View style={styles.cardActions}>
         {!item.is_read && (
           <TouchableOpacity
@@ -257,7 +258,7 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
       <Icon name="notifications-off" size={64} color="#DDD" />
       <Text style={styles.emptyTitle}>No notifications</Text>
       <Text style={styles.emptyMessage}>
-        {selectedFilter === 'all' 
+        {selectedFilter === 'all'
           ? 'You don\'t have any notifications yet.'
           : `No ${selectedFilter} notifications found.`}
       </Text>
@@ -279,21 +280,21 @@ const AdminNotificationScreen = ({ navigation }: AdminNotificationScreenProps): 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
           <Icon name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity 
-            onPress={() => navigation.navigate('SendNotification')} 
+          <TouchableOpacity
+            onPress={() => navigation.navigate('SendNotification')}
             style={styles.headerActionButton}
           >
             <Icon name="add" size={20} color="#2196F3" />
           </TouchableOpacity>
-          <TouchableOpacity 
-            onPress={() => navigation.navigate('AdminPasswordReset')} 
+          <TouchableOpacity
+            onPress={() => navigation.navigate('AdminPasswordReset')}
             style={styles.headerActionButton}
           >
             <Icon name="settings" size={20} color="#2196F3" />

@@ -14,29 +14,31 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { 
-  getOffices, 
-  createOffice, 
-  updateOffice, 
-  deleteOffice, 
-  Office 
+import {
+  getOffices,
+  createOffice,
+  updateOffice,
+  deleteOffice,
+  Office
 } from '../data/Storage';
 import { useOffice } from '../context/OfficeContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 const OfficeManagementScreen: React.FC = () => {
   const navigation = useNavigation();
   const { refreshOffices } = useOffice();
-  
+
   const [offices, setOffices] = useState<Office[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Create office modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newOfficeName, setNewOfficeName] = useState('');
   const [newOfficeAddress, setNewOfficeAddress] = useState('');
   const [creating, setCreating] = useState(false);
-  
+
   // Edit office modal states
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
@@ -53,7 +55,6 @@ const OfficeManagementScreen: React.FC = () => {
       setLoading(true);
       const officeList = await getOffices();
       setOffices(officeList);
-      console.log('📋 Loaded offices:', officeList.length);
     } catch (error) {
       console.error('Error loading offices:', error);
       Alert.alert('Error', 'Failed to load offices');
@@ -64,7 +65,7 @@ const OfficeManagementScreen: React.FC = () => {
 
   const handleCreateOffice = async () => {
     const trimmedName = newOfficeName.trim();
-    
+
     if (!trimmedName) {
       Alert.alert('Validation Error', 'Office name is required');
       return;
@@ -73,7 +74,7 @@ const OfficeManagementScreen: React.FC = () => {
     setCreating(true);
     try {
       const newOffice = await createOffice(trimmedName, newOfficeAddress.trim() || undefined);
-      
+
       if (newOffice) {
         Alert.alert('Success', `Office "${newOffice.name}" created successfully`);
         setNewOfficeName('');
@@ -83,7 +84,7 @@ const OfficeManagementScreen: React.FC = () => {
         await refreshOffices(); // Refresh context
       } else {
         Alert.alert(
-          'Error', 
+          'Error',
           'Failed to create office. An office with this name may already exist.'
         );
       }
@@ -106,7 +107,7 @@ const OfficeManagementScreen: React.FC = () => {
     if (!editingOffice) return;
 
     const trimmedName = editOfficeName.trim();
-    
+
     if (!trimmedName) {
       Alert.alert('Validation Error', 'Office name is required');
       return;
@@ -118,7 +119,7 @@ const OfficeManagementScreen: React.FC = () => {
         name: trimmedName,
         address: editOfficeAddress.trim() || undefined,
       });
-      
+
       if (success) {
         Alert.alert('Success', 'Office updated successfully');
         setShowEditModal(false);
@@ -127,7 +128,7 @@ const OfficeManagementScreen: React.FC = () => {
         await refreshOffices(); // Refresh context
       } else {
         Alert.alert(
-          'Error', 
+          'Error',
           'Failed to update office. An office with this name may already exist.'
         );
       }
@@ -151,7 +152,7 @@ const OfficeManagementScreen: React.FC = () => {
           onPress: async () => {
             try {
               const success = await deleteOffice(office.id);
-              
+
               if (success) {
                 Alert.alert('Success', 'Office deleted successfully');
                 await loadOffices();
@@ -231,11 +232,11 @@ const OfficeManagementScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       {/* Header */}
       <View style={styles.navigationHeader}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
           <Icon name="arrow-back" size={24} color="#000" />
@@ -288,8 +289,8 @@ const OfficeManagementScreen: React.FC = () => {
             <Icon name="business-outline" size={60} color="#95a5a6" />
             <Text style={styles.emptyTitle}>No Offices Found</Text>
             <Text style={styles.emptyText}>
-              {searchQuery 
-                ? 'No offices match your search criteria' 
+              {searchQuery
+                ? 'No offices match your search criteria'
                 : 'Create your first office to get started'}
             </Text>
           </View>

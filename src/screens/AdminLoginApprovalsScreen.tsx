@@ -18,6 +18,8 @@ import { GlobalStyles } from '../theme/styles';
 import { supabase } from '../supabase';
 import Icon from 'react-native-vector-icons/Ionicons';
 import CommonHeader from '../components/CommonHeader';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type AdminLoginApprovalsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -81,7 +83,6 @@ function AdminLoginApprovalsScreen({ navigation }: AdminLoginApprovalsScreenProp
           table: 'login_requests',
         },
         (payload) => {
-          console.log('Login request change:', payload);
           fetchLoginRequests();
         }
       )
@@ -93,9 +94,7 @@ function AdminLoginApprovalsScreen({ navigation }: AdminLoginApprovalsScreenProp
   }, [fetchLoginRequests]);
 
   const handleApprove = async (requestId: string) => {
-    console.log('🔐 Approve button clicked for request:', requestId);
-    console.log('OTP input:', otpInput);
-    
+
     if (!otpInput.trim() || otpInput.length !== 6) {
       Alert.alert('Invalid OTP', 'Please enter a 6-digit OTP code');
       return;
@@ -105,7 +104,6 @@ function AdminLoginApprovalsScreen({ navigation }: AdminLoginApprovalsScreenProp
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      console.log('📝 Updating login request with OTP:', otpInput.trim());
 
       const { error } = await supabase
         .from('login_requests')
@@ -123,7 +121,6 @@ function AdminLoginApprovalsScreen({ navigation }: AdminLoginApprovalsScreenProp
         throw error;
       }
 
-      console.log('✅ Login request approved successfully');
       Alert.alert('Success', 'Login request approved! User can now login with the OTP.');
       setSelectedRequest(null);
       setOtpInput('');
@@ -289,7 +286,7 @@ function AdminLoginApprovalsScreen({ navigation }: AdminLoginApprovalsScreenProp
   return (
     <View style={GlobalStyles.container}>
       <CommonHeader title="Login Approvals" navigation={navigation} />
-      
+
       {pendingCount > 0 && (
         <View style={styles.pendingBanner}>
           <Icon name="notifications-outline" size={24} color={Colors.error} />

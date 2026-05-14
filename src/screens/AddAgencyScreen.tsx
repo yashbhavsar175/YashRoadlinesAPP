@@ -1,5 +1,7 @@
 import React, { useState, useCallback } from 'react';
+
 import { View, StyleSheet, Alert, FlatList, Text, TouchableOpacity, StatusBar, Platform, ScrollView, KeyboardAvoidingView } from 'react-native';
+
 import { useAlert } from '../context/AlertContext';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
@@ -8,6 +10,8 @@ import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 // ✨ Optimized: Using common components
 import { CommonHeader, CommonInput, LoadingSpinner, EmptyState } from '../components';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type AddAgencyScreenNavigationProp = NavigationProp<RootStackParamList, 'AddAgency'>;
 
@@ -71,7 +75,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
   );
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={GlobalStyles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
@@ -81,7 +85,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
       {/* ✨ Optimized: Using CommonHeader component */}
       <CommonHeader title="Add Agency" onBackPress={goBack} />
 
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollViewContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -89,7 +93,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
         <View style={GlobalStyles.card}>
           <View style={styles.cardContent}>
             <Text style={GlobalStyles.title}>Add New Agency</Text>
-            
+
             {/* ✨ Optimized: Using CommonInput component */}
             <CommonInput
               label="Agency Name"
@@ -99,7 +103,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
               onChangeText={setAgencyName}
               editable={!saving}
             />
-            
+
             <TouchableOpacity onPress={handleAddAgency} disabled={saving} style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}>
               <Text style={GlobalStyles.buttonPrimaryText}>{saving ? "Adding..." : "Add Agency"}</Text>
             </TouchableOpacity>
@@ -107,7 +111,7 @@ function AddAgencyScreen({ navigation }: AddAgencyScreenProps): React.JSX.Elemen
         </View>
 
         <Text style={styles.listSectionTitle}>Existing Agencies ({agencies.length})</Text>
-        
+
         {/* ✨ Optimized: Using LoadingSpinner and EmptyState components */}
         {loading ? (
           <LoadingSpinner message="Loading agencies..." />

@@ -20,6 +20,8 @@ import { Colors } from '../theme/colors';
 import { supabase } from '../supabase';
 import NotificationService from '../services/NotificationService';
 import PushNotification from 'react-native-push-notification';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 // Temporary navigation type - will be updated when integrated
 type RootStackParamList = {
@@ -44,7 +46,7 @@ interface User {
 
 const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): React.JSX.Element => {
   const { goBack } = navigation;
-  
+
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [title, setTitle] = useState('');
@@ -72,11 +74,9 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
               buttonPositive: 'OK',
             }
           );
-          
+
           if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-            console.log('✅ Notification permission granted');
           } else {
-            console.log('❌ Notification permission denied');
           }
         }
       }
@@ -87,22 +87,19 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
 
   const loadUsers = async () => {
     try {
-      console.log('🔍 Loading users from Supabase...');
-      console.log('🌐 Attempting database connection...');
-      
+
       // Test basic connectivity first
       const { data: testData, error: testError } = await supabase
         .from('users')
         .select('id')
         .limit(1);
-      
-      console.log('🧪 Connection test:', testData, testError);
+
 
       // Check if table exists
       if (testError && testError.code === '42P01') {
         console.error('💥 Users table does not exist');
         Alert.alert(
-          'Database Error', 
+          'Database Error',
           'Users table does not exist. Please run the SQL migration first.'
         );
         setUsers([]);
@@ -113,15 +110,13 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
       const { data: allUsers, error: allUsersError } = await supabase
         .from('users')
         .select('*');
-      
-      console.log('📊 All users in database:', allUsers?.length || 0, 'users');
-      console.log('❌ All users error:', allUsersError);
+
 
       // If basic fetch fails, show detailed error
       if (allUsersError) {
         console.error('💥 Database connection failed:', allUsersError);
         Alert.alert(
-          'Database Error', 
+          'Database Error',
           `Failed to connect to database: ${allUsersError.message}. No users loaded.`
         );
         setUsers([]);
@@ -134,14 +129,11 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
         .select('id, username, full_name')
         .order('full_name');
 
-      console.log('👥 Filtered users count:', Array.isArray(users) ? users.length : 0);
-      console.log('👥 Filtered users data:', users);
-      console.log('❌ Filtered users error:', error);
 
       if (error) {
         console.error('❌ Error fetching users:', error);
         Alert.alert(
-          'Filter Error', 
+          'Filter Error',
           `Database connected but filter failed: ${error.message}. No users loaded.`
         );
         setUsers([]);
@@ -155,11 +147,9 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
           name: u.full_name || u.username || 'Unknown User',
           email: u.username || u.email || '',
         }));
-        console.log('✅ Successfully loaded', mappedUsers.length, 'real users from database');
         setUsers(mappedUsers);
         Alert.alert('Success!', `Loaded ${mappedUsers.length} real users from database`);
       } else {
-        console.log('⚠️ No users found in database.');
         setUsers([]);
         Alert.alert('No Data', 'Database is empty. No users to show.');
       }
@@ -180,12 +170,12 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
       Alert.alert('Error', 'Please select a user to send notification');
       return;
     }
-    
+
     if (!title.trim()) {
       Alert.alert('Error', 'Please enter notification title');
       return;
     }
-    
+
     if (!description.trim()) {
       Alert.alert('Error', 'Please enter notification description');
       return;
@@ -193,11 +183,10 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
 
     setLoading(true);
     try {
-      console.log('📤 Sending notification to:', selectedUser.name, selectedUser.email);
-      
+
       // Get current admin/sender ID
       const adminId = 'admin-001'; // You can get this from AsyncStorage or auth
-      
+
       // Send actual notification using NotificationService
       const notificationData = {
         title: title.trim(),
@@ -207,15 +196,14 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
       };
 
       const success = await NotificationService.sendUserNotification(notificationData, adminId);
-      
+
       if (success) {
-        console.log('✅ Notification sent successfully');
-        
+
         // DON'T show notification to sender - only success alert
         // Notification will be shown to recipient via real-time subscription
-        
+
         Alert.alert(
-          'Success', 
+          'Success',
           `Notification sent successfully to ${selectedUser.name}!\n\nThe recipient will receive the notification on their device.`,
           [
             {
@@ -264,15 +252,15 @@ const SendNotificationScreen = ({ navigation }: SendNotificationScreenProps): Re
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
           <Icon name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Send Notification</Text>
-        <TouchableOpacity 
-          onPress={loadUsers} 
+        <TouchableOpacity
+          onPress={loadUsers}
           style={styles.refreshButton}
         >
           <Icon name="refresh" size={20} color="#2196F3" />

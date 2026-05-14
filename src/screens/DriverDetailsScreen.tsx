@@ -11,6 +11,8 @@ import { useOffice } from '../context/OfficeContext';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { CommonHeader, CommonInput, EmptyState } from '../components';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type DriverDetailsScreenNavigationProp = NavigationProp<RootStackParamList, 'DriverDetails'>;
 

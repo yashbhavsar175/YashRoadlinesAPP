@@ -11,6 +11,8 @@ import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
 import { useOffice } from '../context/OfficeContext';
 import CommonHeader from '../components/CommonHeader';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type AgencyPaymentsScreenNavigationProp = NavigationProp<RootStackParamList, 'PaidSection'>;
 
@@ -45,7 +47,7 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
       const { data } = await supabase.auth.getUser();
       const userId = data.user?.id ?? null;
       setCurrentUserId(userId);
-      
+
       const emailLower = (data.user?.email || '').toLowerCase();
       const isUserAdmin = emailLower === 'yashbhavsar175@gmail.com';
       setIsAdmin(isUserAdmin);
@@ -66,7 +68,6 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
 
       // Get current office ID for filtering
       const officeId = getCurrentOfficeId();
-      console.log('🏢 AgencyPaymentsScreen: Loading data for office:', officeId);
 
       // Load agency payments filtered by current office
       const storedEntries: AgencyPayment[] = await getAgencyPaymentsLocal(officeId || undefined);
@@ -99,7 +100,6 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
   // Reload data when office changes
   useEffect(() => {
     if (currentOffice) {
-      console.log('🔄 AgencyPaymentsScreen: Office changed, reloading data...');
       loadData();
     }
   }, [currentOffice]);
@@ -142,13 +142,9 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
 
       if (success) {
         // Trigger admin notification (only if user is not admin)
-        console.log('🔔 Payment saved, checking notification conditions...');
-        console.log('isAdmin:', isAdmin);
-        console.log('profile:', profile);
-        
+
         // Always send notification to admin (even if admin is adding the entry)
         if (profile) {
-          console.log('🚀 Triggering admin notification for payment...');
           const userName = profile.username || profile.name || 'User';
           try {
             await DeviceNotificationService.notifyAdminEntryAdded(
@@ -156,14 +152,12 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
               userName,
               { agency: selectedAgency, amount: amount, billNo: billNo.trim() }
             );
-            console.log('✅ Admin notification sent successfully');
           } catch (notifError) {
             console.error('❌ Admin notification error:', notifError);
           }
         } else {
-          console.log('❌ Notification not sent - no profile found');
         }
-        
+
         Alert.alert('Success', 'Paid entry saved successfully!');
         setBillNo('');
         setPaidAmount('');
@@ -305,7 +299,7 @@ function AgencyPaymentsScreen({ navigation }: AgencyPaymentsScreenProps): React.
           <Text style={GlobalStyles.bodyText}>No paid entries added yet.</Text>
         </View>
       )}
-      
+
       <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
         <Text style={GlobalStyles.buttonPrimaryText}>Go Back</Text>
       </TouchableOpacity>

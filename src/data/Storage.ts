@@ -936,73 +936,71 @@ export const getUppadJamaEntries = async (officeId?: string): Promise<UppadJamaE
   const startTime = performance.now();
   const queryName = officeId ? 'getUppadJamaEntries:filtered' : 'getUppadJamaEntries:all';
   
-  console.log('Storage - getUppadJamaEntries - Function called');
   try {
+    // 1. Always read cache first
+    const offline = await AsyncStorage.getItem(OFFLINE_KEYS.UPPAD_JAMA_ENTRIES);
+    let localData = offline ? JSON.parse(offline) : [];
+    const hasCache = localData.length > 0;
+
     const online = await isOnline();
-    console.log('Storage - getUppadJamaEntries - Online status:', online);
-    
-    if (online) {
-      console.log('Storage - getUppadJamaEntries - Making Supabase query...');
+
+    // 2. Define the network fetch as a reusable closure
+    const fetchFromCloud = async () => {
       let query = supabase
         .from('uppad_jama_entries')
         .select('*')
         .order('entry_date', { ascending: false })
-        .limit(500); // Add limit to prevent fetching too many records
-      
-      // Apply office filter if provided
+        .limit(500);
+
       if (officeId) {
         query = query.eq('office_id', officeId);
       }
-      
+
       const { data, error } = await query;
-      
-      console.log('Storage - getUppadJamaEntries - Supabase response:', { 
-        dataLength: data?.length || 0, 
-        error: error?.message || 'No error',
-        hasData: !!data 
-      });
-      
+
       if (!error && data) {
-        console.log('Storage - getUppadJamaEntries - Fetched from Supabase:', data.length, 'entries');
-        console.log('Storage - getUppadJamaEntries - Sample data:', data.slice(0, 2));
         await AsyncStorage.setItem(OFFLINE_KEYS.UPPAD_JAMA_ENTRIES, JSON.stringify(data));
-        
-        const duration = performance.now() - startTime;
-        queryPerformanceAnalyzer.recordQuery(queryName, duration, officeId);
-        
-        return data as any;
+        return data as UppadJamaEntry[];
       } else if (error) {
         console.error('Storage - getUppadJamaEntries - Supabase error:', error);
       }
+      return null;
+    };
+
+    // 3. Cache-First, Cloud-Refresh strategy
+    if (online) {
+      if (hasCache) {
+        // Background refresh — don't block the caller
+        fetchFromCloud().catch(e => console.error('getUppadJamaEntries background refresh failed:', e));
+      } else {
+        // No cache at all — must wait for network
+        const freshData = await fetchFromCloud();
+        if (freshData) {
+          localData = freshData;
+        }
+      }
     }
-    console.log('Storage - getUppadJamaEntries - Falling back to offline data');
-    const offline = await AsyncStorage.getItem(OFFLINE_KEYS.UPPAD_JAMA_ENTRIES);
-    let offlineData = offline ? JSON.parse(offline) : [];
-    console.log('Storage - getUppadJamaEntries - Offline data length:', offlineData.length);
-    
-    // Apply office filter to offline data if provided
+
+    // 4. Apply office filter to whatever we're returning
     if (officeId) {
-      offlineData = offlineData.filter((item: any) => item.office_id === officeId);
+      localData = localData.filter((item: any) => item.office_id === officeId);
     }
-    
+
     const duration = performance.now() - startTime;
-    queryPerformanceAnalyzer.recordQuery(`${queryName}:offline`, duration, officeId);
-    
-    return offlineData;
+    queryPerformanceAnalyzer.recordQuery(hasCache ? `${queryName}:cache` : queryName, duration, officeId);
+
+    return localData;
   } catch (error) {
-    console.error('Storage - getUppadJamaEntries - Catch block error:', error);
+    const duration = performance.now() - startTime;
+    queryPerformanceAnalyzer.recordQuery(`${queryName}:error`, duration, officeId);
+    console.error('Storage - getUppadJamaEntries - error:', error);
+
+    // Last-resort fallback
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.UPPAD_JAMA_ENTRIES);
     let fallbackData = offline ? JSON.parse(offline) : [];
-    console.log('Storage - getUppadJamaEntries - Fallback data length:', fallbackData.length);
-    
-    // Apply office filter to fallback data if provided
     if (officeId) {
       fallbackData = fallbackData.filter((item: any) => item.office_id === officeId);
     }
-    
-    const duration = performance.now() - startTime;
-    queryPerformanceAnalyzer.recordQuery(`${queryName}:error`, duration, officeId);
-    
     return fallbackData;
   }
 };
@@ -3125,9 +3123,11 @@ export const getAgencyPaymentsLocal = async (officeId?: string): Promise<AgencyP
   try {
     const offline = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_PAYMENTS);
     let localData = offline ? JSON.parse(offline) : [];
+    const hasCache = localData.length > 0;
     
     const online = await isOnline();
-    if (online) {
+    
+    const fetchOnline = async () => {
       try {
         let query = supabase
           .from('agency_payments')
@@ -3143,7 +3143,10 @@ export const getAgencyPaymentsLocal = async (officeId?: string): Promise<AgencyP
         const { data, error } = await query;
 
         if (!error && data) {
-          const localIds = localData.map((item: any) => item.id);
+          const offlineNow = await AsyncStorage.getItem(OFFLINE_KEYS.AGENCY_PAYMENTS);
+          let currentLocalData = offlineNow ? JSON.parse(offlineNow) : [];
+          
+          const localIds = currentLocalData.map((item: any) => item.id);
           const supabaseDataWithDate = data.map(item => ({
             ...item,
             date: item.payment_date || item.created_at
@@ -3152,14 +3155,29 @@ export const getAgencyPaymentsLocal = async (officeId?: string): Promise<AgencyP
           const newItems = supabaseDataWithDate.filter(item => !localIds.includes(item.id));
           
           if (newItems.length > 0) {
-            localData = [...localData, ...newItems];
-            localData.sort((a: any, b: any) => new Date(b.payment_date || b.created_at).getTime() - new Date(a.payment_date || a.created_at).getTime());
+            currentLocalData = [...currentLocalData, ...newItems];
+            currentLocalData.sort((a: any, b: any) => new Date(b.payment_date || b.created_at).getTime() - new Date(a.payment_date || a.created_at).getTime());
             
-            await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_PAYMENTS, JSON.stringify(localData));
+            await AsyncStorage.setItem(OFFLINE_KEYS.AGENCY_PAYMENTS, JSON.stringify(currentLocalData));
           }
+          return currentLocalData;
         }
       } catch (error) {
         console.error('Failed to fetch from Supabase, using local data:', error);
+      }
+      return null;
+    };
+
+    if (online) {
+      if (hasCache) {
+        // Cloud-Refresh in background
+        fetchOnline().catch(e => console.error('Background fetch failed:', e));
+      } else {
+        // Wait if no cache
+        const fetchedData = await fetchOnline();
+        if (fetchedData) {
+          localData = fetchedData;
+        }
       }
     }
     
@@ -3172,7 +3190,7 @@ export const getAgencyPaymentsLocal = async (officeId?: string): Promise<AgencyP
     }
     
     const duration = performance.now() - startTime;
-    queryPerformanceAnalyzer.recordQuery(queryName, duration, officeId);
+    queryPerformanceAnalyzer.recordQuery(hasCache ? `${queryName}:cache` : queryName, duration, officeId);
     
     return localData;
   } catch (error) {
@@ -4565,6 +4583,12 @@ export const confirmDeliveryPayment = async (
         }
       } else if (paymentType === 'gpay_yash') {
         // GPay Yash Roadlines: Create credit entry + debit entry for Yash Roadlines GPay
+        console.log('💰 Creating GPay Yash entries for Mumbai Delivery:', {
+          billty_no: deliveryRecord.billty_no,
+          amount: confirmation.confirmed_amount,
+          office_id: deliveryRecord.office_id,
+        });
+        
         const creditEntry = {
           description: `Mumbai Delivery - ${deliveryRecord.billty_no}`,
           amount: confirmation.confirmed_amount,
@@ -4580,12 +4604,17 @@ export const confirmDeliveryPayment = async (
           }),
         };
         
-        const { error: creditError } = await supabase
+        console.log('✅ Inserting CREDIT entry:', creditEntry);
+        const { data: creditData, error: creditError } = await supabase
           .from('general_entries')
-          .insert([creditEntry]);
+          .insert([creditEntry])
+          .select();
         
         if (creditError) {
-          console.error('Error creating credit entry for GPay Yash payment:', creditError);
+          console.error('❌ Error creating credit entry for GPay Yash payment:', creditError);
+          console.error('❌ Credit entry that failed:', creditEntry);
+        } else {
+          console.log('✅ Credit entry created successfully:', creditData);
         }
         
         // Create debit entry for Yash Roadlines GPay
@@ -4604,12 +4633,17 @@ export const confirmDeliveryPayment = async (
           }),
         };
         
-        const { error: debitError } = await supabase
+        console.log('✅ Inserting DEBIT entry:', debitEntry);
+        const { data: debitData, error: debitError } = await supabase
           .from('general_entries')
-          .insert([debitEntry]);
+          .insert([debitEntry])
+          .select();
         
         if (debitError) {
-          console.error('Error creating debit entry for Yash Roadlines GPay:', debitError);
+          console.error('❌ Error creating debit entry for Yash Roadlines GPay:', debitError);
+          console.error('❌ Debit entry that failed:', debitEntry);
+        } else {
+          console.log('✅ Debit entry created successfully:', debitData);
         }
       }
       // else if paymentType === 'gpay_sapan': No entry in daily report, only confirmation

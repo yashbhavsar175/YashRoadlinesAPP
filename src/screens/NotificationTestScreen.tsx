@@ -10,6 +10,8 @@ import {
 import PushNotification from 'react-native-push-notification';
 import { supabase } from '../supabase';
 import PushGateway from '../services/PushGateway';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 export default function NotificationTestScreen({ navigation }: any) {
   const [user, setUser] = useState<any>(null);
@@ -25,7 +27,6 @@ export default function NotificationTestScreen({ navigation }: any) {
   };
 
   const sendTestNotification = () => {
-    console.log('📱 Sending local notification...');
     PushNotification.localNotification({
       channelId: 'admin-notifications',
       title: 'Local Test Notification',
@@ -40,13 +41,12 @@ export default function NotificationTestScreen({ navigation }: any) {
   const testServerPush = async () => {
     setLoading(true);
     try {
-      console.log('📡 Testing server push...');
       const result = await PushGateway.sendPushToAdmin({
         title: 'Server Push Test',
         body: 'This should appear in status bar even when app is closed!',
         data: { test: true, timestamp: Date.now() },
       });
-      
+
       if (result.ok) {
         Alert.alert('Success!', 'Server push sent! Check your status bar and close the app to test.');
       } else {
@@ -61,7 +61,6 @@ export default function NotificationTestScreen({ navigation }: any) {
   const testDirectEdgeFunction = async () => {
     setLoading(true);
     try {
-      console.log('🚀 Testing edge function directly...');
       const { data, error } = await supabase.functions.invoke('quick-processor', {
         body: {
           action: 'send_push',
@@ -77,7 +76,6 @@ export default function NotificationTestScreen({ navigation }: any) {
         console.error('Edge function error:', error);
       } else {
         Alert.alert('Success!', `Edge function result: ${JSON.stringify(data)}`);
-        console.log('Edge function success:', data);
       }
     } catch (error) {
       Alert.alert('Error', `Exception: ${error}`);
@@ -89,15 +87,14 @@ export default function NotificationTestScreen({ navigation }: any) {
   const testEntryAddFlow = async () => {
     setLoading(true);
     try {
-      console.log('🧪 [TEST] Testing entry add notification flow...');
-      
+
       // Import DeviceNotificationService here to test the exact same flow
       const DeviceNotificationService = (await import('../services/DeviceNotificationService')).default;
-      
+
       // Simulate the exact call made when adding an entry
       await DeviceNotificationService.notifyAdminEntryAdded(
-        'Test General Entry', 
-        'Test User', 
+        'Test General Entry',
+        'Test User',
         {
           type: 'Income',
           amount: 5000,
@@ -105,7 +102,7 @@ export default function NotificationTestScreen({ navigation }: any) {
           agency: 'Test Agency'
         }
       );
-      
+
       Alert.alert('Test Complete!', 'Entry add notification flow tested. Check logs and status bar!');
     } catch (error) {
       Alert.alert('Error', `Entry add test failed: ${error}`);
@@ -116,7 +113,6 @@ export default function NotificationTestScreen({ navigation }: any) {
 
   const checkSecrets = async () => {
     try {
-      console.log('🔍 Checking if secrets are configured...');
       const { data, error } = await supabase.functions.invoke('quick-processor', {
         body: {
           action: 'send_push',
@@ -171,7 +167,7 @@ export default function NotificationTestScreen({ navigation }: any) {
         <Text style={styles.description}>
           These should appear in status bar even when app is closed
         </Text>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={testServerPush}
@@ -198,7 +194,7 @@ export default function NotificationTestScreen({ navigation }: any) {
         <Text style={styles.description}>
           This simulates exactly what happens when you add an entry
         </Text>
-        
+
         <TouchableOpacity
           style={[styles.button, { backgroundColor: '#FF9800' }]}
           onPress={testEntryAddFlow}
@@ -215,7 +211,7 @@ export default function NotificationTestScreen({ navigation }: any) {
         <Text style={styles.description}>
           This only works when app is running (in-app notification)
         </Text>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={sendTestNotification}

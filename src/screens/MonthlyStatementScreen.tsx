@@ -40,6 +40,8 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import CheckBox from '@react-native-community/checkbox';
 import { useOffice } from '../context/OfficeContext';
 import { useUserAccess } from '../context/UserAccessContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type MonthlyStatementScreenNavigationProp = NavigationProp<RootStackParamList, 'MonthlyStatement'>;
 
@@ -118,10 +120,10 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
   const { goBack } = navigation;
   const { currentOffice } = useOffice();
   const { isAdmin } = useUserAccess();
-  
+
   const currentOfficeId = currentOffice?.id || null;
   const currentOfficeName = currentOffice?.name || 'Unknown Office';
-  
+
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [agencyOptions, setAgencyOptions] = useState<{ label: string; value: string }[]>([]);
   const [selectedAgency, setSelectedAgency] = useState<string>('');
@@ -229,10 +231,8 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       );
 
       if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-        console.log('Storage permission granted');
         return true;
       } else {
-        console.log('Storage permission denied');
         Alert.alert(
           'Permission Required',
           'Storage permission is required to save PDF files. Please enable it in app settings.',
@@ -252,7 +252,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     // For regular users or admin viewing specific office, pass the office_id
     const officeIdForQuery = isAdmin && !currentOfficeId ? undefined : currentOfficeId || undefined;
     const transactions = await getMonthlyTransactions(selectedMonth, selectedYear, officeIdForQuery);
-    
+
     let paid: AgencyPayment[] = [];
     let majuri: AgencyMajuri[] = [];
     let agencyGeneral: AgencyEntry[] = [];
@@ -274,41 +274,32 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     if (reportType === 'agency' && agencyName) {
       paid = paid.filter(t => t.agency_name === agencyName && includePaid);
       majuri = majuri.filter(t => t.agency_name === agencyName && includeMajuri);
-      
+
       // Separate Mumbai Delivery entries from general entries
       const isMumbaiAgency = agencyName.toLowerCase().includes('mumbai');
-      
-      console.log('🔍 Agency Name:', agencyName);
-      console.log('🔍 Is Mumbai Agency:', isMumbaiAgency);
-      console.log('🔍 Include Delivery:', includeDelivery);
-      console.log('🔍 Total agency_general entries:', agencyGeneral.length);
-      
+
+
       if (isMumbaiAgency) {
         // Filter agency general entries for Mumbai
         const allAgencyGeneral = agencyGeneral.filter(t => t.agency_name === agencyName);
-        console.log('🔍 All Agency General for Mumbai:', allAgencyGeneral.length);
-        console.log('🔍 Sample entry:', allAgencyGeneral[0]);
-        
+
         // Separate Mumbai Delivery entries (confirmed deliveries)
-        mumbaiDeliveryEntries = allAgencyGeneral.filter(t => 
-          t.confirmation_status === 'confirmed' && 
-          t.billty_no && 
+        mumbaiDeliveryEntries = allAgencyGeneral.filter(t =>
+          t.confirmation_status === 'confirmed' &&
+          t.billty_no &&
           includeDelivery
         );
-        console.log('🚚 Mumbai Delivery Entries:', mumbaiDeliveryEntries.length);
-        console.log('🚚 Mumbai Delivery Data:', mumbaiDeliveryEntries);
-        
+
         // Normal general entries (exclude Mumbai Delivery)
-        agencyGeneral = allAgencyGeneral.filter(t => 
-          !(t.confirmation_status === 'confirmed' && t.billty_no) && 
+        agencyGeneral = allAgencyGeneral.filter(t =>
+          !(t.confirmation_status === 'confirmed' && t.billty_no) &&
           includeGeneral
         );
-        console.log('📋 Normal General Entries:', agencyGeneral.length);
       } else {
         // For non-Mumbai agencies, just filter normally
         agencyGeneral = agencyGeneral.filter(t => t.agency_name === agencyName && includeGeneral);
       }
-      
+
       generalEntries = [];
       driverTransactions = [];
       fuelEntries = [];
@@ -322,9 +313,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     }
 
     // Calculate totals
-    console.log('📊 Before HTML generation - Mumbai Delivery Entries:', mumbaiDeliveryEntries?.length || 0);
-    console.log('📊 Mumbai Delivery Data:', mumbaiDeliveryEntries || []);
-    
+
     const totalPaid = paid.reduce((sum, item) => sum + item.amount, 0);
     const totalMajuri = majuri.reduce((sum, item) => sum + item.amount, 0);
     const totalGeneralCredit = generalEntries.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
@@ -334,8 +323,8 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
     const totalDriverCredit = driverTransactions.filter(t => t.transaction_type === 'credit').reduce((sum, t) => sum + t.amount, 0);
     const totalDriverDebit = driverTransactions.filter(t => t.transaction_type === 'debit').reduce((sum, t) => sum + t.amount, 0);
     const totalFuel = fuelEntries.reduce((sum, item) => sum + item.total_price, 0);
-    
-    const netBalance = (totalPaid + totalGeneralCredit + totalDriverCredit + totalAgencyGeneralCredit) - 
+
+    const netBalance = (totalPaid + totalGeneralCredit + totalDriverCredit + totalAgencyGeneralCredit) -
                        (totalMajuri + totalGeneralDebit + totalDriverDebit + totalFuel + totalAgencyGeneralDebit);
 
     return `
@@ -579,7 +568,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
               ${totalDriverCredit > 0 ? `<div class="summary-row"><span class="summary-label">Jama Total:</span><span class="summary-value credit">₹${totalDriverCredit.toLocaleString()}</span></div>` : ''}
               ${totalDriverDebit > 0 ? `<div class="summary-row"><span class="summary-label">Uppad Total:</span><span class="summary-value debit">₹${totalDriverDebit.toLocaleString()}</span></div>` : ''}
               ${totalFuel > 0 ? `<div class="summary-row"><span class="summary-label">Total Fuel:</span><span class="summary-value debit">₹${totalFuel.toLocaleString()}</span></div>` : ''}
-              
+
               <div class="net-balance">
                   <div class="summary-row">
                       <span class="summary-label">Net Balance:</span>
@@ -625,7 +614,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
   // Generate and share PDF from preview
   const shareFromPreview = async () => {
     if (!previewHtml) return;
-    
+
     setIsGeneratingPdf(true);
     try {
       const agencyName = reportType === 'agency' ? selectedAgency : null;
@@ -639,24 +628,23 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       };
 
       const tempPdf = await generatePDF(tempPdfOptions);
-      
+
       if (tempPdf && tempPdf.filePath) {
         const now = new Date();
         const fileName = `Monthly_Statement_${selectedMonth}_${selectedYear}${agencyName ? `_${agencyName}` : ''}_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}.pdf`;
         const appFolderPath = `${RNFS.DownloadDirectoryPath}/Yash Roadlines`;
         const monthlyFolderPath = `${appFolderPath}/Monthly Statement`;
         const finalFilePath = `${monthlyFolderPath}/${fileName}`;
-        
+
         try {
           await RNFS.mkdir(appFolderPath);
           await RNFS.mkdir(monthlyFolderPath);
         } catch (dirError) {
-          console.log('Folders might already exist:', dirError);
         }
-        
+
         await RNFS.copyFile(tempPdf.filePath, finalFilePath);
         await RNFS.unlink(tempPdf.filePath).catch(() => {});
-        
+
         const shareOptions = {
           title: 'Share Monthly Statement',
           message: `Monthly Statement for ${getMonthName(selectedMonth)} ${selectedYear}${agencyName ? ` - ${agencyName}` : ''}`,
@@ -691,10 +679,10 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
 
     try {
       const pdfPaths: string[] = [];
-      
+
       for (const agencyName of selectedAgencies) {
         const html = await generateHtmlForAgency(agencyName);
-        
+
         const tempPdfOptions = {
           html,
           fileName: `Monthly_Statement_${selectedMonth}_${selectedYear}_${agencyName}`,
@@ -705,22 +693,22 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         };
 
         const tempPdf = await generatePDF(tempPdfOptions);
-        
+
         if (tempPdf && tempPdf.filePath) {
           const now = new Date();
           const fileName = `Monthly_Statement_${selectedMonth}_${selectedYear}_${agencyName}_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}.pdf`;
           const appFolderPath = `${RNFS.DownloadDirectoryPath}/Yash Roadlines`;
           const monthlyFolderPath = `${appFolderPath}/Monthly Statement`;
           const finalFilePath = `${monthlyFolderPath}/${fileName}`;
-          
+
           try {
             await RNFS.mkdir(appFolderPath);
             await RNFS.mkdir(monthlyFolderPath);
           } catch (dirError) {}
-          
+
           await RNFS.copyFile(tempPdf.filePath, finalFilePath);
           await RNFS.unlink(tempPdf.filePath).catch(() => {});
-          
+
           pdfPaths.push(finalFilePath);
         }
       }
@@ -800,31 +788,31 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       if (reportType === 'agency' && selectedAgency) {
         paid = paid.filter(t => t.agency_name === selectedAgency && includePaid);
         majuri = majuri.filter(t => t.agency_name === selectedAgency && includeMajuri);
-        
+
         // Separate Mumbai Delivery entries from general entries
         const isMumbaiAgency = selectedAgency.toLowerCase().includes('mumbai');
-        
+
         if (isMumbaiAgency) {
           // Filter agency general entries for Mumbai
           const allAgencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency);
-          
+
           // Separate Mumbai Delivery entries (confirmed deliveries)
-          mumbaiDeliveryEntries = allAgencyGeneral.filter(t => 
-            t.confirmation_status === 'confirmed' && 
-            t.billty_no && 
+          mumbaiDeliveryEntries = allAgencyGeneral.filter(t =>
+            t.confirmation_status === 'confirmed' &&
+            t.billty_no &&
             includeDelivery
           );
-          
+
           // Normal general entries (exclude Mumbai Delivery)
-          agencyGeneral = allAgencyGeneral.filter(t => 
-            !(t.confirmation_status === 'confirmed' && t.billty_no) && 
+          agencyGeneral = allAgencyGeneral.filter(t =>
+            !(t.confirmation_status === 'confirmed' && t.billty_no) &&
             includeGeneral
           );
         } else {
           // For non-Mumbai agencies, just filter normally
           agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
         }
-        
+
         generalEntries = [];
         driverTransactions = [];
         fuelEntries = [];
@@ -865,136 +853,136 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
               <meta charset="UTF-8">
               <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { 
-      font-family: Arial, sans-serif; 
-      padding: 15px; 
-      background: white; 
-      color: #333; 
+  body {
+      font-family: Arial, sans-serif;
+      padding: 15px;
+      background: white;
+      color: #333;
       line-height: 1.3;
       font-size: 12px;
   }
-  .header { 
-      text-align: center; 
-      margin-bottom: 20px; 
-      border-bottom: 2px solid #2196F3; 
-      padding-bottom: 10px; 
+  .header {
+      text-align: center;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #2196F3;
+      padding-bottom: 10px;
   }
-  .header h1 { 
-      font-size: 20px; 
-      color: #1976D2; 
-      margin-bottom: 5px; 
-      font-weight: bold; 
+  .header h1 {
+      font-size: 20px;
+      color: #1976D2;
+      margin-bottom: 5px;
+      font-weight: bold;
   }
-  .header h2 { 
-      font-size: 16px; 
-      color: #555; 
-      margin-bottom: 5px; 
+  .header h2 {
+      font-size: 16px;
+      color: #555;
+      margin-bottom: 5px;
   }
-  .date-range { 
-      font-size: 12px; 
-      color: #666; 
-      font-style: italic; 
+  .date-range {
+      font-size: 12px;
+      color: #666;
+      font-style: italic;
   }
-  .office-info { 
-      font-size: 13px; 
-      color: #1976D2; 
-      font-weight: bold; 
-      margin-top: 5px; 
+  .office-info {
+      font-size: 13px;
+      color: #1976D2;
+      font-weight: bold;
+      margin-top: 5px;
   }
-  .section { 
-      margin-bottom: 25px; 
-      border: 1px solid #ddd; 
-      border-radius: 8px; 
-      overflow: hidden; 
+  .section {
+      margin-bottom: 25px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
   }
-  .section-title { 
-      background: linear-gradient(135deg, #2196F3, #1976D2); 
-      color: white; 
-      padding: 8px 12px; 
-      font-size: 14px; 
-      font-weight: bold; 
-      margin: 0; 
+  .section-title {
+      background: linear-gradient(135deg, #2196F3, #1976D2);
+      color: white;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: bold;
+      margin: 0;
   }
-  .table { 
-      width: 100%; 
-      border-collapse: collapse; 
-      margin: 0; 
+  .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0;
   }
-  .table th, .table td { 
-      padding: 6px 8px; 
-      text-align: left; 
-      border-bottom: 1px solid #eee; 
-      font-size: 11px; 
+  .table th, .table td {
+      padding: 6px 8px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+      font-size: 11px;
   }
-  .table th { 
-      background-color: #f8f9fa; 
-      font-weight: bold; 
-      color: #333; 
+  .table th {
+      background-color: #f8f9fa;
+      font-weight: bold;
+      color: #333;
   }
-  .table tr:nth-child(even) { 
-      background-color: #f9f9f9; 
+  .table tr:nth-child(even) {
+      background-color: #f9f9f9;
   }
-  .table tr:hover { 
-      background-color: #f0f8ff; 
+  .table tr:hover {
+      background-color: #f0f8ff;
   }
-  .amount { 
-      text-align: right; 
-      font-weight: bold; 
+  .amount {
+      text-align: right;
+      font-weight: bold;
   }
-  .credit { 
-      color: #4CAF50; 
+  .credit {
+      color: #4CAF50;
   }
-  .debit { 
-      color: #f44336; 
+  .debit {
+      color: #f44336;
   }
-  .summary { 
-      background: linear-gradient(135deg, #f8f9fa, #e9ecef); 
-      padding: 15px; 
-      border-radius: 8px; 
-      margin-top: 20px; 
+  .summary {
+      background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
   }
-  .summary h3 { 
-      color: #1976D2; 
-      margin-bottom: 10px; 
-      font-size: 16px; 
+  .summary h3 {
+      color: #1976D2;
+      margin-bottom: 10px;
+      font-size: 16px;
   }
-  .summary-row { 
-      display: flex; 
-      justify-content: space-between; 
-      margin-bottom: 5px; 
-      padding: 2px 0; 
+  .summary-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      padding: 2px 0;
   }
-  .summary-label { 
-      font-weight: bold; 
+  .summary-label {
+      font-weight: bold;
   }
-  .summary-value { 
-      font-weight: bold; 
+  .summary-value {
+      font-weight: bold;
   }
-  .net-balance { 
-      border-top: 2px solid #2196F3; 
-      padding-top: 8px; 
-      margin-top: 8px; 
-      font-size: 14px; 
+  .net-balance {
+      border-top: 2px solid #2196F3;
+      padding-top: 8px;
+      margin-top: 8px;
+      font-size: 14px;
   }
-  .positive { 
-      color: #4CAF50; 
+  .positive {
+      color: #4CAF50;
   }
-  .negative { 
-      color: #f44336; 
+  .negative {
+      color: #f44336;
   }
-  .footer { 
-      text-align: center; 
-      margin-top: 30px; 
-      padding-top: 15px; 
-      border-top: 1px solid #ddd; 
-      font-size: 10px; 
-      color: #666; 
+  .footer {
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 1px solid #ddd;
+      font-size: 10px;
+      color: #666;
   }
-  .no-data { 
-      text-align: center; 
-      padding: 20px; 
-      color: #666; 
-      font-style: italic; 
+  .no-data {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+      font-style: italic;
   }
               </style>
           </head>
@@ -1203,9 +1191,9 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                   ${totalDriverCredit > 0 ? `<div class="summary-row"><span class="summary-label">Jama Total:</span><span class="summary-value credit">₹${totalDriverCredit.toLocaleString()}</span></div>` : ''}
                   ${totalDriverDebit > 0 ? `<div class="summary-row"><span class="summary-label">Uppad Total:</span><span class="summary-value debit">₹${totalDriverDebit.toLocaleString()}</span></div>` : ''}
                   ${totalFuel > 0 ? `<div class="summary-row"><span class="summary-label">Total Fuel:</span><span class="summary-value debit">₹${totalFuel.toLocaleString()}</span></div>` : ''}
-                  
+
                   <div class="net-balance">
-                     
+
                       <div class="summary-row">
                           <span class="summary-label">Net Balance:</span>
                           <span class="summary-value ${netBalance >= 0 ? 'positive' : 'negative'}">₹${netBalance.toLocaleString()}</span>
@@ -1223,7 +1211,6 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         `;
 
       // Generate PDF using HTML to PDF for better sharing support
-      console.log('Starting PDF generation...');
 
       // Create PDF in temp directory first
       const tempPdfOptions = {
@@ -1235,12 +1222,9 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         height: 842,
       };
 
-      console.log('PDF Options:', tempPdfOptions);
       const tempPdf = await generatePDF(tempPdfOptions);
-      console.log('Temp PDF conversion result:', tempPdf);
 
       if (tempPdf && tempPdf.filePath) {
-        console.log('Temp PDF generated successfully at:', tempPdf.filePath);
 
         // Create organized folder structure inside Downloads
         const now = new Date();
@@ -1253,26 +1237,21 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         try {
           await RNFS.mkdir(appFolderPath);
           await RNFS.mkdir(monthlyFolderPath);
-          console.log('Created folder structure in Downloads:', monthlyFolderPath);
         } catch (dirError) {
-          console.log('Folders might already exist:', dirError);
         }
 
         try {
           // Copy file to organized folder in Downloads
           await RNFS.copyFile(tempPdf.filePath, finalFilePath);
-          console.log('PDF copied to organized Downloads folder:', finalFilePath);
 
           // Clean up temp file
           await RNFS.unlink(tempPdf.filePath).catch(() => {
-            console.log('Could not delete temp file');
           });
 
           setGeneratedPdfPath(finalFilePath);
 
           // Try sharing the PDF file from organized Downloads folder
           try {
-            console.log('Attempting to share PDF from organized Downloads folder:', finalFilePath);
 
             const shareOptions = {
               title: 'Share Monthly Statement',
@@ -1282,10 +1261,8 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
             };
 
             await Share.open(shareOptions);
-            console.log('PDF shared successfully from organized Downloads folder');
 
           } catch (shareError) {
-            console.log('Sharing failed, showing organized Downloads location:', shareError);
 
             // Show success message with organized Downloads location
             Alert.alert(
@@ -1296,7 +1273,6 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
           }
 
         } catch (copyError) {
-          console.log('Failed to copy to Downloads folder:', copyError);
 
           // Fallback to temp file sharing
           try {
@@ -1308,7 +1284,6 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
             };
 
             await Share.open(shareOptions);
-            console.log('PDF shared successfully from temp location');
 
           } catch (shareError) {
             Alert.alert(
@@ -1320,7 +1295,6 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         }
 
       } else {
-        console.log('PDF generation failed - no file path');
         Alert.alert(
           'Error',
           'Failed to generate PDF for sharing. Please try again.'
@@ -1430,133 +1404,133 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                 <meta charset="UTF-8">
                 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-        font-family: Arial, sans-serif; 
-        padding: 15px; 
-        background: white; 
-        color: #333; 
+    body {
+        font-family: Arial, sans-serif;
+        padding: 15px;
+        background: white;
+        color: #333;
         line-height: 1.3;
         font-size: 12px;
     }
-    .header { 
-        text-align: center; 
-        margin-bottom: 20px; 
-        border-bottom: 2px solid #2196F3; 
-        padding-bottom: 10px; 
+    .header {
+        text-align: center;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #2196F3;
+        padding-bottom: 10px;
     }
-    .header h1 { 
-        font-size: 20px; 
-        color: #1976D2; 
-        margin-bottom: 5px; 
-        font-weight: bold; 
+    .header h1 {
+        font-size: 20px;
+        color: #1976D2;
+        margin-bottom: 5px;
+        font-weight: bold;
     }
-    .header h2 { 
-        font-size: 16px; 
-        color: #555; 
-        margin-bottom: 5px; 
+    .header h2 {
+        font-size: 16px;
+        color: #555;
+        margin-bottom: 5px;
     }
-    .date-range { 
-        font-size: 12px; 
-        color: #666; 
-        font-style: italic; 
+    .date-range {
+        font-size: 12px;
+        color: #666;
+        font-style: italic;
     }
-    .office-info { 
-        font-size: 13px; 
-        color: #1976D2; 
-        font-weight: bold; 
-        margin-top: 5px; 
+    .office-info {
+        font-size: 13px;
+        color: #1976D2;
+        font-weight: bold;
+        margin-top: 5px;
     }
-    .section { 
-        margin-bottom: 15px; 
-        page-break-inside: avoid; 
+    .section {
+        margin-bottom: 15px;
+        page-break-inside: avoid;
     }
-    .section h3 { 
-        color: #1976D2; 
-        font-size: 14px; 
-        margin-bottom: 8px; 
-        padding: 5px 0; 
-        border-bottom: 1px solid #E3F2FD; 
+    .section h3 {
+        color: #1976D2;
+        font-size: 14px;
+        margin-bottom: 8px;
+        padding: 5px 0;
+        border-bottom: 1px solid #E3F2FD;
     }
-    table { 
-        width: 100%; 
-        border-collapse: collapse; 
-        margin-bottom: 10px; 
-        font-size: 10px; 
-        page-break-inside: avoid; 
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 10px;
+        font-size: 10px;
+        page-break-inside: avoid;
     }
-    th, td { 
-        border: 1px solid #ddd; 
-        padding: 4px 6px; 
-        text-align: left; 
-        vertical-align: top; 
+    th, td {
+        border: 1px solid #ddd;
+        padding: 4px 6px;
+        text-align: left;
+        vertical-align: top;
     }
-    th { 
-        background-color: #f8f9fa; 
-        color: #333; 
-        font-weight: bold; 
-        font-size: 10px; 
+    th {
+        background-color: #f8f9fa;
+        color: #333;
+        font-weight: bold;
+        font-size: 10px;
     }
     .credit-amount { color: #2E7D32; font-weight: bold; }
     .debit-amount { color: #C62828; font-weight: bold; }
-    .summary { 
-        margin-top: 15px; 
-        padding: 10px; 
-        border: 2px solid #1976D2; 
-        border-radius: 5px; 
-        background-color: #f5f5f5; 
-        page-break-inside: avoid; 
+    .summary {
+        margin-top: 15px;
+        padding: 10px;
+        border: 2px solid #1976D2;
+        border-radius: 5px;
+        background-color: #f5f5f5;
+        page-break-inside: avoid;
     }
-    .summary h3 { 
-        margin-top: 0; 
-        margin-bottom: 10px; 
-        text-align: center; 
-        color: #1976D2; 
-        border-bottom: none; 
+    .summary h3 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        text-align: center;
+        color: #1976D2;
+        border-bottom: none;
         font-size: 14px;
     }
-    .summary-row { 
-        display: flex; 
-        justify-content: space-between; 
-        margin-bottom: 5px; 
-        font-size: 12px; 
+    .summary-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+        font-size: 12px;
     }
-    .net-balance { 
-        font-size: 14px; 
-        font-weight: bold; 
-        color: ${netBalance >= 0 ? '#2E7D32' : '#C62828'}; 
-        border-top: 1px solid #333; 
-        padding-top: 8px; 
-        margin-top: 8px; 
+    .net-balance {
+        font-size: 14px;
+        font-weight: bold;
+        color: ${netBalance >= 0 ? '#2E7D32' : '#C62828'};
+        border-top: 1px solid #333;
+        padding-top: 8px;
+        margin-top: 8px;
     }
-    .no-data { 
-        text-align: center; 
-        color: #666; 
-        font-style: italic; 
-        padding: 10px; 
-        background-color: #f9f9f9; 
-        border-radius: 3px; 
+    .no-data {
+        text-align: center;
+        color: #666;
+        font-style: italic;
+        padding: 10px;
+        background-color: #f9f9f9;
+        border-radius: 3px;
         margin-bottom: 10px;
     }
-    .footer { 
-        text-align: center; 
-        margin-top: 15px; 
-        padding-top: 10px; 
-        border-top: 1px solid #ddd; 
-        font-size: 9px; 
-        color: #666; 
+    .footer {
+        text-align: center;
+        margin-top: 15px;
+        padding-top: 10px;
+        border-top: 1px solid #ddd;
+        font-size: 9px;
+        color: #666;
     }
     /* Compact print styles */
-    @media print { 
-        body { 
-            font-size: 10px; 
+    @media print {
+        body {
+            font-size: 10px;
             padding: 10px;
-        } 
-        .section { 
-            break-inside: avoid; 
+        }
+        .section {
+            break-inside: avoid;
             margin-bottom: 10px;
-        } 
-        table { 
-            break-inside: avoid; 
+        }
+        table {
+            break-inside: avoid;
             margin-bottom: 8px;
         }
         .header {
@@ -1582,7 +1556,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                     <p class="date-range">Report for ${monthOptions.find(m => m.value === selectedMonth)?.label}, ${selectedYear}</p>
                     ${currentOfficeName ? `<p class="office-info">Office: ${currentOfficeName}</p>` : ''}
                 </div>
-                
+
                 ${reportType === 'agency' && selectedAgency ? `
                 <div class="section">
                     <h3>Agency: ${selectedAgency}</h3>
@@ -1648,7 +1622,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                     </table>
                 </div>
                 ` : reportType === 'agency' && includeMajuri ? '<div class="section"><div class="no-data">No majuri transactions found for this agency</div></div>' : ''}
-                
+
                 ${reportType === 'agency' && includeGeneral && agencyGeneral.length > 0 ? `
                 <div class="section">
                     <h3>🔄 General Entries (Agency) - ${agencyGeneral.length} entries</h3>
@@ -1679,7 +1653,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                     </table>
                 </div>
                 ` : reportType === 'agency' && includeGeneral ? '<div class="section"><div class="no-data">No general entries found for this agency</div></div>' : ''}
-                
+
                 ${reportType === 'other' && includeGeneral && generalEntries.length > 0 ? `
                 <div class="section">
                     <h3>📝 General Entries - ${generalEntries.length} entries</h3>
@@ -1710,7 +1684,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                     </table>
                 </div>
                 ` : reportType === 'other' && includeGeneral ? '<div class="section"><div class="no-data">No general entries found</div></div>' : ''}
-                
+
                 ${reportType === 'other' && includeDrivers && driverTransactions.length > 0 ? `
                 <div class="section">
                     <h3>🧾 Uppad/Jama Entries - ${driverTransactions.length} entries</h3>
@@ -1775,7 +1749,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                     </table>
                 </div>
                 ` : reportType === 'other' && includeFuel ? '<div class="section"><div class="no-data">No fuel entries found</div></div>' : ''}
-                
+
                 <div class="summary">
                     <h3>📊 Financial Summary</h3>
                     ${reportType === 'agency' ? `
@@ -1804,7 +1778,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                         <span>₹${Math.abs(netBalance).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}${netBalance < 0 ? ' (Due)' : ' (Credit)'}</span>
                     </div>
                 </div>
-                
+
                 <div class="footer">
                     <div><strong>YASH ROADLINES</strong></div>
                     ${currentOfficeName ? `<div>Office: ${currentOfficeName}</div>` : ''}
@@ -2055,14 +2029,14 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
             <Text style={styles.headerTitle}>PDF Preview</Text>
             <View style={styles.headerSpacer} />
           </View>
-          
+
           {previewHtml && (
             <WebView
               source={{ html: previewHtml }}
               style={{ flex: 1 }}
             />
           )}
-          
+
           <View style={{ padding: 16, backgroundColor: Colors.surface }}>
             <TouchableOpacity
               onPress={shareFromPreview}
@@ -2089,7 +2063,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Agencies</Text>
             <Text style={styles.modalSubtitle}>Choose multiple agencies to generate PDFs</Text>
-            
+
             <ScrollView style={styles.agencyList}>
               {agencyOptions.map((agency) => (
                 <TouchableOpacity
@@ -2118,7 +2092,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 onPress={() => {
@@ -2129,7 +2103,7 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
               >
                 <Text style={GlobalStyles.buttonPrimaryText}>Cancel</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 onPress={shareMultipleAgencies}
                 disabled={selectedAgencies.length === 0 || isGeneratingPdf}

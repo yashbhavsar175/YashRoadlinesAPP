@@ -229,16 +229,15 @@ const PaymentConfirmationPopup: React.FC<PaymentConfirmationPopupProps> = ({
         setSignaturePhoto(photoData);
       }
     } catch (error) {
-      console.error(`❌ Photo capture error for ${type}:`, error);
-      // Use AlertContext for all error messages (Requirement 10.6)
-      if (error instanceof Error) {
-        if (error.message !== 'Photo capture cancelled') {
+      if (error instanceof Error && error.message === 'Photo capture cancelled') {
+        console.log('📸 Photo capture cancelled by user');
+      } else {
+        console.error(`❌ Photo capture error for ${type}:`, error);
+        if (error instanceof Error) {
           showAlert(error.message);
         } else {
-          console.log('📸 Photo capture cancelled by user');
+          showAlert('Failed to capture photo');
         }
-      } else {
-        showAlert('Failed to capture photo');
       }
     }
   };

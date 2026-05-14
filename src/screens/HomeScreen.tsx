@@ -1,17 +1,17 @@
-// HomeScreen.tsx - Complete with Black & White Theme + Majur Dashboard
-import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  Alert, 
-  Modal, 
-  Dimensions, 
-  TouchableOpacity, 
-  Text, 
-  Platform, 
-  StatusBar, 
-  ScrollView, 
-  TextInput, 
+// HomeScreen.tsx - Complete with Black & White Theme + Majur Dashboard + Performance Optimizations
+import React, { useState, useEffect, useRef, useCallback, Fragment, useMemo } from 'react';
+import {
+  View,
+  StyleSheet,
+  Alert,
+  Modal,
+  Dimensions,
+  TouchableOpacity,
+  Text,
+  Platform,
+  StatusBar,
+  ScrollView,
+  TextInput,
   KeyboardAvoidingView,
   FlatList,
   ActivityIndicator,
@@ -28,6 +28,10 @@ import { GlobalStyles } from '../theme/styles';
 import { getProfile, updateProfile, getAgencyMajuri, AgencyMajuri, getUppadJamaEntries, UppadJamaEntry, getAllTransactionsForDate, syncAllDataFixed } from '../data/Storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { NotificationBell } from '../components/NotificationBell';
+// ✅ OPTIMIZATION: Added performance utilities and animated components
+import { FadeInView, AnimatedButton, SkeletonLoader } from '../components/AnimatedComponents';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+import { Spacing, Typography, Shadows } from '../theme/spacing';
 
 // Black & White Theme Colors
 const BWColors = {
@@ -76,12 +80,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   const [isProfileLoading, setIsProfileLoading] = useState<boolean>(true);
   const isMountedRef = useRef(true);
   const hasInitializedRef = useRef(false);
+  const hasLoadedOnceRef = useRef(false); // Track if data has been loaded at least once
 
   // Reset initialization flag when component mounts
   useEffect(() => {
     hasInitializedRef.current = false;
     isMountedRef.current = true;
-    
+
     return () => {
       isMountedRef.current = false;
     };
@@ -105,17 +110,15 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           .limit(1)
           .maybeSingle();
         if (pendingRequest) {
-          console.log('🔒 SECURITY: Pending request found, navigating back to Login waiting screen');
           // Do NOT signOut — keep session alive so LoginScreen can resume polling
           navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         }
       } catch (e) {
-        console.log('Access verification error:', e);
       }
     };
     verifyUserAccess();
   }, [navigation]);
-  
+
   // Majur Dashboard states
   const [majuriData, setMajuriData] = useState<{displayDate: string; isToday: boolean; isYesterday: boolean; id: string; majuri_date: string; amount: number; agency_name: string; description?: string}[]>([]);
   const [combinedData, setCombinedData] = useState<{displayDate: string; isToday: boolean; isYesterday: boolean; id: string; date: string; amount: number; name: string; description?: string; type: 'majuri' | 'uppad_jama'; entry_type?: string}[]>([]);
@@ -133,19 +136,19 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     // Normalize the comparison dates to ignore time
     const normalizedSelectedDate = new Date(date);
     normalizedSelectedDate.setHours(0, 0, 0, 0);
-    
+
     const selectedDateEntries = data.filter(item => {
       const itemDate = new Date(item.date);
       itemDate.setHours(0, 0, 0, 0);
       return itemDate.getTime() === normalizedSelectedDate.getTime();
     });
-    
+
     const total = selectedDateEntries.reduce((sum, item) => {
       if (item.type === 'majuri') return sum + item.amount;
       else if (item.type === 'uppad_jama') return item.entry_type === 'credit' ? sum + item.amount : sum - item.amount;
       return sum;
     }, 0);
-    
+
     setDailyTotal(total);
     setFilteredData(selectedDateEntries);
   }, [setDailyTotal, setFilteredData]);
@@ -156,7 +159,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       updateFilteredData(combinedData, selectedDate);
     }
   }, [combinedData, selectedDate, updateFilteredData]);
-  
+
   // Force refresh when loading completes
   useEffect(() => {
     if (combinedData.length > 0 && !majurLoading) {
@@ -175,21 +178,21 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
     try {
       const { data: { user }, error } = await supabase.auth.getUser();
-      
+
       if (error || !user) {
         setUserInitial('?');
         setUserRole('Guest');
         setIsProfileLoading(false);
         return;
       }
-      
+
       let profile = await getProfile(user.id);
-      
+
       if (!profile) {
         await new Promise(resolve => setTimeout(resolve, 500));
         profile = await getProfile(user.id);
       }
-      
+
       if (profile?.full_name && profile.full_name.trim()) {
         if (isMountedRef.current) {
           setUserName(profile.full_name);
@@ -236,13 +239,13 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
     if (isToday) return 'आज';
     if (isYesterday) return 'कल';
-    
+
     const dayName = getDayName(date);
     const dateStr = date.toLocaleDateString('hi-IN', {
       day: '2-digit',
       month: 'short',
     });
-    
+
     return `${dayName}, ${dateStr}`;
   };
 
@@ -251,34 +254,34 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       setMajurLoading(true);
       // Clear previous data to force refresh
       setFilteredData([]);
-      
+
       // Get current office ID for filtering
       const officeId = getCurrentOfficeId();
-      
+
       // Sync data first
       await syncAllDataFixed();
-      
+
       // Load both majuri and uppad/jama entries with office filter
       const allMajuri: AgencyMajuri[] = await getAgencyMajuri(officeId || undefined);
       const allUppadJama: UppadJamaEntry[] = await getUppadJamaEntries(officeId || undefined);
-      
+
       // Get current date and set time to start of day
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       sevenDaysAgo.setHours(0, 0, 0, 0);
-      
+
       // Filter majuri entries from the last 7 days
       const recentMajuri = allMajuri.filter(item => {
         const itemDate = new Date(item.majuri_date);
         return itemDate >= sevenDaysAgo;
       });
-      
+
       // Filter uppad/jama entries from the last 7 days
       const recentUppadJama = allUppadJama.filter(item => {
         const itemDate = new Date(item.entry_date);
         return itemDate >= sevenDaysAgo;
       });
-      
+
       // Convert majuri entries to combined format
       const majuriCombined = recentMajuri.map(item => ({
         id: `majuri-${item.id}`,
@@ -291,7 +294,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         isToday: new Date(item.majuri_date).toDateString() === new Date().toDateString(),
         isYesterday: new Date(item.majuri_date).toDateString() === new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toDateString(),
       }));
-      
+
       // Convert uppad/jama entries to combined format, excluding Uppad (debit) entries
       // For Jama (credit) entries, we show them as negative amounts in the dashboard
       const uppadJamaCombined = recentUppadJama
@@ -308,31 +311,31 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           isToday: new Date(item.entry_date).toDateString() === new Date().toDateString(),
           isYesterday: new Date(item.entry_date).toDateString() === new Date(new Date().setDate(new Date().getDate() - 1)).toDateString(),
         }));
-      
+
       // Combine all entries
       const allCombined = [...majuriCombined, ...uppadJamaCombined];
-      
+
       // Sort all positive entries first (newest first), then all negative entries (newest first)
       const sortedCombined = allCombined.sort((a, b) => {
         // First sort by sign (positive first, then negative)
         if (a.amount >= 0 && b.amount < 0) return -1; // a is positive, b is negative
         if (a.amount < 0 && b.amount >= 0) return 1;  // a is negative, b is positive
-        
+
         // If both are same sign, sort by date (newest first)
         const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (dateDiff !== 0) return dateDiff;
-        
+
         // If same date, sort by absolute amount (largest first)
         return Math.abs(b.amount) - Math.abs(a.amount);
       });
 
       setCombinedData(sortedCombined);
-      
+
       // Update filtered data with the latest combined data
       updateFilteredData(sortedCombined, selectedDate);
-      
+
       // Keep original majuri data for backward compatibility
-      const sortedMajuri = recentMajuri.sort((a, b) => 
+      const sortedMajuri = recentMajuri.sort((a, b) =>
         new Date(b.majuri_date).getTime() - new Date(a.majuri_date).getTime()
       );
 
@@ -351,7 +354,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       });
 
       setMajuriData(majuriWithDisplay);
-      
+
       // Create an array of the last 7 days
       const last7Days = Array.from({ length: 7 }, (_, i) => {
         const date = new Date();
@@ -359,14 +362,14 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         date.setHours(0, 0, 0, 0);
         return date;
       });
-      
+
       // Create a map of dates to their entries for combined data
       const dateToEntries = new Map();
       sortedCombined.forEach(item => {
         const date = new Date(item.date);
         date.setHours(0, 0, 0, 0);
         const dateString = date.toDateString();
-        
+
         if (!dateToEntries.has(dateString)) {
           dateToEntries.set(dateString, {
             entries: [],
@@ -376,7 +379,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             isYesterday: date.toDateString() === new Date(new Date().setDate(new Date().getDate() - 1)).toDateString()
           });
         }
-        
+
         const dayData = dateToEntries.get(dateString);
         dayData.entries.push(item);
         // Calculate amount based on type and entry_type
@@ -387,12 +390,12 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           dayData.totalAmount += item.entry_type === 'credit' ? item.amount : -item.amount;
         }
       });
-      
+
       // Create summary for all 7 days, including those with zero entries
       const summary = last7Days.map(date => {
         const dateString = date.toDateString();
         const dayData = dateToEntries.get(dateString);
-        
+
         if (dayData) {
           return {
             date: dateString,
@@ -403,7 +406,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             hasEntries: true
           };
         }
-        
+
         // For days with no entries
         return {
           date: dateString,
@@ -414,7 +417,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
           hasEntries: false
         };
       }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
+
       setDatewiseSummary(summary);
       updateFilteredData(combinedData, selectedDate);
     } catch (error) {
@@ -441,15 +444,20 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
-      
+
       const loadData = async () => {
         try {
           // Always refresh permissions when screen comes into focus
           await refreshPermissions();
-          
+
           // Load user profile
           await fetchUserProfile();
-          
+
+          // Mark as loaded after first successful load
+          if (!hasLoadedOnceRef.current) {
+            hasLoadedOnceRef.current = true;
+          }
+
           // Run migration check for legacy delivery records (only once per session)
           if (!hasInitializedRef.current) {
             try {
@@ -465,7 +473,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
               console.error('❌ Migration check failed:', migrationError);
             }
           }
-          
+
           if (userType === 'majur') {
             await loadMajurData();
           }
@@ -475,7 +483,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       };
 
       loadData();
-      
+
       return () => {
         isActive = false;
         isMountedRef.current = false;
@@ -501,14 +509,14 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
   }, [currentOffice, userType, loadMajurData]);
 
   // Real-time subscription for majur dashboard auto-refresh
-  useEffect(() => {
+  useSubscriptionCleanup(() => {
     if (userType !== 'majur') return;
 
     // Set up real-time subscription for majuri data
     const majuriChannel = supabase
       .channel('agency_majuri_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'agency_majuri' }, 
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'agency_majuri' },
         (payload) => {
           loadMajurData();
         }
@@ -518,7 +526,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     // Set up broadcast listener for manual refresh triggers
     const broadcastChannel = supabase
       .channel('majur-dashboard-refresh')
-      .on('broadcast', 
+      .on('broadcast',
         { event: 'refresh-dashboard' },
         (payload) => {
           // Force refresh majur dashboard
@@ -533,9 +541,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     const uppadJamaChannel = supabase
       .channel('uppad_jama_entries_changes')
       .on('postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
+        {
+          event: '*',
+          schema: 'public',
           table: 'uppad_jama_entries',
           filter: 'entry_type=eq.credit' // Only listen to jama (credit) entries
         },
@@ -1095,19 +1103,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     const isSelected = viewMode === 'date' && selectedDate.toDateString() === item.date;
     const date = new Date(item.date);
     const dayName = date.toLocaleDateString('en-IN', { weekday: 'short' });
-    
+
     return (
-      <TouchableOpacity
-        style={[
-          styles.dateSummaryItem,
-          isSelected && styles.selectedDateItem,
-          {
-            backgroundColor: isSelected ? BWColors.primary : BWColors.surface,
-            borderWidth: isSelected ? 0 : 1,
-            borderColor: isSelected ? 'transparent' : BWColors.borderLight,
-          }
-        ]}
-        activeOpacity={0.8}
+      <AnimatedButton
         onPress={() => {
           if (isSelected) {
             setViewMode('all');
@@ -1116,6 +1114,16 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             setViewMode('date');
           }
         }}
+        style={StyleSheet.flatten([
+          styles.dateSummaryItem,
+          isSelected && styles.selectedDateItem,
+          {
+            backgroundColor: isSelected ? BWColors.primary : BWColors.surface,
+            borderWidth: isSelected ? 0 : 1,
+            borderColor: isSelected ? 'transparent' : BWColors.borderLight,
+          }
+        ])}
+        activeOpacity={0.8}
       >
         <View style={styles.dateSummaryHeader}>
           <View>
@@ -1139,7 +1147,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             ₹{item.totalAmount.toLocaleString('hi-IN')}
           </Text>
         </View>
-      </TouchableOpacity>
+      </AnimatedButton>
     );
   };
 
@@ -1159,7 +1167,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
               setUserInitial('');
               setShowNamePrompt(false);
               setProfileNameInput('');
-              
+
               const { error } = await supabase.auth.signOut();
               if (error) throw error;
               replace('Login');
@@ -1194,17 +1202,15 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     }
   };
 
-  if (isProfileLoading || contextLoading || officeLoading) {
-    console.log('[HOME] Waiting for context... contextLoading=' + contextLoading + ' officeLoading=' + officeLoading);
+  if ((isProfileLoading || contextLoading || officeLoading) && !hasLoadedOnceRef.current) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color={BWColors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <SkeletonLoader width="80%" height={40} style={{ marginBottom: Spacing.md }} />
+        <SkeletonLoader width="60%" height={20} />
       </View>
     );
   }
 
-  console.log('[HOME] Rendering with role=' + (contextIsAdmin ? 'Admin' : 'User') + ', offices=' + availableOffices.length);
 
   return (
     <View style={styles.container}>
@@ -1230,7 +1236,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
               textColor="#FFFFFF"
             />
           )}
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={userType === 'majur' ? handleLogout : () => setIsProfileMenuVisible(true)}
             activeOpacity={0.8}
             style={{ marginLeft: contextIsAdmin ? 12 : 0 }}
@@ -1264,8 +1270,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     <ScrollView
       contentContainerStyle={[styles.scrollViewContent, { padding: 20 }]}
       refreshControl={
-        <RefreshControl 
-          refreshing={refreshing} 
+        <RefreshControl
+          refreshing={refreshing}
           onRefresh={onRefresh}
           colors={[BWColors.primary]}
           tintColor={BWColors.primary}
@@ -1275,7 +1281,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
       {/* Header with Full Dashboard Button */}
       <View style={[styles.sectionHeaderRow, { marginBottom: 16 }]}>
         <Text style={[styles.sectionTitle, { fontSize: 24, color: BWColors.primary }]}>मजूर डैशबोर्ड</Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => navigate('MajurDashboard')}
           style={{
             backgroundColor: BWColors.primary,
@@ -1295,22 +1301,22 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
       {/* Date Selector */}
       <View style={styles.dateSelectorContainer}>
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => handleDateChange(new Date(selectedDate.setDate(selectedDate.getDate() - 1)))}
           style={styles.navButton}
           activeOpacity={0.7}
         >
           <Icon name="chevron-back" size={24} color={BWColors.primary} />
         </TouchableOpacity>
-        
+
         <View style={styles.dateDisplay}>
           <Text style={styles.dateText}>
             {viewMode === 'all' ? 'All Entries' : formatDate(selectedDate.toISOString())}
           </Text>
         </View>
 
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           onPress={() => handleDateChange(new Date(selectedDate.setDate(selectedDate.getDate() + 2)))}
           style={styles.navButton}
           activeOpacity={0.7}
@@ -1332,6 +1338,12 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         keyExtractor={(item) => item.date}
         contentContainerStyle={styles.dateSummaryContent}
         nestedScrollEnabled={true}
+        {...FLATLIST_OPTIMIZATIONS}
+        getItemLayout={(data, index) => ({
+          length: 160,
+          offset: 160 * index,
+          index,
+        })}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Icon name="calendar-outline" size={48} color={BWColors.textTertiary} />
@@ -1349,8 +1361,9 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
       {majurLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={BWColors.primary} />
-          <Text style={styles.loadingText}>लोड हो रहा है...</Text>
+          <SkeletonLoader width="100%" height={80} style={{ marginBottom: Spacing.sm }} />
+          <SkeletonLoader width="100%" height={80} style={{ marginBottom: Spacing.sm }} />
+          <SkeletonLoader width="100%" height={80} />
         </View>
       ) : (viewMode === 'all' ? combinedData : filteredData).length > 0 ? (
         <View style={styles.majuriList}>
@@ -1360,8 +1373,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             const isPositive = item.type === 'majuri';
             const symbol = isPositive ? '+' : '-';
             const symbolColor = isPositive ? '#2E7D32' : '#D32F2F';
-            
-            
+
+
             return (
               <React.Fragment key={item.id}>
                 <View style={styles.majuriItem}>
@@ -1396,8 +1409,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
         <View style={styles.emptyContainer}>
           <Icon name="document-text-outline" size={64} color={BWColors.textTertiary} />
           <Text style={styles.emptyText}>
-            {viewMode === 'all' 
-              ? 'कोई मजूरी एंट्री नहीं मिली' 
+            {viewMode === 'all'
+              ? 'कोई मजूरी एंट्री नहीं मिली'
               : `${formatDate(selectedDate.toISOString())} के लिए कोई एंट्री नहीं मिली`}
           </Text>
         </View>
@@ -1413,21 +1426,21 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             showsVerticalScrollIndicator={false}
           >
             {/* Financial Entries - Only show if user has access to any financial screen */}
-            {(contextIsAdmin || 
-              hasScreenAccess('PaidSectionScreen') || 
-              hasScreenAccess('AddMajuriScreen') || 
-              hasScreenAccess('AgencyEntryScreen') || 
-              hasScreenAccess('AddGeneralEntryScreen') || 
-              hasScreenAccess('UppadJamaScreen') || 
-              hasScreenAccess('MumbaiDeliveryEntryScreen') || 
+            {(contextIsAdmin ||
+              hasScreenAccess('PaidSectionScreen') ||
+              hasScreenAccess('AddMajuriScreen') ||
+              hasScreenAccess('AgencyEntryScreen') ||
+              hasScreenAccess('AddGeneralEntryScreen') ||
+              hasScreenAccess('UppadJamaScreen') ||
+              hasScreenAccess('MumbaiDeliveryEntryScreen') ||
               hasScreenAccess('BackdatedEntryScreen')) && (
             <View style={styles.card}>
               <Text style={styles.categoryTitle}>Financial Entries</Text>
               <Text style={styles.categoryDescription}>Record payments, labor charges, and other transactions.</Text>
               <View style={styles.buttonGrid}>
                 {(contextIsAdmin || hasScreenAccess('PaidSectionScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('PaidSection')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('PaidSection')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1437,10 +1450,10 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                     <Text style={styles.gridButtonText}>Paid Section</Text>
                   </TouchableOpacity>
                 )}
-                
+
                 {(contextIsAdmin || hasScreenAccess('AddMajuriScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('AddMajuri')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('AddMajuri')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1452,8 +1465,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('AgencyEntryScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('AgencyEntry')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('AgencyEntry')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1465,8 +1478,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('AddGeneralEntryScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('AddGeneralEntry')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('AddGeneralEntry')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1478,8 +1491,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('UppadJamaScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('UppadJama')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('UppadJama')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1491,8 +1504,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('MumbaiDeliveryEntryScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('MumbaiDelivery')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('MumbaiDelivery')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1504,8 +1517,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('BackdatedEntryScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('BackdatedEntry')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('BackdatedEntry')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1517,8 +1530,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('DailyEntriesScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('DailyEntries')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('DailyEntries')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1533,16 +1546,16 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             )}
 
             {/* Driver & Truck Management - Only show if user has access to any driver/truck screen */}
-            {(contextIsAdmin || 
-              hasScreenAccess('DriverDetailsScreen') || 
+            {(contextIsAdmin ||
+              hasScreenAccess('DriverDetailsScreen') ||
               hasScreenAccess('AddTruckFuelScreen')) && (
             <View style={styles.card}>
               <Text style={styles.categoryTitle}>Driver & Truck Management</Text>
               <Text style={styles.categoryDescription}>Manage driver transactions and record fuel expenses.</Text>
               <View style={styles.buttonGrid}>
                 {(contextIsAdmin || hasScreenAccess('DriverDetailsScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('DriverDetails')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('DriverDetails')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1554,8 +1567,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('AddTruckFuelScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('AddTruckFuel')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('AddTruckFuel')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1570,18 +1583,18 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
             )}
 
             {/* Statements & Reports - Only show if user has access to any report screen */}
-            {(contextIsAdmin || 
-              hasScreenAccess('StatementScreen') || 
-              hasScreenAccess('MonthlyStatementScreen') || 
-              hasScreenAccess('DailyReportScreen') || 
+            {(contextIsAdmin ||
+              hasScreenAccess('StatementScreen') ||
+              hasScreenAccess('MonthlyStatementScreen') ||
+              hasScreenAccess('DailyReportScreen') ||
               hasScreenAccess('HistoryScreen')) && (
             <View style={styles.card}>
               <Text style={styles.categoryTitle}>Statements & Reports</Text>
               <Text style={styles.categoryDescription}>View, generate, and share detailed financial reports.</Text>
               <View style={styles.buttonGrid}>
                 {(contextIsAdmin || hasScreenAccess('StatementScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('Statement')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('Statement')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1593,8 +1606,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('MonthlyStatementScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('MonthlyStatement')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('MonthlyStatement')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1606,8 +1619,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('DailyReportScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('DailyReport')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('DailyReport')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1619,8 +1632,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 )}
 
                 {(contextIsAdmin || hasScreenAccess('HistoryScreen')) && (
-                  <TouchableOpacity 
-                    onPress={() => navigate('History')} 
+                  <TouchableOpacity
+                    onPress={() => navigate('History')}
                     style={styles.gridButton}
                     activeOpacity={0.8}
                   >
@@ -1642,8 +1655,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 <View style={styles.buttonGrid}>
                   {/* Setup Cash Amount - Admin only */}
                   {(contextIsAdmin || hasScreenAccess('LeaveCashSetupScreen')) && (
-                    <TouchableOpacity 
-                      onPress={() => navigate('LeaveCashSetupScreen')} 
+                    <TouchableOpacity
+                      onPress={() => navigate('LeaveCashSetupScreen')}
                       style={styles.gridButton}
                       activeOpacity={0.8}
                     >
@@ -1656,8 +1669,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
                   {/* Verify Cash - Based on permission */}
                   {(contextIsAdmin || hasScreenAccess('CashVerificationScreen')) && (
-                    <TouchableOpacity 
-                      onPress={() => navigate('CashVerificationScreen')} 
+                    <TouchableOpacity
+                      onPress={() => navigate('CashVerificationScreen')}
                       style={styles.gridButton}
                       activeOpacity={0.8}
                     >
@@ -1670,8 +1683,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
                   {/* Cash History - Based on permission */}
                   {(contextIsAdmin || hasScreenAccess('CashHistoryScreen')) && (
-                    <TouchableOpacity 
-                      onPress={() => navigate('CashHistoryScreen')} 
+                    <TouchableOpacity
+                      onPress={() => navigate('CashHistoryScreen')}
                       style={styles.gridButton}
                       activeOpacity={0.8}
                     >
@@ -1707,16 +1720,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                   <Text style={styles.menuUserRole}>{contextIsAdmin ? 'Admin' : 'User'}</Text>
                 </View>
 
-                {/* Debug: Log admin status */}
-                {(() => {
-                  console.log('🔧 DEBUG: Profile menu rendering with permissions:', {
-                    contextIsAdmin,
-                    userRole: contextIsAdmin ? 'Admin' : 'User',
-                    screenAccess: screenAccess
-                  });
-                  return null;
-                })()}
-
                 {/* Admin Panel - Based on permission */}
                 {(contextIsAdmin || hasScreenAccess('AdminPanelScreen')) && (
                   <TouchableOpacity onPress={() => {
@@ -1731,7 +1734,6 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
                 {/* User Access Management - Based on permission */}
                 {(contextIsAdmin || hasScreenAccess('UserAccessManagementScreen')) && (
                   <TouchableOpacity onPress={() => {
-                  console.log('🔧 DEBUG: User Access Management clicked');
                   setIsProfileMenuVisible(false);
                   navigate('UserAccessManagementScreen');
                 }} style={styles.menuItem}>

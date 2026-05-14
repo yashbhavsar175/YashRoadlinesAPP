@@ -15,6 +15,8 @@ import { useNavigation } from '@react-navigation/native';
 import { getCashRecords, CashRecord, deleteCashRecord, revertCashRecordToPending, checkCashVerificationAccess } from '../data/Storage';
 import NotificationService from '../services/NotificationService';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 const CashHistoryScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -31,7 +33,7 @@ const CashHistoryScreen: React.FC = () => {
     try {
       const access = await checkCashVerificationAccess();
       setHasAccess(access);
-      
+
       if (access) {
         loadCashHistory();
       } else {
@@ -105,7 +107,7 @@ const CashHistoryScreen: React.FC = () => {
           onPress: async () => {
             try {
               await revertCashRecordToPending(recordId);
-              
+
               // Send notification about re-verification
               await NotificationService.notifyAdd(
                 'general_entry',
@@ -183,7 +185,7 @@ const CashHistoryScreen: React.FC = () => {
     const verified = cashRecords.filter(r => r.status === 'verified_correct').length;
     const mismatched = cashRecords.filter(r => r.status === 'verified_incorrect').length;
     const pending = cashRecords.filter(r => r.status === 'pending_verification').length;
-    
+
     return { total, verified, mismatched, pending };
   };
 
@@ -230,11 +232,11 @@ const CashHistoryScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       {/* Header */}
       <View style={styles.navigationHeader}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
           <Icon name="arrow-back" size={24} color="#000" />
@@ -251,17 +253,17 @@ const CashHistoryScreen: React.FC = () => {
             <Text style={styles.summaryNumber}>{summary.total}</Text>
             <Text style={styles.summaryLabel}>Total</Text>
           </View>
-          
+
           <View style={[styles.summaryCard, styles.verifiedCard]}>
             <Text style={[styles.summaryNumber, { color: '#27ae60' }]}>{summary.verified}</Text>
             <Text style={styles.summaryLabel}>Verified</Text>
           </View>
-          
+
           <View style={[styles.summaryCard, styles.mismatchCard]}>
             <Text style={[styles.summaryNumber, { color: '#e74c3c' }]}>{summary.mismatched}</Text>
             <Text style={styles.summaryLabel}>Mismatch</Text>
           </View>
-          
+
           <View style={[styles.summaryCard, styles.pendingCard]}>
             <Text style={[styles.summaryNumber, { color: '#f39c12' }]}>{summary.pending}</Text>
             <Text style={styles.summaryLabel}>Pending</Text>
@@ -270,7 +272,7 @@ const CashHistoryScreen: React.FC = () => {
       </View>
 
       {/* Records List */}
-      <ScrollView 
+      <ScrollView
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -294,15 +296,15 @@ const CashHistoryScreen: React.FC = () => {
           cashRecords.map((record, index) => {
             const statusIcon = getStatusIcon(record.status);
             const isVerified = record.status !== 'pending_verification';
-            
+
             return (
               <View key={record.id} style={styles.recordCard}>
                 <View style={styles.recordHeader}>
                   <View style={styles.statusContainer}>
-                    <Icon 
-                      name={statusIcon.name} 
-                      size={24} 
-                      color={statusIcon.color} 
+                    <Icon
+                      name={statusIcon.name}
+                      size={24}
+                      color={statusIcon.color}
                     />
                     <Text style={[styles.statusText, { color: statusIcon.color }]}>
                       {getStatusText(record.status)}
@@ -339,7 +341,7 @@ const CashHistoryScreen: React.FC = () => {
                       ₹{record.expected_amount.toLocaleString('en-IN')}
                     </Text>
                   </View>
-                  
+
                   {isVerified && (
                     <>
                       <View style={styles.amountRow}>
@@ -351,7 +353,7 @@ const CashHistoryScreen: React.FC = () => {
                           ₹{record.actual_amount?.toLocaleString('en-IN') || '0'}
                         </Text>
                       </View>
-                      
+
                       {record.difference !== undefined && record.difference !== 0 && (
                         <View style={styles.amountRow}>
                           <Text style={styles.amountLabel}>Difference:</Text>

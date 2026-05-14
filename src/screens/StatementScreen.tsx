@@ -1,7 +1,6 @@
 // StatementScreen.tsx
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl, Platform, StatusBar, Alert, ActivityIndicator, TextInput, Text, Modal, Dimensions, ScrollView } from 'react-native';
-import { TouchableOpacity } from 'react-native';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import {
@@ -26,6 +25,8 @@ import RNFS from 'react-native-fs';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useOffice } from '../context/OfficeContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 // Debounce utility function
 const useDebounce = <T,>(value: T, delay: number): T => {
@@ -187,7 +188,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
           const agencyGeneralEntries: CombinedEntryWithDate[] = allAgencyEntries
             .filter(entry => entry.agency_name === currentSelectedEntity)
             .map(e => ({ ...e, type: 'agency_general' as const, date: new Date(e.entry_date) }));
-          
+
           allData = [...agencyPaid, ...agencyMajuri, ...agencyGeneralEntries];
         }
 
@@ -254,14 +255,14 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
       return () => {};
     }, [loadData])
   );
-  
+
   const handleCalculateTotal = useCallback(() => {
       let newTotal = 0;
       if (statementType === 'agency') {
         const paid = filteredEntries.filter((t): t is PaidEntryWithDate => t.type === 'paid');
         const majuri = filteredEntries.filter((t): t is MajuriEntryWithDate => t.type === 'majuri');
         const agencyGeneral = filteredEntries.filter((t): t is AgencyGeneralEntryWithDate => t.type === 'agency_general');
-        
+
         if (filterType === 'all') {
           const totalPaid = paid.reduce((sum, entry) => sum + entry.amount, 0);
           const totalMajuriAmount = majuri.reduce((sum, entry) => sum + entry.amount, 0);
@@ -414,7 +415,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
         </LongPressGestureHandler>
     );
   }, [filterType, handleDeleteEntry]);
-    
+
   const renderEmptyState = () => (
       <View style={[GlobalStyles.card, styles.emptyStateCard]}>
           <Text style={styles.emptyStateIcon}>📄</Text>
@@ -465,7 +466,6 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
       if (isMountedRef.current) {
         setIsGeneratingPdf(true);
       }
-      console.log('Starting PDF generation...');
       const paid = filteredEntries.filter((t): t is PaidEntryWithDate => t.type === 'paid');
       const majuri = filteredEntries.filter((t): t is MajuriEntryWithDate => t.type === 'majuri');
       const agencyGeneral = filteredEntries.filter((t): t is AgencyGeneralEntryWithDate => t.type === 'agency_general');
@@ -481,7 +481,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
       const showGeneral = filterType === 'all' || filterType === 'agency_general';
       const showColor = filterType === 'all';
       const amountColorClass = showColor ? '' : 'amount-black';
-      
+
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -490,36 +490,36 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
             <meta charset="UTF-8">
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
-                body { 
-                    font-family: Arial, sans-serif; 
-                    padding: 20px; 
+                body {
+                    font-family: Arial, sans-serif;
+                    padding: 20px;
                     background: white;
                     color: #333;
                     line-height: 1.4;
                 }
-                .header { 
-                    text-align: center; 
-                    margin-bottom: 30px; 
+                .header {
+                    text-align: center;
+                    margin-bottom: 30px;
                     border-bottom: 3px solid #2196F3;
                     padding-bottom: 15px;
                 }
-                .header h1 { 
-                    font-size: 24px; 
-                    color: #1976D2; 
-                    margin-bottom: 8px; 
+                .header h1 {
+                    font-size: 24px;
+                    color: #1976D2;
+                    margin-bottom: 8px;
                     font-weight: bold;
                 }
-                .header h2 { 
-                    font-size: 18px; 
-                    color: #555; 
-                    margin-bottom: 10px; 
+                .header h2 {
+                    font-size: 18px;
+                    color: #555;
+                    margin-bottom: 10px;
                 }
                 .date-range {
                     font-size: 14px;
                     color: #666;
                     font-style: italic;
                 }
-                
+
                 .section {
                     margin-bottom: 30px;
                     page-break-inside: avoid;
@@ -531,44 +531,44 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
                     padding: 8px 0;
                     border-bottom: 2px solid #E3F2FD;
                 }
-                
-                table { 
-                    width: 100%; 
-                    border-collapse: collapse; 
+
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
                     margin-bottom: 20px;
                     font-size: 12px;
                     page-break-inside: avoid;
                 }
-                th, td { 
-                    border: 1px solid #ddd; 
-                    padding: 8px 6px; 
-                    text-align: left; 
+                th, td {
+                    border: 1px solid #ddd;
+                    padding: 8px 6px;
+                    text-align: left;
                     vertical-align: top;
                 }
-                th { 
-                    background-color: #f8f9fa; 
-                    color: #333; 
+                th {
+                    background-color: #f8f9fa;
+                    color: #333;
                     font-weight: bold;
                     font-size: 12px;
                 }
-                
-                .credit-amount { 
-                    color: #2E7D32; 
-                    font-weight: bold; 
+
+                .credit-amount {
+                    color: #2E7D32;
+                    font-weight: bold;
                 }
-                .debit-amount { 
-                    color: #C62828; 
-                    font-weight: bold; 
+                .debit-amount {
+                    color: #C62828;
+                    font-weight: bold;
                 }
                 .amount-black {
                     color: black;
                     font-weight: bold;
                 }
-                
-                .summary { 
-                    margin-top: 30px; 
-                    padding: 15px; 
-                    border: 2px solid #1976D2; 
+
+                .summary {
+                    margin-top: 30px;
+                    padding: 15px;
+                    border: 2px solid #1976D2;
                     border-radius: 8px;
                     background-color: #f5f5f5;
                     page-break-inside: avoid;
@@ -586,15 +586,15 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
                     margin-bottom: 8px;
                     font-size: 14px;
                 }
-                .net-balance { 
+                .net-balance {
                     font-size: 16px;
                     font-weight: bold;
-                    color: ${totalCalculatedAmount >= 0 ? '#2E7D32' : '#C62828'}; 
+                    color: ${totalCalculatedAmount >= 0 ? '#2E7D32' : '#C62828'};
                     border-top: 2px solid #333;
                     padding-top: 10px;
                     margin-top: 10px;
                 }
-                
+
                 .no-data {
                     text-align: center;
                     color: #666;
@@ -603,7 +603,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
                     background-color: #f9f9f9;
                     border-radius: 5px;
                 }
-                
+
                 .footer {
                     text-align: center;
                     margin-top: 30px;
@@ -612,7 +612,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
                     font-size: 10px;
                     color: #666;
                 }
-                
+
                 @media print {
                     body { font-size: 11px; }
                     .section { break-inside: avoid; }
@@ -626,7 +626,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
                 <h2>${selectedAgency} - Statement Report</h2>
                 ${currentOffice ? `<div class="office-info" style="font-size: 13px; color: #1976D2; font-weight: bold; margin-top: 5px;">Office: ${currentOffice.name}</div>` : ''}
             </div>
-            
+
             ${showPayments ? `
             <div class="section">
                 <h3>💰 Paid ${showColor ? '(Credit)' : ''} - ${paid.length} entries</h3>
@@ -662,7 +662,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
             ${showMajuri ? `
             <div class="section">
                 <h3>💸 Majuri ${showColor ? '(Debit)' : ''} - ${majuri.length} entries</h3>
-                ${majuri.length > 0 ? ` 
+                ${majuri.length > 0 ? `
                 <table>
                     <thead>
                         <tr>
@@ -690,11 +690,11 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
                 ` : '<div class="no-data">No majuri transactions found</div>'}
             </div>
             ` : ''}
-            
+
             ${showGeneral ? `
             <div class="section">
                 <h3>🔄 General Entries - ${agencyGeneral.length} entries</h3>
-                ${agencyGeneral.length > 0 ? ` 
+                ${agencyGeneral.length > 0 ? `
                 <table>
                     <thead>
                         <tr>
@@ -740,13 +740,13 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
                     <span>₹${Math.abs(totalCalculatedAmount).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}${totalCalculatedAmount < 0 ? ' (Due)' : ''}</span>
                 </div>
             </div>
-            
+
             <div class="footer">
                 <div><strong>YASH ROADLINES</strong></div>
                 ${currentOffice ? `<div>Office: ${currentOffice.name}</div>` : ''}
                 <div>Statement Report Generated on: ${new Date().toLocaleString('en-IN', {
                     year: 'numeric',
-                    month: 'long', 
+                    month: 'long',
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit',
@@ -757,12 +757,10 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
         </html>
       `;
       if (!isMountedRef.current) {
-        console.log('Component unmounted, cancelling PDF generation');
         return;
       }
       const fileName = `${selectedAgency.replace(/[^a-zA-Z0-9]/g, '_')}_Statement_${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
-      console.log('Generating PDF with filename:', fileName);
-      
+
       // Create PDF in temp directory first
       const tempPdfOptions = {
         html: htmlContent,
@@ -773,42 +771,35 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
         height: 842,
       };
 
-      console.log('Generating Statement PDF...');
       const tempPdf = await generatePDF(tempPdfOptions);
-      
+
       if (tempPdf && tempPdf.filePath) {
-        console.log('Temp PDF generated successfully at:', tempPdf.filePath);
-        
+
         // Create organized folder structure inside Downloads
         const now = new Date();
         const fileName = `${selectedAgency}_Statement_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}.pdf`;
         const appFolderPath = `${RNFS.DownloadDirectoryPath}/Yash Roadlines`;
         const statementFolderPath = `${appFolderPath}/Statement`;
         const finalFilePath = `${statementFolderPath}/${fileName}`;
-        
+
         // Create directories if they don't exist
         try {
           await RNFS.mkdir(appFolderPath);
           await RNFS.mkdir(statementFolderPath);
-          console.log('Created folder structure in Downloads:', statementFolderPath);
         } catch (dirError) {
-          console.log('Folders might already exist:', dirError);
         }
-        
+
         try {
           // Copy file to organized folder in Downloads
         await RNFS.copyFile(tempPdf.filePath, finalFilePath);
-        console.log('PDF copied to organized Downloads folder:', finalFilePath);
-          
+
           // Clean up temp file
           await RNFS.unlink(tempPdf.filePath).catch(() => {
-            console.log('Could not delete temp file');
           });
-          
+
           // Try sharing the PDF file from organized Downloads folder
         try {
-          console.log('Attempting to share PDF from organized Downloads folder:', finalFilePath);
-            
+
             const shareOptions = {
               title: 'Share Statement Report',
               message: `Statement Report for ${selectedAgency}`,
@@ -817,11 +808,9 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
             };
 
             await Share.open(shareOptions);
-            console.log('Statement PDF shared successfully from Downloads folder');
-            
+
           } catch (shareError) {
-            console.log('Sharing failed, showing Downloads location:', shareError);
-            
+
             // Show success message with organized Downloads location
           Alert.alert(
             'PDF Saved Successfully! 📄',
@@ -829,10 +818,9 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
             [{ text: 'OK', style: 'default' }]
           );
           }
-          
+
         } catch (copyError) {
-          console.log('Failed to copy to Downloads folder:', copyError);
-          
+
           // Fallback to temp file sharing
           try {
             const shareOptions = {
@@ -843,8 +831,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
             };
 
             await Share.open(shareOptions);
-            console.log('Statement PDF shared successfully from temp location');
-            
+
           } catch (shareError) {
             Alert.alert(
               'PDF Generated! 📄',
@@ -853,7 +840,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
             );
           }
         }
-        
+
       } else {
         throw new Error("PDF file path is null.");
       }
@@ -861,7 +848,7 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
       console.error('PDF generation error:', error);
       if (isMountedRef.current) {
         Alert.alert(
-          'PDF Generation Error', 
+          'PDF Generation Error',
           'Failed to generate the statement report. Please try again.',
           [
             { text: 'Cancel', style: 'cancel' },
@@ -888,41 +875,41 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
       const credits = filteredEntries.filter((t): t is PaidEntryWithDate => t.type === 'paid');
       const majuri = filteredEntries.filter((t): t is MajuriEntryWithDate => t.type === 'majuri');
       const agencyGeneral = filteredEntries.filter((t): t is AgencyGeneralEntryWithDate => t.type === 'agency_general');
-      
+
       const textContent = `
 🏢 YASH ROADLINES
 📊 ${selectedAgency} - Statement Report
 ${filterType === 'all' ? `
 💰 PAID (CREDIT) - ${credits.length} entries
-${credits.length > 0 ? 
-  credits.map((item, index) => 
+${credits.length > 0 ?
+  credits.map((item, index) =>
     `${index + 1}. ${formatDateTime('payment_date' in item ? item.payment_date : '')}
    Bill No: ${'bill_no' in item ? item.bill_no || 'N/A' : 'N/A'}
    Amount: ₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
-`).join('') + 
+`).join('') +
 `
 📈 Total Paid: ₹${credits.reduce((sum, item) => sum + item.amount, 0).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
 ` : 'No paid transactions found'}
 
 💸 MAJURI (DEBIT) - ${majuri.length} entries
-${majuri.length > 0 ? 
-  majuri.map((item, index) => 
+${majuri.length > 0 ?
+  majuri.map((item, index) =>
     `${index + 1}. ${formatDateTime('majuri_date' in item ? item.majuri_date : '')}
    Description: ${'description' in item ? item.description || 'N/A' : 'N/A'}
    Amount: ₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
-`).join('') + 
+`).join('') +
 `
 📉 Total Majuri: ₹${majuri.reduce((sum, item) => sum + item.amount, 0).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
 ` : 'No majuri transactions found'}
 
 🔄 GENERAL ENTRIES - ${agencyGeneral.length} entries
-${agencyGeneral.length > 0 ? 
-  agencyGeneral.map((item, index) => 
+${agencyGeneral.length > 0 ?
+  agencyGeneral.map((item, index) =>
     `${index + 1}. ${formatDateTime(item.entry_date)}
    Type: ${item.entry_type}
    Description: ${item.description || 'N/A'}
    Amount: ${item.entry_type === 'debit' ? '-' : ''}₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
-`).join('') + 
+`).join('') +
 `
 📈 Total General Entries: ₹${(agencyGeneral.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0) - agencyGeneral.filter(t => t.entry_type === 'debit').reduce((sum, t) => sum + t.amount, 0)).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
 ` : 'No general transactions found'}
@@ -937,37 +924,37 @@ Net Balance: ₹${Math.abs(totalCalculatedAmount).toLocaleString('en-IN', {maxim
 ` : `
 ${filterType === 'paid' ? `
 💰 PAID - ${credits.length} entries
-${credits.length > 0 ? 
-  credits.map((item, index) => 
+${credits.length > 0 ?
+  credits.map((item, index) =>
     `${index + 1}. ${formatDateTime('payment_date' in item ? item.payment_date : '')}
    Bill No: ${'bill_no' in item ? item.bill_no || 'N/A' : 'N/A'}
    Amount: ₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
-`).join('') + 
+`).join('') +
 `
 📈 Total Paid: ₹${credits.reduce((sum, item) => sum + item.amount, 0).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
 ` : 'No paid transactions found'}
 ` : ''}
 ${filterType === 'majuri' ? `
 💸 MAJURI - ${majuri.length} entries
-${majuri.length > 0 ? 
-  majuri.map((item, index) => 
+${majuri.length > 0 ?
+  majuri.map((item, index) =>
     `${index + 1}. ${formatDateTime('majuri_date' in item ? item.majuri_date : '')}
    Description: ${'description' in item ? item.description || 'N/A' : 'N/A'}
    Amount: ₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
-`).join('') + 
+`).join('') +
 `
 📉 Total Majuri: ₹${majuri.reduce((sum, item) => sum + item.amount, 0).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
 ` : 'No majuri transactions found'}
 ` : ''}
 ${filterType === 'agency_general' ? `
 🔄 GENERAL ENTRIES - ${agencyGeneral.length} entries
-${agencyGeneral.length > 0 ? 
-  agencyGeneral.map((item, index) => 
+${agencyGeneral.length > 0 ?
+  agencyGeneral.map((item, index) =>
     `${index + 1}. ${formatDateTime(item.entry_date)}
    Type: ${item.entry_type}
    Description: ${item.description || 'N/A'}
    Amount: ${item.entry_type === 'debit' ? '-' : ''}₹${item.amount.toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
-`).join('') + 
+`).join('') +
 `
 📈 Total General Entries: ₹${(agencyGeneral.filter(t => t.entry_type === 'credit').reduce((sum, t) => sum + t.amount, 0) - agencyGeneral.filter(t => t.entry_type === 'debit').reduce((sum, t) => sum + t.amount, 0)).toLocaleString('en-IN', {maximumFractionDigits: 2, minimumFractionDigits: 2})}
 ` : 'No general transactions found'}
@@ -984,7 +971,7 @@ Generated on: ${new Date().toLocaleString('en-IN')}
         subject: `${selectedAgency} Statement Report - ${new Date().toLocaleDateString('en-IN')}`,
       });
       Alert.alert(
-        'Success! 📄', 
+        'Success! 📄',
         `Statement report for ${selectedAgency} shared successfully!`,
         [{ text: 'OK', style: 'default' }]
       );
@@ -1018,7 +1005,7 @@ Generated on: ${new Date().toLocaleString('en-IN')}
 const renderListHeaderComponent = useMemo(() => {
     let summaryTitle = '';
     let summaryAmount = 0;
-    
+
     if (filterType === 'all') {
       const paid = filteredEntries
         .filter((t): t is PaidEntryWithDate => t.type === 'paid')
@@ -1163,8 +1150,8 @@ return (
       </TouchableOpacity>
       <Text style={styles.headerTitle}>Statement</Text>
       {statementType === 'agency' && selectedAgency && filteredEntries.length > 0 && (
-          <TouchableOpacity 
-            onPress={handleSharePress} 
+          <TouchableOpacity
+            onPress={handleSharePress}
             style={[styles.shareButton, isGeneratingPdf && styles.shareButtonDisabled]}
             disabled={isGeneratingPdf}
           >
@@ -1189,7 +1176,7 @@ return (
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        
+
         ListHeaderComponent={renderListHeaderComponent}
 
         ListEmptyComponent={() => {

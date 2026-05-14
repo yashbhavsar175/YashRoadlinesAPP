@@ -15,6 +15,8 @@ import { supabase } from '../supabase';
 import { useAlert } from '../context/AlertContext';
 import { useOffice } from '../context/OfficeContext';
 import { CommonHeader, CommonInput } from '../components';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 interface ManageCashParams {
   selectedDateKey: string; // yyyy-mm-dd
@@ -37,7 +39,7 @@ const ManageCashScreen: React.FC = () => {
   const saveAdjustment = async (newAdjustment: number) => {
     try {
       setIsLoading(true);
-      
+
       const officeId = getCurrentOfficeId();
       if (!officeId) {
         alert.showAlert('No office selected. Please select an office first.');

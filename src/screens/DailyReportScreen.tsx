@@ -1,28 +1,27 @@
 // DailyReportScreen.tsx
 import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  Alert, 
-  Text, 
-  TouchableOpacity, 
-  StatusBar, 
-  Platform, 
-  FlatList, 
-  ActivityIndicator, 
-  RefreshControl, 
-  TextInput, 
-  Image, 
-  Modal, 
-  PermissionsAndroid, 
-  Linking, 
-  ScrollView, 
+import {
+  View,
+  StyleSheet,
+  Alert,
+  Text,
+  TouchableOpacity,
+  StatusBar,
+  Platform,
+  FlatList,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+  Image,
+  Modal,
+  PermissionsAndroid,
+  Linking,
+  ScrollView,
   Dimensions,
-  useWindowDimensions  
+  useWindowDimensions
 } from 'react-native';
-import { NavigationProp, useFocusEffect } from '@react-navigation/native';
+import { NavigationProp, useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
-import { useIsFocused } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const { width, height } = Dimensions.get('window');
@@ -37,14 +36,14 @@ const scale = (size: number) => {
 
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
-import { 
-  deleteTransactionByIdImproved, 
+import {
+  deleteTransactionByIdImproved,
   getAllTransactionsForDate,
   getProfile,
-  AgencyPayment, 
-  AgencyMajuri, 
-  DriverTransaction, 
-  GeneralEntry, 
+  AgencyPayment,
+  AgencyMajuri,
+  DriverTransaction,
+  GeneralEntry,
   TruckFuelEntry,
   AgencyEntry,
   OFFLINE_KEYS,
@@ -72,6 +71,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useOffice } from '../context/OfficeContext';
 
 import DeviceNotificationService from '../services/DeviceNotificationService';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 
@@ -114,8 +115,8 @@ const formatDateKey = (date: Date): string => {
   return `${y}-${m}-${d}`;
 };
 
-const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isExpanded, isAdmin, isSelected, selectionMode, onDelete }: { 
-  item: TransactionItem; 
+const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isExpanded, isAdmin, isSelected, selectionMode, onDelete }: {
+  item: TransactionItem;
   index: number;
   onPress: (id: string) => void;
   onLongPress: (id: string) => void;
@@ -127,21 +128,21 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
 }) => {
   const { width } = useWindowDimensions();
   const lastTap = useRef<number | null>(null);
-  
+
   // Memoized responsive calculations
   const isSmallScreen = useMemo(() => width < 375, [width]);
-  
+
   const handlePress = useCallback((e?: any) => {
     e?.stopPropagation();
     if (!selectionMode) {
       onPress(item.id);
     }
   }, [onPress, item, selectionMode]);
-  
+
   const handleLongPress = useCallback(() => {
     onLongPress(item.id);
   }, [onLongPress, item.id]);
-  
+
   const handleDelete = useCallback((e: any) => {
     e.stopPropagation();
     onDelete?.(item.id);
@@ -149,7 +150,7 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
 
   return (
     <View style={styles.transactionItem}>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[
           styles.transactionItem,
           isSelected && styles.selectedItem,
@@ -165,24 +166,24 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
       >
         <View style={styles.transactionContent}>
           <View style={[styles.transactionLabelContainer, { maxWidth: isSmallScreen ? '60%' : '70%' }]}>
-            <Text 
+            <Text
               style={[
-                styles.transactionLabel, 
+                styles.transactionLabel,
                 isExpanded && styles.expandedLabel,
                 { fontSize: isSmallScreen ? 14 : 16 }
-              ]} 
-              numberOfLines={1} 
+              ]}
+              numberOfLines={1}
               ellipsizeMode="tail"
             >
               {item.label}
             </Text>
             {item.subLabel && (
-              <Text 
+              <Text
                 style={[
                   styles.transactionSubLabel,
                   { fontSize: isSmallScreen ? 12 : 14 }
-                ]} 
-                numberOfLines={1} 
+                ]}
+                numberOfLines={1}
                 ellipsizeMode="tail"
               >
                 {item.subLabel}
@@ -191,8 +192,8 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
           </View>
           <View style={styles.amountContainer}>
             <Text style={[
-              styles.transactionAmount, 
-              { 
+              styles.transactionAmount,
+              {
                 color: item.type === 'credit' ? Colors.success : Colors.error,
                 fontSize: isSmallScreen ? 14 : 16
               }
@@ -204,7 +205,7 @@ const TransactionItemComponent = memo(({ item, index, onPress, onLongPress, isEx
                 {item.time}
               </Text>
               {isAdmin && !selectionMode && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={handleDelete}
                   style={styles.deleteButton}
                   hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
@@ -256,10 +257,10 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   const { showAlert } = alert;
   const isFocused = useIsFocused();
   const isMountedRef = useRef(true);
-  
+
   // Office Context
   const { currentOffice, getCurrentOfficeId } = useOffice();
-  
+
   // UI State
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -278,37 +279,34 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   const [previewBusy, setPreviewBusy] = useState(false);
   const [gallerySelectionMode, setGallerySelectionMode] = useState(false);
   const [selectedGallery, setSelectedGallery] = useState<Set<string>>(new Set());
-  
+
   // Transaction Data
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [totalCredit, setTotalCredit] = useState<number>(0);
   const [totalDebit, setTotalDebit] = useState<number>(0);
   const [netBalance, setNetBalance] = useState<number>(0); // This will be credit - debit + cash adjustment
   const [manageCashAdjustment, setManageCashAdjustment] = useState<number>(0);
-  
+
   // Debug: Log when transactions state changes
   useEffect(() => {
-    console.log('🔄 Transactions state changed:', transactions.length, 'items');
     if (transactions.length > 0) {
-      console.log('📊 Current transactions in state:', JSON.stringify(transactions, null, 2));
     } else {
-      console.log('⚠️ Transactions state is empty!');
     }
   }, [transactions]);
-  
+
   // User & Auth State
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminUserId, setAdminUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<any>(null);
-  
+
   // Selection & Expansion
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedAgencyId, setExpandedAgencyId] = useState<string | null>(null);
-  
+
   // Editing State
-  
+
   // Constants
   const PROOF_BUCKET = 'paid_proofs';
   const DOUBLE_TAP_DELAY = 300; // milliseconds
@@ -327,11 +325,11 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       await deleteTransactionByIdImproved(item.id, item.storageKey);
       setRefreshKey(prev => prev + 1);
       showAlert('Transaction deleted successfully');
-      
+
       // Trigger detailed admin notification for delete
       if (profile) {
         const userName = profile.username || profile.name || 'User';
-        
+
         // Create detailed delete audit message
         const deleteDetails = {
           id: item.id,
@@ -343,9 +341,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           deletedAt: new Date().toLocaleString(),
           storageKey: item.storageKey
         };
-        
+
         const detailedMessage = `DELETED: ${deleteDetails.type} - ₹${deleteDetails.amount} | "${deleteDetails.description}" | Time: ${deleteDetails.time} | Deleted by: ${userName} | Date: ${deleteDetails.deletedAt}`;
-        
+
         // Send device notification with full details
         await DeviceNotificationService.notifyAdminEntryDeleted(
           item.label || 'Entry',
@@ -447,34 +445,24 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
   // Load profile, cash adjustment and transactions when selectedDate changes
   useEffect(() => {
-    console.log('🚀 useEffect triggered for selectedDate:', selectedDate.toISOString().split('T')[0]);
     const loadData = async (forceClearCache = false) => {
-      console.log('🔄 Loading data for date:', selectedDate.toISOString().split('T')[0]);
       try {
         // Clear cache if requested to get fresh data (e.g., from handleRefresh)
         if (forceClearCache) {
-          console.log('🧹 Clearing cache for fresh data...');
           await clearAllCache();
         }
-        
-        console.log('📋 Loading profile...');
+
         await loadProfile();
-        
+
         // Load cash adjustment first
-        console.log('💰 Loading cash adjustment for date:', selectedDate.toISOString().split('T')[0]);
-        const cashAdjustment = await loadManageCashAdjustment(selectedDate); 
-        console.log('💰 Cash adjustment loaded:', cashAdjustment);
+        const cashAdjustment = await loadManageCashAdjustment(selectedDate);
         setManageCashAdjustment(cashAdjustment || 0);
-        
+
         // Then load transactions with the correct cash adjustment
-        console.log('📊 Loading transactions for date:', selectedDate.toISOString().split('T')[0]);
         setLoading(true);
         const currentOfficeId = getCurrentOfficeId();
-        console.log('🏢 Loading transactions for office:', currentOfficeId, currentOffice?.name);
         const allTransactions = await getAllTransactionsForDate(selectedDate, currentOfficeId || undefined);
-        console.log('📊 AUTO REFRESH: Raw transactions loaded:', allTransactions.length, 'items');
-        console.log('📊 AUTO REFRESH: Raw transactions details:', JSON.stringify(allTransactions, null, 2));
-        
+
         const groupedPayments = new Map<string, { amount: number; count: number; date: string; transactions: AgencyPayment[] }>();
         const agencyEntries: AgencyEntry[] = [];
         const otherTransactions: (DriverTransaction | GeneralEntry | TruckFuelEntry | UppadJamaEntry | AgencyMajuri)[] = [];
@@ -489,14 +477,13 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             new Date().toISOString();
 
           // Filter out UppadJama entries from Admin Panel
-          if ('person_name' in item && 'entry_type' in item && (item as any).description && 
+          if ('person_name' in item && 'entry_type' in item && (item as any).description &&
               (item as any).description.includes('Admin Panel')) {
             return;
           }
 
           // Filter out UppadJama entries from Personal Wallet (not business cash)
           if ('person_name' in item && 'entry_type' in item && (item as any).payment_source === 'personal_wallet') {
-            console.log('🚫 Skipping personal wallet entry:', item);
             return;
           }
 
@@ -580,7 +567,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             dateKey = uppadJamaItem.entry_date;
           } else if ('entry_type' in item) {
             const generalItem = item as GeneralEntry;
-            
+
             // Skip duplicate Mumbai delivery payment entries (created by old code)
             // These entries have "Mumbai Delivery Payment" in description
             // Now confirmed Mumbai entries show directly from agency_entries table
@@ -590,19 +577,22 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             } else {
               transactionType = generalItem.entry_type;
               label = generalItem.description || 'General Entry';
-              
+
               // IMPORTANT: Check for "Yash Roadlines GPay" FIRST before "Mumbai Delivery"
               // because "Yash Roadlines GPay - Mumbai Delivery" contains both strings
               if (desc.includes('yash roadlines gpay') && (generalItem as any).metadata) {
                 // Special formatting for Yash Roadlines GPay entries
+                console.log('🔍 Found Yash Roadlines GPay entry with metadata:', {
+                  id: generalItem.id,
+                  description: generalItem.description,
+                  amount: generalItem.amount,
+                  entry_type: generalItem.entry_type,
+                });
                 try {
-                  console.log('🔍 Yash Roadlines GPay entry found (with metadata):', generalItem);
                   const metadata = JSON.parse((generalItem as any).metadata);
-                  console.log('📦 Parsed metadata:', metadata);
                   label = generalItem.description || 'Yash Roadlines GPay';
                   // Show billty_no in subLabel as per requirement
                   subLabel = `Billty No: ${metadata.billty_no || 'N/A'}`;
-                  console.log('✅ Formatted label:', label, 'subLabel:', subLabel);
                 } catch (e) {
                   // Fallback to default formatting
                   console.error('❌ Error parsing Yash Roadlines GPay metadata:', e);
@@ -611,21 +601,30 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                 }
               } else if (desc.includes('yash roadlines gpay')) {
                 // Handle Yash Roadlines GPay entries without metadata (old format)
-                console.log('🔍 Yash Roadlines GPay entry found (without metadata):', generalItem);
+                console.log('🔍 Found Yash Roadlines GPay entry without metadata:', {
+                  id: generalItem.id,
+                  description: generalItem.description,
+                  amount: generalItem.amount,
+                  entry_type: generalItem.entry_type,
+                });
                 // Try to extract billty_no from description
                 const parts = generalItem.description.split(' - ');
                 if (parts.length >= 3) {
                   // Format: "Yash Roadlines GPay - Mumbai Delivery - 1234"
                   label = `${parts[0]} - ${parts[1]}`; // "Yash Roadlines GPay - Mumbai Delivery"
                   subLabel = `Billty No: ${parts[2]}`; // "1234"
-                  console.log('✅ Formatted from parts - label:', label, 'subLabel:', subLabel);
                 } else {
                   label = generalItem.description || 'Yash Roadlines GPay';
                   subLabel = 'Billty details';
-                  console.log('⚠️ Could not parse parts, using fallback');
                 }
               } else if (desc.includes('mumbai delivery') && (generalItem as any).metadata) {
                 // Special formatting for Mumbai Delivery entries with metadata
+                console.log('🔍 Found Mumbai Delivery entry with metadata:', {
+                  id: generalItem.id,
+                  description: generalItem.description,
+                  amount: generalItem.amount,
+                  entry_type: generalItem.entry_type,
+                });
                 try {
                   const metadata = JSON.parse((generalItem as any).metadata);
                   // Description already has "Mumbai Delivery - billty_no" format
@@ -658,7 +657,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                 const agency = (generalItem as any).agency_name;
                 subLabel = agency ? `Agency: ${agency}` : `Desc: ${generalItem.description || 'N/A'}`;
               }
-              
+
               amount = generalItem.amount;
               storageKey = OFFLINE_KEYS.GENERAL_ENTRIES;
               dateKey = generalItem.entry_date;
@@ -711,22 +710,22 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           })
           .map(item => {
             const time = new Date(item.entry_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-            
+
             // Special formatting for Mumbai deliveries (old format)
             let label = item.description || 'Agency Entry';
             let subLabel = `Agency: ${item.agency_name}`;
-            
+
             // For old Mumbai confirmed entries (without payment_type), format them nicely
             if (item.agency_name === 'Mumbai' && item.confirmation_status === 'confirmed') {
               // Try to extract billty_no from description or use billty_no field
               const billtyNo = item.billty_no || 'N/A';
               const consigneeName = item.consignee_name || 'N/A';
               const itemDesc = item.item_description || 'Item details';
-              
+
               label = `Mumbai Delivery - ${billtyNo}`;
               subLabel = `${consigneeName} | ${itemDesc}`;
             }
-            
+
             return {
               id: item.id,
               type: item.entry_type,
@@ -742,15 +741,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           });
 
         const allProcessedTransactions = [...processedGroupedTransactions, ...processedOtherTransactions, ...processedAgencyEntries];
-        
-        console.log('📊 AUTO REFRESH: All processed transactions before sorting:', allProcessedTransactions.length);
-        console.log('📊 AUTO REFRESH: Processed transactions details:', JSON.stringify(allProcessedTransactions, null, 2));
-        
+
+
         // Sort like manual refresh: credits first, then debits, each sorted by time
         const credits = allProcessedTransactions.filter(t => t.type === 'credit');
         const debits = allProcessedTransactions.filter(t => t.type === 'debit');
-        
-        console.log('📊 AUTO REFRESH: Credits:', credits.length, 'Debits:', debits.length);
+
 
         const sortedTransactions = [...credits, ...debits].sort((a, b) => {
           const timeA = new Date(`2024-01-01 ${a.time}`).getTime();
@@ -758,14 +754,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           return timeB - timeA;
         });
 
-        console.log('📊 AUTO REFRESH: Sorted transactions:', sortedTransactions.length);
         setTransactions(sortedTransactions);
-        console.log('✅ AUTO REFRESH: Transactions set in state');
-        console.log('✅ AUTO REFRESH: Transactions processed:', sortedTransactions.length, 'items');
-        console.log('📊 AUTO REFRESH: Processed transactions details:', JSON.stringify(sortedTransactions, null, 2));
-        
+
         // Calculate and update totals using the loaded cash adjustment
-        console.log('🧮 AUTO REFRESH: Starting calculations...');
         const creditTotal = sortedTransactions
           .filter(tx => tx.type === 'credit')
           .reduce((sum, tx) => sum + tx.amount, 0);
@@ -776,18 +767,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
         // Calculate net total with the correct cash adjustment
         const netTotal = creditTotal - debitTotal + (cashAdjustment || 0);
-        
-        console.log('🧮 AUTO REFRESH: Calculations:');
-        console.log('   Credit Total:', creditTotal);
-        console.log('   Debit Total:', debitTotal);
-        console.log('   Cash Adjustment:', cashAdjustment || 0);
-        console.log('   Net Total:', netTotal);
-        
+
+
         setNetBalance(netTotal);
         setTotalCredit(creditTotal);
         setTotalDebit(debitTotal);
-        console.log('✅ AUTO REFRESH: All totals updated in state');
-        
+
       } catch (error) {
         console.error('❌ Error loading data:', error);
         handleError(error, 'loading data');
@@ -796,11 +781,10 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         setTotalDebit(0);
         setNetBalance(0);
       } finally {
-        console.log('🏁 Loading finished');
         setLoading(false);
       }
     };
-    
+
     loadData();
   }, [selectedDate, currentOffice, showAlert]);
 
@@ -811,11 +795,10 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       let active = true;
       (async () => {
         try {
-          console.log('🔄 Screen focused - refreshing data...');
           // Reload cash adjustment
           const adj = await loadManageCashAdjustment(selectedDate);
           if (active) setManageCashAdjustment(adj || 0);
-          
+
           // Reload transactions to get any new backdated entries
           if (active) {
             setRefreshKey(prev => prev + 1);
@@ -868,7 +851,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           buttonPositive: 'OK',
         }
       );
-      
+
       if (result === PermissionsAndroid.RESULTS.GRANTED) {
         return true;
       } else if (result === PermissionsAndroid.RESULTS.DENIED) {
@@ -1048,10 +1031,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         const { data: files, error } = await supabase.storage.from(PROOF_BUCKET).list(txnId, { limit: 100 });
         if (!error) updates[txnId] = files?.length || 0;
       }));
-      
+
       if (isMountedRef.current) setProofCounts(prev => ({ ...prev, ...updates }));
     } catch (e) {
-      console.log('refreshProofCounts error:', e);
     }
   }, []);
 
@@ -1062,7 +1044,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       if (PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES) {
         const hasMediaPermission = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES);
         if (hasMediaPermission) return true;
-        
+
         const result = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
           {
@@ -1073,7 +1055,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             buttonPositive: 'OK',
           }
         );
-        
+
         if (result === PermissionsAndroid.RESULTS.GRANTED) {
           return true;
         } else if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
@@ -1090,11 +1072,11 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         showAlert('Photos permission denied. You can enable it manually from app settings.');
         return false;
       }
-      
+
       // Fallback for older Android versions
       const hasStoragePermission = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
       if (hasStoragePermission) return true;
-      
+
       const result = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
         {
@@ -1105,7 +1087,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           buttonPositive: 'OK',
         }
       );
-      
+
       if (result === PermissionsAndroid.RESULTS.GRANTED) {
         return true;
       } else if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
@@ -1278,14 +1260,11 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   }, [isAdmin, currentUserId]);
 
   const loadDailyTransactions = useCallback(async (dateToLoad: Date) => {
-    console.log('🔄 loadDailyTransactions called for date:', dateToLoad.toISOString().split('T')[0]);
     if (!isMountedRef.current) {
-      console.log('⚠️ Component not mounted, skipping load');
       return;
     }
-    
+
     try {
-      console.log('🧹 Clearing gallery state...');
       setLoading(true);
       setProofCounts({});
       setGalleryVisible(false);
@@ -1295,13 +1274,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       setSelectedPhoto(null);
       setGallerySelectionMode(false);
       setSelectedGallery(new Set());
-      
-      console.log('📊 MANUAL REFRESH: Loading raw transactions...');
+
       const currentOfficeId = getCurrentOfficeId();
-      console.log('🏢 MANUAL REFRESH: Loading transactions for office:', currentOfficeId, currentOffice?.name);
       const allTransactions = await getAllTransactionsForDate(dateToLoad, currentOfficeId || undefined); // This now includes majuri
-      console.log('📊 MANUAL REFRESH: Raw transactions loaded:', allTransactions.length, 'items');
-      console.log('📊 MANUAL REFRESH: Raw transactions details:', JSON.stringify(allTransactions, null, 2));
 
       const groupedPayments = new Map<string, { amount: number; count: number; date: string; transactions: AgencyPayment[] }>();
       const agencyEntries: AgencyEntry[] = [];
@@ -1317,7 +1292,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           new Date().toISOString();
 
         // Filter out UppadJama entries from Admin Panel
-        if ('person_name' in item && 'entry_type' in item && (item as any).description && 
+        if ('person_name' in item && 'entry_type' in item && (item as any).description &&
             (item as any).description.includes('Admin Panel')) {
           // Skip admin panel uppad/jama entries
           return;
@@ -1367,13 +1342,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
               return false; // Skip this duplicate entry
             }
           }
-          
+
           // ✅ FIX: Filter out Personal Wallet entries (same as auto-refresh)
           if ('person_name' in item && 'entry_type' in item && (item as any).payment_source === 'personal_wallet') {
-            console.log('🚫 MANUAL REFRESH: Skipping personal wallet entry:', item);
             return false; // Skip this entry
           }
-          
+
           return true; // Keep all other entries
         })
         .map(item => {
@@ -1383,7 +1357,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         let amount = 0;
         let storageKey = '';
         let dateKey = new Date().toISOString();
-        
+
         if ('majuri_date' in item && 'agency_name' in item) { // Handle individual Majuri entries
           transactionType = 'debit';
           label = `Majuri: ${item.agency_name}`;
@@ -1420,19 +1394,16 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           const desc = (item.description || '').toLowerCase();
           // Show description instead of "General Entry" heading
           label = item.description || 'General Entry';
-          
+
           // IMPORTANT: Check for "Yash Roadlines GPay" FIRST before "Mumbai Delivery"
           // because "Yash Roadlines GPay - Mumbai Delivery" contains both strings
           if (desc.includes('yash roadlines gpay') && (item as any).metadata) {
             // Special formatting for Yash Roadlines GPay entries
             try {
-              console.log('🔍 MANUAL REFRESH: Yash Roadlines GPay entry found (with metadata):', item);
               const metadata = JSON.parse((item as any).metadata);
-              console.log('📦 MANUAL REFRESH: Parsed metadata:', metadata);
               label = item.description || 'Yash Roadlines GPay';
               // Show billty_no in subLabel as per requirement
               subLabel = `Billty No: ${metadata.billty_no || 'N/A'}`;
-              console.log('✅ MANUAL REFRESH: Formatted label:', label, 'subLabel:', subLabel);
             } catch (e) {
               // Fallback to default formatting
               console.error('❌ MANUAL REFRESH: Error parsing Yash Roadlines GPay metadata:', e);
@@ -1441,18 +1412,15 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             }
           } else if (desc.includes('yash roadlines gpay')) {
             // Handle Yash Roadlines GPay entries without metadata (old format)
-            console.log('🔍 MANUAL REFRESH: Yash Roadlines GPay entry found (without metadata):', item);
             // Try to extract billty_no from description
             const parts = item.description.split(' - ');
             if (parts.length >= 3) {
               // Format: "Yash Roadlines GPay - Mumbai Delivery - 1234"
               label = `${parts[0]} - ${parts[1]}`; // "Yash Roadlines GPay - Mumbai Delivery"
               subLabel = `Billty No: ${parts[2]}`; // "1234"
-              console.log('✅ MANUAL REFRESH: Formatted from parts - label:', label, 'subLabel:', subLabel);
             } else {
               label = item.description || 'Yash Roadlines GPay';
               subLabel = 'Billty details';
-              console.log('⚠️ MANUAL REFRESH: Could not parse parts, using fallback');
             }
           } else if (desc.includes('mumbai delivery') && (item as any).metadata) {
             // Special formatting for Mumbai Delivery entries with metadata
@@ -1483,7 +1451,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           } else {
             subLabel = agency ? `Agency: ${agency}` : '';
           }
-          
+
           amount = item.amount;
           storageKey = OFFLINE_KEYS.GENERAL_ENTRIES;
           dateKey = item.entry_date;
@@ -1501,7 +1469,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           originalTransactions: [item as any],
         };
       });
-      
+
       const processedAgencyEntries: TransactionItem[] = agencyEntries
         .filter(item => {
           // Skip Mumbai confirmed entries - they show via general_entries now
@@ -1517,15 +1485,15 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         })
         .map(item => {
         const time = new Date(item.entry_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-        
+
         // Special formatting for Mumbai deliveries
         let label = item.description || 'Agency Entry';
         let subLabel = `Agency: ${item.agency_name}`;
-        
+
         // Mumbai confirmed entries should NOT show here anymore
         // They are now handled via general_entries created during confirmation
         // This prevents duplicate display
-        
+
         return {
           id: item.id,
           type: item.entry_type,
@@ -1542,13 +1510,10 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       const validTransactions = [...processedGroupedTransactions, ...processedOtherTransactions, ...processedAgencyEntries]
         .filter(t => t && t.amount > 0);
 
-      console.log('📊 MANUAL REFRESH: Valid transactions after filtering:', validTransactions.length);
-      console.log('📊 MANUAL REFRESH: Valid transactions details:', JSON.stringify(validTransactions, null, 2));
 
       const credits = validTransactions.filter(t => t.type === 'credit');
       const debits = validTransactions.filter(t => t.type === 'debit');
-      
-      console.log('📊 MANUAL REFRESH: Credits:', credits.length, 'Debits:', debits.length);
+
 
       const sortedTransactions = [...credits, ...debits].sort((a, b) => {
         const timeA = new Date(`2024-01-01 ${a.time}`).getTime();
@@ -1557,24 +1522,17 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       });
 
       if (!isMountedRef.current) {
-        console.log('⚠️ Component not mounted, skipping state update');
         return;
       }
-      
-      console.log('✅ MANUAL REFRESH: Transactions processed:', sortedTransactions.length, 'items');
-      console.log('📊 MANUAL REFRESH: Processed transactions details:', JSON.stringify(sortedTransactions, null, 2));
-      
-      console.log('💾 MANUAL REFRESH: Setting transactions in state...');
+
+
       setTransactions(sortedTransactions);
-      console.log('✅ MANUAL REFRESH: Transactions set in state');
       // Refresh proof counts so gallery icon doesn't disappear on refresh
       refreshProofCounts(sortedTransactions);
 
       const calculateTotals = (transactions: TransactionItem[]) => {
         try {
-          console.log('🧮 MANUAL REFRESH: Calculating totals for', transactions.length, 'transactions');
-          console.log('🧮 MANUAL REFRESH: Current manageCashAdjustment:', manageCashAdjustment);
-          
+
           const creditTotal = transactions
             .filter(tx => tx.type === 'credit')
             .reduce((sum, tx) => sum + tx.amount, 0);
@@ -1585,21 +1543,15 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
           // Calculate net total with cash adjustment
           const netTotal = creditTotal - debitTotal + manageCashAdjustment;
-          
-          console.log('🧮 MANUAL REFRESH: Calculations:');
-          console.log('   Credit Total:', creditTotal);
-          console.log('   Debit Total:', debitTotal);
-          console.log('   Cash Adjustment:', manageCashAdjustment);
-          console.log('   Net Total:', netTotal);
-          
+
+
           if (isMountedRef.current) {
             // Set netBalance to just the day's net total
             setNetBalance(netTotal);
             setTotalCredit(creditTotal);
             setTotalDebit(debitTotal);
-            console.log('✅ MANUAL REFRESH: All totals updated in state');
           }
-          
+
           return { creditTotal, debitTotal, netTotal };
         } catch (e) {
           console.error('❌ MANUAL REFRESH: Error calculating totals:', e);
@@ -1627,23 +1579,16 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
   }, []);
 
   const handleRefresh = async () => {
-    console.log('🔄 MANUAL REFRESH started for date:', selectedDate.toISOString().split('T')[0]);
     setRefreshing(true);
     try {
-      console.log('🧹 MANUAL REFRESH: Clearing cache for fresh data...');
       await clearAllCache();
-      
-      console.log('🔄 MANUAL REFRESH: Syncing all data...');
+
       await syncAllDataFixed();
-      
-      console.log('💰 MANUAL REFRESH: Reloading cash adjustment...');
+
       const cashAdj = await loadManageCashAdjustment(selectedDate);
-      console.log('💰 MANUAL REFRESH: Cash adjustment loaded:', cashAdj);
       setManageCashAdjustment(cashAdj || 0);
-      
-      console.log('🔄 MANUAL REFRESH: Loading daily transactions...');
+
       await loadDailyTransactions(selectedDate);
-      console.log('✅ MANUAL REFRESH completed successfully');
     } catch (error) {
       console.error('❌ MANUAL REFRESH: Sync failed:', error);
       await loadDailyTransactions(selectedDate);
@@ -1652,22 +1597,19 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
   // Handle date change
   const handleDateChange = useCallback((event: any, date?: Date) => {
-    console.log('📅 Date change event triggered:', date?.toISOString().split('T')[0]);
-    
+
     // Hide the date picker on Android after selection
     if (Platform.OS === 'android') {
       setShowDatePicker(false);
     }
-    
+
     if (date) {
-      console.log('📅 Setting new selected date:', date.toISOString().split('T')[0]);
       setSelectedDate(date);
       // Reset cash adjustment for new date; will be loaded from DB
-      console.log('💰 Resetting cash adjustment to 0');
       setManageCashAdjustment(0);
       // Load from supabase (assuming loadManageCashAdjustment is a function that fetches this)
       // The function `loadManageCashAdjustment` is not defined in the provided context.
-      // If it's meant to be a call to a function, it needs to be defined or imported. 
+      // If it's meant to be a call to a function, it needs to be defined or imported.
     }
   }, []);
 
@@ -1676,7 +1618,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     try {
       const dateKey = formatDateKey(date);
       const officeId = getCurrentOfficeId();
-      
+
       if (!officeId) {
         console.warn('No office selected, cannot load cash adjustment');
         return 0;
@@ -1693,7 +1635,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       return 0;
     }
   }, [getCurrentOfficeId]);
-  
+
   // REMOVED: Edit functionality has been disabled
   // const handleEditItemInternal = useCallback(async (item: TransactionItem) => { ... }, [isAdmin, currentUserId, showAlert]);
 
@@ -1705,7 +1647,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     try {
       const dateKey = formatDateKey(date);
       const officeId = getCurrentOfficeId();
-      
+
       if (!officeId) {
         console.warn('No office selected, cannot save cash adjustment');
         return;
@@ -1734,20 +1676,20 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           onPress: async () => {
             setLoading(true);
             const allItemsMap = new Map<string, { id: string, storageKey: string, item: any }>();
-            
+
             // Collect detailed info for each transaction to be deleted
             transactions.forEach(t => {
               if (t.originalTransactions) {
                 t.originalTransactions.forEach((sub: any) => {
-                  allItemsMap.set(sub.id, { 
-                    id: sub.id, 
+                  allItemsMap.set(sub.id, {
+                    id: sub.id,
                     storageKey: t.storageKey,
                     item: sub // Store full item data for audit
                   });
                 });
               } else {
-                allItemsMap.set(t.id, { 
-                  id: t.id, 
+                allItemsMap.set(t.id, {
+                  id: t.id,
                   storageKey: t.storageKey,
                   item: t // Store full item data for audit
                 });
@@ -1756,7 +1698,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
             let successCount = 0;
             const deletedItems = []; // Track successfully deleted items for audit
-            
+
             for (const id of selectedIds) {
               const itemToDelete = allItemsMap.get(id);
               if (itemToDelete) {
@@ -1783,14 +1725,14 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             // Send detailed notifications for bulk deletions
             if (successCount > 0 && profile) {
               const userName = profile.username || profile.name || 'User';
-              
+
               // Create detailed audit trail for bulk delete
-              const deleteSummary = deletedItems.map((item, index) => 
+              const deleteSummary = deletedItems.map((item, index) =>
                 `${index + 1}. ${item.type} - ₹${item.amount} | Person: ${item.personName} | "${item.description}" | Time: ${item.time}`
               ).join('\n');
-              
+
               const detailedMessage = `BULK DELETE by ${userName} at ${new Date().toLocaleString()}\n${successCount} transactions deleted:\n${deleteSummary}`;
-              
+
               // Note: Individual delete notifications are sent by Storage.ts deleteEntry function
               // No need to send bulk notification here to avoid duplicates
             }
@@ -1822,14 +1764,14 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     }
   };
 
-  
+
   // REMOVED: Edit functionality has been disabled
   // const handleUpdateSave = async () => { ... };
-  
+
   const handleDeleteEntry = useCallback((id: string, storageKey: string, label: string, item?: any) => {
     Alert.alert(
       "Confirm Delete",
-      `Are you sure you want to remove this transaction?\n\n"${label}"\n\nThis action cannot be undone.`, 
+      `Are you sure you want to remove this transaction?\n\n"${label}"\n\nThis action cannot be undone.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -1841,11 +1783,11 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
               if (success) {
                 showAlert('Transaction deleted');
                 await loadDailyTransactions(selectedDate);
-                
+
                 // Send detailed notifications for individual delete
                 if (profile) {
                   const userName = profile.username || profile.name || 'User';
-                  
+
                   // Extract detailed information for audit trail
                   const deleteDetails = {
                     id: id,
@@ -1859,9 +1801,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
                     deletedAt: new Date().toLocaleString(),
                     storageKey: storageKey
                   };
-                  
+
                   const detailedMessage = `DELETED: ${deleteDetails.type} - ₹${deleteDetails.amount} | Person: ${deleteDetails.personName} | "${deleteDetails.description}" | Original Time: ${deleteDetails.time} | Deleted by: ${userName} | Deleted at: ${deleteDetails.deletedAt}`;
-                  
+
                   // Note: Delete notification is sent by Storage.ts deleteEntry function
                   // No need to send notification here to avoid duplicates
                 }
@@ -1902,7 +1844,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
     // Check if this is a group parent item
     const isGroupParent = item.agencyName && item.originalTransactions && item.originalTransactions.length > 1;
     const isProcessedGroup = item.id.includes('paid-group-') || item.id.includes('majuri-group-');
-    
+
     if (isGroupParent || isProcessedGroup) {
       // This is a group parent - only allow expansion
       toggleExpansion(item.id);
@@ -1928,7 +1870,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
     return (
       <View key={item.id} style={styles.listItemContainer}>
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => handleItemPress(item)}
           onLongPress={() => {
             if (!selectionMode && canSelect) {
@@ -1970,7 +1912,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
               )}
             </View>
             <View style={styles.amountContainer}>
-              <Text 
+              <Text
                 style={[
                   styles.amountText,
                   item.type === 'credit' ? styles.creditText : styles.debitText
@@ -2311,44 +2253,37 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         height: 842,
       };
 
-      console.log('Generating Daily Report PDF...');
-      console.log('generatePDF function:', generatePDF);
-      
+
       if (!generatePDF) {
         throw new Error('generatePDF function is not available. Please restart the app and try again.');
       }
-      
+
       const tempPdf = await generatePDF(tempPdfOptions);
-      
+
       if (tempPdf && tempPdf.filePath) {
-        console.log('Temp PDF generated successfully at:', tempPdf.filePath);
-        
+
         // Create organized folder structure (Downloads on Android, Documents on iOS)
         const pdfFileName = `${fileName}.pdf`;
         const baseDir = Platform.OS === 'android' ? RNFS.DownloadDirectoryPath : RNFS.DocumentDirectoryPath;
         const appFolderPath = `${baseDir}/Yash Roadlines`;
         const dailyFolderPath = `${appFolderPath}/Daily Report`;
         const finalFilePath = `${dailyFolderPath}/${pdfFileName}`;
-        
+
         // Create directories if they don't exist
         try { await RNFS.mkdir(appFolderPath); } catch {}
         try { await RNFS.mkdir(dailyFolderPath); } catch {}
-        console.log('Created folder structure in Downloads:', dailyFolderPath);
-        
+
         try {
           // Copy file to organized folder in Downloads
           await RNFS.copyFile(tempPdf.filePath, finalFilePath);
-          console.log('PDF copied to organized Downloads folder:', finalFilePath);
-          
+
           // Clean up temp file
           await RNFS.unlink(tempPdf.filePath).catch(() => {
-            console.log('Could not delete temp file');
           });
-          
+
           // Try sharing the PDF file from organized Downloads folder
           try {
-            console.log('Attempting to share Daily Report PDF from organized Downloads folder:', finalFilePath);
-            
+
             const shareOptions = {
               title: 'Share Daily Report',
               message: `Daily Report for ${selectedDate.toLocaleDateString()}`,
@@ -2357,11 +2292,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             };
 
             await Share.open(shareOptions);
-            console.log('Daily Report PDF shared successfully from Downloads folder');
-            
+
           } catch (shareError) {
-            console.log('Sharing failed, showing Downloads location:', shareError);
-            
+
             // Show success message with organized folder location
             const folderHint = Platform.OS === 'android'
               ? 'File Manager > Downloads > Yash Roadlines > Daily Report'
@@ -2371,10 +2304,9 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
               : 'Documents/Yash Roadlines/Daily Report/';
             showAlert('PDF saved to Downloads/Yash Roadlines');
           }
-          
+
         } catch (copyError) {
-          console.log('Failed to copy to Downloads folder:', copyError);
-          
+
           // Fallback to temp file sharing
           try {
             const shareOptions = {
@@ -2385,13 +2317,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             };
 
             await Share.open(shareOptions);
-            console.log('Daily Report PDF shared successfully from temp location');
-            
+
           } catch (shareError) {
             showAlert('PDF generated');
           }
         }
-        
+
       } else {
         throw new Error("PDF file path is null.");
       }
@@ -2406,7 +2337,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       }
     }
   };
-  
+
   const renderTotals = () => {
     return (
       <View style={styles.totalsContainer}>
@@ -2429,7 +2360,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         <View style={styles.netBalanceContainer}>
           <View style={styles.netBalanceHeader}>
             <Text style={styles.netBalanceLabel}>Net Balance</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => {
                 const dateKey = formatDateKey(selectedDate);
                 navigation.navigate('ManageCash', {
@@ -2486,12 +2417,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             onChange={handleDateChange}
           />
         )}
-        
+
         {/* Summary Section at the Top */}
         <View style={styles.summaryContainer}>
           {renderTotals()}
         </View>
-        
+
         {/* Transaction List */}
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -2514,7 +2445,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           />
         )}
       </View>
-      
+
       {/* Gallery Modal */}
       {galleryVisible && (
         <Modal
@@ -2616,7 +2547,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#e3f2fd',
   },
-  
+
   // Transaction List Item Styles
   listItemContainer: {
     marginBottom: 8,
@@ -2754,7 +2685,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  
+
   // Header
   header: {
     flexDirection: 'row',
@@ -2804,7 +2735,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 16,
   },
-  
+
   // Date Selector
   dateSelector: {
     flexDirection: 'row',
@@ -2820,7 +2751,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
   },
-  
+
   // Loading
   loadingContainer: {
     flex: 1,
@@ -2833,7 +2764,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.textSecondary,
   },
-  
+
   // List
   listContent: {
     paddingBottom: 10,
@@ -2890,7 +2821,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
-  
+
   expandedSection: {
     backgroundColor: Colors.surface,
     marginHorizontal: 12,
@@ -2923,7 +2854,7 @@ const styles = StyleSheet.create({
     bottom: 8,
     right: 8,
   },
-  
+
   // Sub Items
   subTransaction: {
     flexDirection: 'row',
@@ -2959,7 +2890,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
   },
-  
+
   // Entry Styles
   entryHeader: {
     flexDirection: 'row',
@@ -2984,14 +2915,14 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginRight: 8,
   },
-  
+
   // Transaction Actions
   transactionActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  
+
   // Amount Colors
   creditAmount: {
     color: Colors.success,
@@ -2999,7 +2930,7 @@ const styles = StyleSheet.create({
   debitAmount: {
     color: Colors.error,
   },
-  
+
   // Selection & Editing
   selectedItemStyle: {
     backgroundColor: '#E3F2FD',
@@ -3049,7 +2980,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  
+
   // Proof Photos
   proofRow: {
     flexDirection: 'row',
@@ -3132,7 +3063,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 8,
   },
-  
+
   // Empty State
   emptyStateCard: {
     margin: 20,
@@ -3159,7 +3090,7 @@ const styles = StyleSheet.create({
     color: '#757575',
     textAlign: 'center',
   },
-  
+
   // Totals Section
   totalsContainer: {
     backgroundColor: 'white',
@@ -3207,7 +3138,7 @@ const styles = StyleSheet.create({
   netNegative: {
     color: '#d32f2f',
   },
-  
+
   // Manage Cash
   manageCashRow: {
     backgroundColor: 'rgba(255, 243, 224, 0.5)',
@@ -3279,7 +3210,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
   },
-  
+
   // Multi-select actions at bottom
   multiSelectActions: {
     position: 'absolute',

@@ -11,6 +11,8 @@ import { listAllProfiles, listProfilesExceptCurrent, setUserActive, updateUserTy
 import Dropdown from '../components/Dropdown'; // Added Dropdown import
 import { migrateAllDataToPremDarwaja, checkMigrationNeeded } from '../utils/migrateDataToOffice';
 import { useOffice } from '../context/OfficeContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type AdminPanelScreenNavigationProp = NavigationProp<RootStackParamList, 'AdminPanel'>;
 
@@ -54,11 +56,11 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
   const [expandManageAgencies, setExpandManageAgencies] = useState<boolean>(false);
   const [expandPersonMgmt, setExpandPersonMgmt] = useState<boolean>(false);
   const [expandUppadJamaEntry, setExpandUppadJamaEntry] = useState<boolean>(false); // New state for Uppad/Jama Entry
-  
+
   // Offices state
   const [offices, setOffices] = useState<any[]>([]);
   const [officesLoading, setOfficesLoading] = useState<boolean>(false);
-  
+
   // Migration state
   const [expandMigrationSection, setExpandMigrationSection] = useState<boolean>(false);
   const [migrationLoading, setMigrationLoading] = useState<boolean>(false);
@@ -101,17 +103,17 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
             console.error("Sign out after user creation error:", signOutError.message);
           }
         }
-        
+
         Alert.alert('Success', `User "${email}" created successfully! The current admin user remains logged in.`);
         setNewUsername('');
         setNewUserPassword('');
         setNewUserType('normal');
         setNewUserOfficeId('');
-        
+
         if (data.user?.id) {
           // Ensure profile exists for manage users list
           await createProfileIfMissing(data.user.id, email, newUserType);
-          
+
           // Assign office if selected
           if (newUserOfficeId) {
             try {
@@ -119,19 +121,18 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                 .from('user_profiles')
                 .update({ office_id: newUserOfficeId })
                 .eq('id', data.user.id);
-              
+
               if (officeError) {
                 console.error('Error assigning office:', officeError);
                 Alert.alert('Warning', 'User created but office assignment failed.');
               } else {
                 const selectedOffice = offices.find(o => o.id === newUserOfficeId);
-                console.log(`✅ User assigned to office: ${selectedOffice?.name}`);
               }
             } catch (err) {
               console.error('Error in office assignment:', err);
             }
           }
-          
+
           await loadUsers();
         }
       }
@@ -167,7 +168,6 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
     try {
       const officeList = await getOffices();
       setOffices(officeList);
-      console.log('📋 Loaded offices for user creation:', officeList.length);
     } catch (error) {
       console.error('Error loading offices:', error);
     } finally {
@@ -260,8 +260,18 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
 
   // Enable LayoutAnimation on Android
   useEffect(() => {
-    if (Platform.OS === 'android' && (UIManager as any).setLayoutAnimationEnabledExperimental) {
-      (UIManager as any).setLayoutAnimationEnabledExperimental(true);
+    if (
+      Platform.OS === 'android' && 
+      (UIManager as any).setLayoutAnimationEnabledExperimental
+    ) {
+      const isFabric = !!(global as any).nativeFabricUIManager;
+      if (!isFabric) {
+        try {
+          (UIManager as any).setLayoutAnimationEnabledExperimental(true);
+        } catch (e) {
+          // Ignore if it's not supported or throws an error
+        }
+      }
     }
   }, []);
 
@@ -319,16 +329,8 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
           person_name: selectedPersonName,
           amount: numJama,
           entry_type: 'credit',
-          description: 'Admin Panel Jama Entry', // Default description
-          office_id: currentOffice?.id, // Add office_id
-        });
-        console.log('AdminPanel - Jama entry saved:', {
-          person_name: selectedPersonName,
-          amount: numJama,
-          entry_type: 'credit',
           description: 'Admin Panel Jama Entry',
           office_id: currentOffice?.id,
-          success: success
         });
       }
 
@@ -337,12 +339,10 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
         setUppadAmount('');
         setJamaAmount('');
         setUppadJamaPersonId(''); // Clear selected person
-        
+
         // Trigger manual sync to refresh all majur dashboards
-        console.log('AdminPanel - Triggering manual sync after entry save');
         try {
           await syncAllDataFixed();
-          console.log('AdminPanel - Manual sync completed');
         } catch (error) {
           console.error('AdminPanel - Manual sync failed:', error);
         }
@@ -381,7 +381,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
         <Text style={styles.headerTitle}>Admin Panel</Text>
         <View style={styles.headerSpacer} />
       </View>
-      
+
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
         {/* User Accounts Section */}
         <View style={styles.section}>
@@ -451,7 +451,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                       onValueChange={(value: string) => setNewUserType(value as 'normal' | 'majur')}
                       placeholder="Select user type"
                     />
-                    
+
                     <Text style={styles.inputLabel}>Office Assignment</Text>
                     {officesLoading ? (
                       <Text style={GlobalStyles.bodyText}>Loading offices...</Text>
@@ -473,7 +473,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                         placeholder="Select office (optional)"
                       />
                     )}
-                    
+
                     <TouchableOpacity onPress={handleCreateUser} disabled={loading} style={[GlobalStyles.buttonPrimary, loading && styles.disabledButton]}>
                       <Text style={GlobalStyles.buttonPrimaryText}>{loading ? "Creating User..." : "Create User"}</Text>
                     </TouchableOpacity>
@@ -592,9 +592,9 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                     <TouchableOpacity onPress={loadUsers} style={[GlobalStyles.buttonPrimary, { marginTop: 8 }]}>
                       <Text style={GlobalStyles.buttonPrimaryText}>Refresh</Text>
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      onPress={() => navigate('AdminPasswordChangeScreen')} 
+
+                    <TouchableOpacity
+                      onPress={() => navigate('AdminPasswordChangeScreen')}
                       style={[GlobalStyles.buttonPrimary, { marginTop: 8, backgroundColor: Colors.warning }]}
                     >
                       <Text style={GlobalStyles.buttonPrimaryText}>Change User Password</Text>
@@ -622,7 +622,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                 <Text style={GlobalStyles.bodyText}>Easily switch users between Normal and Majur types using dropdowns.</Text>
                 <Text style={[GlobalStyles.bodyText, { fontWeight: 'bold', marginBottom: 12 }]}>User Type Management:</Text>
                 <Text style={GlobalStyles.bodyText}>Change user types using dropdowns below:</Text>
-                
+
                 {users.length === 0 ? (
                   <Text style={GlobalStyles.bodyText}>No users found.</Text>
                 ) : (
@@ -634,7 +634,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                           <Text style={styles.userName}>{u.full_name || u.username || 'No Name'}</Text>
                           <Text style={styles.userMeta}>ID: {u.id.substring(0, 8)}... | Status: {u.is_active ? 'Active' : 'Inactive'}</Text>
                         </View>
-                        
+
                         <View style={{ marginLeft: 12, minWidth: 120 }}>
                           <Text style={[GlobalStyles.bodyText, { fontSize: 12, marginBottom: 4, color: Colors.textSecondary }]}>
                             User Type:
@@ -655,10 +655,8 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                                       text: 'Normal User',
                                       onPress: async () => {
                                         if (currentType !== 'normal') {
-                                          console.log('🔄 Converting user to Normal:', u.id);
                                           const success = await updateUserType(u.id, 'normal');
                                           if (success) {
-                                            console.log('✅ User converted to Normal successfully');
                                             Alert.alert('Success', 'User type changed to Normal!');
                                             // Force refresh the user list
                                             await loadUsers();
@@ -673,10 +671,8 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                                       text: 'Majur User',
                                       onPress: async () => {
                                         if (currentType !== 'majur') {
-                                          console.log('🔄 Converting user to Majur:', u.id);
                                           const success = await updateUserType(u.id, 'majur');
                                           if (success) {
-                                            console.log('✅ User converted to Majur successfully');
                                             Alert.alert('Success', 'User type changed to Majur!');
                                             // Force refresh the user list
                                             await loadUsers();
@@ -705,14 +701,13 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                     );
                   })
                 )}
-                
+
                 {/* Manual Refresh Button */}
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={async () => {
-                    console.log('🔄 Manual refresh triggered');
                     await loadUsers();
                     Alert.alert('Refreshed', 'User list has been refreshed!');
-                  }} 
+                  }}
                   style={[GlobalStyles.buttonPrimary, { marginTop: 16, backgroundColor: Colors.accent }]}
                   disabled={usersLoading}
                 >
@@ -786,6 +781,20 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                   <View style={styles.subSectionHeaderLeft}>
                     <Icon name="business-outline" size={20} color={Colors.textPrimary} style={{ marginRight: 8 }} />
                     <Text style={styles.subSectionTitle}>Office Management</Text>
+                  </View>
+                  <Icon name="chevron-forward" size={22} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Splash Diagnostics */}
+              <View style={styles.subSection}>
+                <TouchableOpacity
+                  onPress={() => navigate('SplashDiagnostics')}
+                  style={styles.subSectionHeader}
+                >
+                  <View style={styles.subSectionHeaderLeft}>
+                    <Icon name="bug-outline" size={20} color="#FF9800" style={{ marginRight: 8 }} />
+                    <Text style={[styles.subSectionTitle, { color: '#FF9800' }]}>Splash Diagnostics</Text>
                   </View>
                   <Icon name="chevron-forward" size={22} color={Colors.textSecondary} />
                 </TouchableOpacity>
@@ -922,7 +931,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                 {expandUppadJamaEntry && (
                   <View style={GlobalStyles.card}>
                     <Text style={GlobalStyles.bodyText}>Add Uppad (Debit) or Jama (Credit) entries for persons.</Text>
-                    
+
                     <Text style={styles.inputLabel}>Person</Text>
                     <Dropdown
                       options={persons.map(p => ({ label: p.name, value: p.id }))}
@@ -967,11 +976,11 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
 
         {/* Data Migration Section */}
         <View style={styles.section}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setExpandMigrationSection(prev => !prev);
-            }} 
+            }}
             style={styles.sectionHeader}
           >
             <View style={styles.sectionHeaderLeft}>
@@ -989,7 +998,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
               <Text style={[GlobalStyles.bodyText, { marginTop: 8, fontStyle: 'italic', color: Colors.textSecondary }]}>
                 This will update all old records to be visible when "Prem Darwaja" office is selected.
               </Text>
-              
+
               {migrationStatus ? (
                 <View style={[GlobalStyles.card, { marginTop: 12, backgroundColor: '#F0F8FF' }]}>
                   <Text style={[GlobalStyles.bodyText, { fontWeight: '600' }]}>Migration Status:</Text>
@@ -1004,7 +1013,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                   try {
                     const result = await checkMigrationNeeded();
                     const { total, details } = result;
-                    
+
                     if (total === 0) {
                       setMigrationStatus('✅ No records need migration. All data is already assigned to offices.');
                     } else {
@@ -1047,7 +1056,7 @@ function AdminPanelScreen({ navigation }: AdminPanelScreenProps): React.JSX.Elem
                           setMigrationStatus('🔄 Migration in progress...');
                           try {
                             const result = await migrateAllDataToPremDarwaja();
-                            
+
                             if (result.success) {
                               let successText = `✅ Migration completed successfully!\n\n`;
                               successText += `Office: ${result.officeName}\n`;

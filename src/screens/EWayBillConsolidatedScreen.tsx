@@ -23,11 +23,13 @@ import { getEWayBillSettings, saveEWayBillSettings } from '../data/Storage';
 import RNFS from 'react-native-fs';
 import { generatePDF } from 'react-native-html-to-pdf';
 import RNShare from 'react-native-share';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 const EWAY_BASE_URL = 'https://ewaybillgst.gov.in/';
 const EWAY_LOGIN_URL = 'https://ewaybillgst.gov.in/login.aspx';
 
-export default function EWayBillConsolidatedScreen() {
+export default function EWayBillConsolidatedScreen(): React.JSX.Element {
   const webRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [showHint, setShowHint] = useState(false);
@@ -58,15 +60,13 @@ export default function EWayBillConsolidatedScreen() {
     if (Platform.OS === 'ios') return true;
 
     try {
-      console.log('📱 Requesting storage permissions...');
-      
+
       const permissions = [
         PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
         PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
       ];
 
       const results = await PermissionsAndroid.requestMultiple(permissions);
-      console.log('Permission results:', results);
 
       const writeGranted = results[PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE] === PermissionsAndroid.RESULTS.GRANTED;
 
@@ -82,7 +82,6 @@ export default function EWayBillConsolidatedScreen() {
         return false;
       }
 
-      console.log('✅ Storage permissions granted');
       return true;
 
     } catch (err) {
@@ -158,21 +157,18 @@ export default function EWayBillConsolidatedScreen() {
 
     for (const option of downloadPaths) {
       try {
-        console.log(`🔍 Trying ${option.description}: ${option.path}`);
-        
+
         const dirPath = option.path.substring(0, option.path.lastIndexOf('/'));
         const dirExists = await RNFS.exists(dirPath);
-        
+
         if (!dirExists) {
           await RNFS.mkdir(dirPath);
-          console.log(`📁 Created directory: ${dirPath}`);
         }
 
         const testFile = `${dirPath}/test_${Date.now()}.tmp`;
         await RNFS.writeFile(testFile, 'test', 'utf8');
         await RNFS.unlink(testFile);
-        
-        console.log(`✅ Write test successful for ${option.description}`);
+
         return {
           path: option.path,
           needsPermission: false
@@ -180,7 +176,6 @@ export default function EWayBillConsolidatedScreen() {
 
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.log(`❌ ${option.description} failed:`, msg);
         continue;
       }
     }
@@ -195,13 +190,11 @@ export default function EWayBillConsolidatedScreen() {
   const handleFileDownload = async (downloadUrl: string, fileName?: string) => {
     try {
       setDownloading(true);
-      console.log('🚀 Starting download from:', downloadUrl);
 
       const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
       const finalFileName = fileName || `EWayBill_${timestamp}.pdf`;
-      
+
       const { path: downloadDest, needsPermission } = await getDownloadPath(finalFileName);
-      console.log('📁 Download destination:', downloadDest);
 
       if (needsPermission) {
         const hasPermission = await requestStoragePermissions();
@@ -211,7 +204,6 @@ export default function EWayBillConsolidatedScreen() {
         }
       }
 
-      console.log('📥 Starting file download...');
       const downloadResult = await RNFS.downloadFile({
         fromUrl: downloadUrl,
         toFile: downloadDest,
@@ -226,27 +218,18 @@ export default function EWayBillConsolidatedScreen() {
         progressDivider: 1,
         progress: (res) => {
           const progress = (res.bytesWritten / res.contentLength) * 100;
-          console.log(`📊 Download progress: ${progress.toFixed(2)}%`);
         }
       }).promise;
 
       setDownloading(false);
-      console.log('📋 Download response status:', downloadResult.statusCode);
 
       if (downloadResult.statusCode === 200) {
         const fileExists = await RNFS.exists(downloadDest);
-        console.log('📄 File exists:', fileExists);
 
         if (fileExists) {
           const fileStat = await RNFS.stat(downloadDest);
-          console.log('📊 File stats:', {
-            size: fileStat.size,
-            path: downloadDest,
-            name: finalFileName
-          });
 
           if (fileStat.size > 0) {
-            console.log('✅ File downloaded successfully!');
             ToastAndroid.show(`PDF downloaded successfully! Size: ${Math.round(fileStat.size / 1024)}KB`, ToastAndroid.LONG);
 
             Alert.alert(
@@ -254,8 +237,8 @@ export default function EWayBillConsolidatedScreen() {
               `File: ${finalFileName}\nSize: ${Math.round(fileStat.size / 1024)}KB\nLocation: ${downloadDest.includes('Downloads') ? 'Downloads folder' : 'App storage'}`,
               [
                 { text: 'OK' },
-                { 
-                  text: 'Open File', 
+                {
+                  text: 'Open File',
                   onPress: () => openPDFWithMultipleMethods(downloadDest, finalFileName)
                 }
               ]
@@ -278,7 +261,7 @@ export default function EWayBillConsolidatedScreen() {
     } catch (error) {
       console.error('❌ Download error:', error);
       setDownloading(false);
-      
+
       Alert.alert(
         'Download Failed',
         `Error: ${(error instanceof Error ? error.message : String(error))}\n\nTry these solutions:`,
@@ -346,7 +329,6 @@ export default function EWayBillConsolidatedScreen() {
   // Enhanced PDF opening methods
   const openPDFWithMultipleMethods = async (filePath: string, fileName: string) => {
     try {
-      console.log('📱 Attempting to open PDF:', filePath);
 
       const fileExists = await RNFS.exists(filePath);
       if (!fileExists) {
@@ -362,7 +344,7 @@ export default function EWayBillConsolidatedScreen() {
         {
           name: 'Content URI',
           action: () => {
-            const contentUri = filePath.includes('/Downloads/') 
+            const contentUri = filePath.includes('/Downloads/')
               ? `content://com.android.externalstorage.documents/document/primary:Downloads/${fileName}`
               : `content://media/external/file/${Date.now()}`;
             return Linking.openURL(contentUri);
@@ -384,18 +366,15 @@ export default function EWayBillConsolidatedScreen() {
 
       for (const method of methods) {
         try {
-          console.log(`🔄 Trying ${method.name}...`);
           await method.action();
-          console.log(`✅ ${method.name} succeeded`);
-          
+
           if (method.name === 'Share Dialog') {
             ToastAndroid.show('Select a PDF app to open the file', ToastAndroid.LONG);
           }
-          
+
           return;
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          console.log(`❌ ${method.name} failed:`, msg);
           continue;
         }
       }
@@ -428,38 +407,38 @@ export default function EWayBillConsolidatedScreen() {
     const js = `(() => {
       try {
         window.print = function() {
-          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ 
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
             tag: 'print_to_download',
             url: window.location.href,
             title: document.title,
             timestamp: Date.now()
-          })); 
+          }));
         };
-        
+
         const _open = window.open;
         window.open = function(url, name, specs) {
-          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ 
-            tag: 'window_open_to_download', 
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+            tag: 'window_open_to_download',
             url: String(url || ''),
             timestamp: Date.now()
-          })); 
+          }));
           return null;
         };
-        
+
         document.addEventListener('click', function(ev) {
           try {
             const target = ev.target;
             if (!target) return;
-            
+
             const targetText = (target.textContent || '').toLowerCase();
             const targetValue = (target.value || '').toLowerCase();
             const targetId = (target.id || '').toLowerCase();
-            
+
             if (targetText.includes('print') || targetValue.includes('print') || targetId.includes('print')) {
               ev.preventDefault();
               ev.stopPropagation();
-              
-              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ 
+
+              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
                 tag: 'print_button_to_download',
                 url: window.location.href,
                 timestamp: Date.now()
@@ -469,7 +448,7 @@ export default function EWayBillConsolidatedScreen() {
             console.error('Print detection error:', e);
           }
         }, true);
-        
+
       } catch (e) {
         console.error('Print bridge error:', e);
       }
@@ -493,19 +472,18 @@ export default function EWayBillConsolidatedScreen() {
         const setElValue = (el, val) => {
           if (!el || !val) return false;
           try {
-            console.log('🔧 Setting value for:', el.id || el.name || 'unknown', 'Value:', val);
-            
+
             // Remove restrictions
             if (el.hasAttribute('readonly')) el.removeAttribute('readonly');
             if (el.disabled) el.disabled = false;
-            
+
             // Focus element
             el.focus();
             el.select();
-            
+
             // Clear existing value
             el.value = '';
-            
+
             // Set value using multiple methods
             try {
               const proto = el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
@@ -516,10 +494,10 @@ export default function EWayBillConsolidatedScreen() {
               } else {
                 el.value = val;
               }
-            } catch { 
-              el.value = val; 
+            } catch {
+              el.value = val;
             }
-            
+
             // Trigger all possible events
             const events = ['input', 'change', 'keyup', 'keydown', 'blur', 'focus'];
             events.forEach(eventType => {
@@ -527,41 +505,39 @@ export default function EWayBillConsolidatedScreen() {
                 el.dispatchEvent(new Event(eventType, { bubbles: true, cancelable: true }));
               } catch {}
             });
-            
+
             // Special keyboard events
             try {
               el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
               el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
             } catch {}
-            
+
             // Click and blur
             try { el.click(); } catch {}
             el.blur();
-            
+
             // Scroll into view
-            try { 
-              el.scrollIntoView({ behavior: 'smooth', block: 'center' }); 
+            try {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             } catch {}
-            
-            console.log('✅ Value set successfully:', el.value);
+
             return true;
-          } catch(e) { 
+          } catch(e) {
             console.error('❌ Error setting value:', e);
-            return false; 
+            return false;
           }
         };
 
         const log = (msg) => {
-          try { 
-            console.log('AutoFill:', msg);
-            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ tag: 'autofill_log', msg })); 
+          try {
+            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ tag: 'autofill_log', msg }));
           } catch {}
         };
 
         // Enhanced field finder with more comprehensive selectors
         const findField = (type) => {
           log('🔍 Searching for ' + type + ' field...');
-          
+
           const selectors = type === 'from' ? [
             // Vehicle From selectors - more comprehensive
             "input[id*='vehiclefrom' i]", "textarea[id*='vehiclefrom' i]",
@@ -625,11 +601,11 @@ export default function EWayBillConsolidatedScreen() {
                 const ph = (el.getAttribute('placeholder') || '').toLowerCase();
                 const className = (el.getAttribute('class') || '').toLowerCase();
                 const combined = name + ' ' + id + ' ' + ph + ' ' + className;
-                
+
                 // Skip unwanted fields
                 if (type === 'from' && combined.includes('state')) continue;
                 if (type !== 'from' && (combined.includes('type') || combined.includes('state'))) continue;
-                
+
                 log('✅ Found ' + type + ' field: ID=' + id + ', Name=' + name + ', Placeholder=' + ph);
                 return el;
               }
@@ -646,13 +622,13 @@ export default function EWayBillConsolidatedScreen() {
               const text = (element.innerText || element.textContent || '').toLowerCase();
               const isFromField = type === 'from' && text.includes('from') && (text.includes('place') || text.includes('location')) && !text.includes('state');
               const isVehicleField = type !== 'from' && ((text.includes('vehicle') && (text.includes('no') || text.includes('number'))) || text.includes('reg no') || text.includes('registration')) && !text.includes('type') && !text.includes('state');
-              
+
               if (isFromField || isVehicleField) {
                 // Look for input fields nearby
-                const input = element.querySelector('input, textarea') || 
+                const input = element.querySelector('input, textarea') ||
                             (element.nextElementSibling && element.nextElementSibling.querySelector && element.nextElementSibling.querySelector('input, textarea')) ||
                             (element.parentElement && element.parentElement.querySelector && element.parentElement.querySelector('input, textarea'));
-                
+
                 if (input) {
                   log('✅ Found ' + type + ' field via text search: ' + (input.id || input.name || 'unknown'));
                   return input;
@@ -677,8 +653,8 @@ export default function EWayBillConsolidatedScreen() {
             const placeholder = input.placeholder || '';
             const className = input.className || '';
             const type = input.type || '';
-            
-            if (id.toLowerCase().includes('vehicle') || 
+
+            if (id.toLowerCase().includes('vehicle') ||
                 name.toLowerCase().includes('vehicle') ||
                 placeholder.toLowerCase().includes('vehicle') ||
                 id.toLowerCase().includes('from') ||
@@ -735,8 +711,8 @@ export default function EWayBillConsolidatedScreen() {
 
           if (success) {
             log('🎉 Auto-fill completed successfully!');
-            try { 
-              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ tag: 'autofill_success' })); 
+            try {
+              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ tag: 'autofill_success' }));
             } catch {}
           }
 
@@ -749,7 +725,7 @@ export default function EWayBillConsolidatedScreen() {
         const fillTimer = setInterval(() => {
           attempts++;
           log('🔄 Auto-fill attempt ' + attempts + '/' + maxAttempts);
-          
+
           if (attemptFill() || attempts >= maxAttempts) {
             clearInterval(fillTimer);
             if (attempts >= maxAttempts) {
@@ -766,13 +742,13 @@ export default function EWayBillConsolidatedScreen() {
               clearInterval(fillTimer);
             }
           });
-          observer.observe(document.body, { 
-            childList: true, 
+          observer.observe(document.body, {
+            childList: true,
             subtree: true,
             attributes: true,
             attributeFilter: ['style', 'class', 'disabled', 'readonly']
           });
-          
+
           // Disconnect observer after 30 seconds
           setTimeout(() => {
             try { observer.disconnect(); } catch {}
@@ -783,8 +759,8 @@ export default function EWayBillConsolidatedScreen() {
 
       } catch (e) {
         console.error('❌ Auto-fill error:', e);
-        try { 
-          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ tag: 'autofill_error', error: e.message })); 
+        try {
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ tag: 'autofill_error', error: e.message }));
         } catch {}
       }
       return true;
@@ -807,29 +783,25 @@ export default function EWayBillConsolidatedScreen() {
         const hasPassword = !!q("input[type='password']");
 
         if (hasPassword) {
-          console.log('🔑 Login page detected, filling credentials...');
-          
+
           const userEl = q('#txtUserName') || q("input[name='txtUserName']") || q("input[type='text']");
           const passEl = q('#txtPassword') || q("input[name='txtPassword']") || q("input[type='password']");
 
-          if (userEl && !userEl.value) { 
-            userEl.value = '${u}'; 
-            userEl.dispatchEvent(new Event('input', { bubbles: true })); 
-            userEl.dispatchEvent(new Event('change', { bubbles: true })); 
-            console.log('✅ Username filled');
+          if (userEl && !userEl.value) {
+            userEl.value = '${u}';
+            userEl.dispatchEvent(new Event('input', { bubbles: true }));
+            userEl.dispatchEvent(new Event('change', { bubbles: true }));
           }
-          if (passEl && !passEl.value) { 
-            passEl.value = '${p}'; 
-            passEl.dispatchEvent(new Event('input', { bubbles: true })); 
-            passEl.dispatchEvent(new Event('change', { bubbles: true })); 
-            console.log('✅ Password filled');
+          if (passEl && !passEl.value) {
+            passEl.value = '${p}';
+            passEl.dispatchEvent(new Event('input', { bubbles: true }));
+            passEl.dispatchEvent(new Event('change', { bubbles: true }));
           }
 
           const captchaEl = q("input[id*='captcha' i], input[name*='captcha' i]");
           if (captchaEl) {
             captchaEl.focus();
             captchaEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            console.log('👁️ CAPTCHA field focused');
           }
         }
       } catch (e) {
@@ -864,9 +836,9 @@ export default function EWayBillConsolidatedScreen() {
 
         const fetchPdf = async (url) => {
           try {
-            const res = await fetch(url, { 
-              method: 'GET', 
-              credentials: 'include', 
+            const res = await fetch(url, {
+              method: 'GET',
+              credentials: 'include',
               headers: { 'Accept': 'application/pdf,application/octet-stream,*/*' }
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -935,7 +907,7 @@ export default function EWayBillConsolidatedScreen() {
           setTimeout(injectPostLoginFlow, 2000);
           setTimeout(injectPrintBridge, 1000);
         }}
-        
+
         onNavigationStateChange={(navState: any) => {
           setCurrentUrl(navState.url);
           if (navState && !navState.loading) {
@@ -956,7 +928,7 @@ export default function EWayBillConsolidatedScreen() {
         onMessage={(event: any) => {
           try {
             const data = JSON.parse(event.nativeEvent.data);
-            
+
             if (data?.tag === 'autofill_success') {
               if (Platform.OS === 'android') {
                 ToastAndroid.show('🎉 Auto-filled Vehicle From & Vehicle No successfully!', ToastAndroid.LONG);
@@ -967,7 +939,6 @@ export default function EWayBillConsolidatedScreen() {
             }
 
             if (data?.tag === 'autofill_log' && data?.msg) {
-              console.log('AutoFill Log:', data.msg);
               return;
             }
 
@@ -976,16 +947,14 @@ export default function EWayBillConsolidatedScreen() {
               return;
             }
 
-            if (data?.tag === 'print_to_download' || 
+            if (data?.tag === 'print_to_download' ||
                 data?.tag === 'print_button_to_download' ||
                 data?.tag === 'window_open_to_download') {
-              console.log('Print detected - starting download');
               downloadEwayBillPDF();
               return;
             }
 
             if (data?.tag === 'pdf_base64' && data?.base64) {
-              console.log('Received base64 PDF from WebView');
               saveBase64Pdf(data.base64, data.suggestedName);
               return;
             }
@@ -1006,7 +975,7 @@ export default function EWayBillConsolidatedScreen() {
               Alert.alert('Download Error', 'Could not prepare file for download.');
               return;
             }
-            
+
           } catch (e) {
             // Ignore JSON parse errors
           }
@@ -1025,8 +994,8 @@ export default function EWayBillConsolidatedScreen() {
             let host = '';
             try { host = new URL(url).hostname.toLowerCase(); } catch { host = ''; }
 
-            const allowed = host === 'ewaybillgst.gov.in' || 
-                           host === 'www.ewaybillgst.gov.in' || 
+            const allowed = host === 'ewaybillgst.gov.in' ||
+                           host === 'www.ewaybillgst.gov.in' ||
                            host.endsWith('.ewaybillgst.gov.in');
 
             if (!allowed) {
@@ -1069,14 +1038,14 @@ export default function EWayBillConsolidatedScreen() {
                 meta.name = 'viewport';
                 document.head.appendChild(meta);
               }
-              
+
               // 60% zoom with full zoom controls
               meta.content = 'width=device-width, initial-scale=0.6, minimum-scale=0.1, maximum-scale=5.0, user-scalable=yes';
-              
+
               // Add minimal responsive CSS
               var style = document.createElement('style');
               style.textContent = \`
-                html, body { 
+                html, body {
                   width: 100% !important;
                   overflow-x: auto !important;
                   -webkit-text-size-adjust: 100% !important;
@@ -1084,17 +1053,16 @@ export default function EWayBillConsolidatedScreen() {
                 body > * {
                   max-width: 100% !important;
                 }
-                img { 
-                  max-width: 100% !important; 
-                  height: auto !important; 
+                img {
+                  max-width: 100% !important;
+                  height: auto !important;
                 }
                 table {
                   max-width: 100% !important;
                 }
               \`;
               document.head.appendChild(style);
-              
-              console.log('✅ Responsive viewport injected with 60% zoom');
+
             } catch(e) {
               console.error('Viewport injection error:', e);
             }
@@ -1133,62 +1101,62 @@ export default function EWayBillConsolidatedScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>E-Way Bill Settings</Text>
-            
+
             <Text style={styles.sectionHeading}>Login Credentials</Text>
-            
+
             <Text style={styles.fieldLabel}>Username</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               value={username}
               onChangeText={setUsername}
               placeholder="Enter username"
               autoCapitalize="none"
             />
-            
+
             <Text style={styles.fieldLabel}>Password</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               value={password}
               onChangeText={setPassword}
               placeholder="Enter password"
               secureTextEntry
             />
-            
+
             <Text style={styles.sectionHeading}>Auto-Fill Details</Text>
-            
+
             <Text style={styles.fieldLabel}>Vehicle From</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               value={vehicleFrom}
               onChangeText={setVehicleFrom}
               placeholder="e.g., AHMEDABAD-GUJARAT"
             />
-            
+
             <Text style={styles.fieldLabel}>Vehicle Number</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               value={vehicleNo}
               onChangeText={setVehicleNo}
               placeholder="e.g., GJ27AZ9380"
               autoCapitalize="characters"
             />
-            
+
             <View style={styles.modalActions}>
-              <TouchableOpacity 
-                onPress={() => setShowSettingsModal(false)} 
+              <TouchableOpacity
+                onPress={() => setShowSettingsModal(false)}
                 style={[styles.btn, styles.btnGhost]}
               >
                 <Text style={styles.btnGhostText}>Cancel</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 onPress={async () => {
                   try {
-                    await saveEWayBillSettings({ 
-                      username, 
-                      password, 
-                      vehicle_from: vehicleFrom, 
-                      vehicle_no: vehicleNo 
+                    await saveEWayBillSettings({
+                      username,
+                      password,
+                      vehicle_from: vehicleFrom,
+                      vehicle_no: vehicleNo
                     });
                     setShowSettingsModal(false);
                     setTimeout(injectPostLoginFlow, 1000);
@@ -1198,13 +1166,13 @@ export default function EWayBillConsolidatedScreen() {
                   } catch (e) {
                     Alert.alert('Error', 'Failed to save settings');
                   }
-                }} 
+                }}
                 style={[styles.btn, styles.btnPrimary]}
               >
                 <Text style={styles.btnPrimaryText}>Save</Text>
               </TouchableOpacity>
             </View>
-            
+
             <Text style={styles.note}>
               📱 Files will be saved to your Downloads folder or app storage. Print button automatically triggers PDF download.
             </Text>
@@ -1217,12 +1185,12 @@ export default function EWayBillConsolidatedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  topBar: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    paddingHorizontal: 16, 
-    paddingVertical: 12, 
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOpacity: 0.05,
@@ -1234,24 +1202,24 @@ const styles = StyleSheet.create({
     height: 3,
     backgroundColor: '#6C63FF'
   },
-  title: { 
-    fontSize: 18, 
-    fontWeight: '700', 
-    color: '#111', 
-    flex: 1, 
-    minWidth: 0, 
-    marginRight: 8 
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111',
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8
   },
-  actions: { 
-    flexDirection: 'row', 
+  actions: {
+    flexDirection: 'row',
     alignItems: 'center',
     marginLeft: 'auto'
   },
-  actionBtn: { 
-    marginLeft: 8, 
-    paddingHorizontal: 12, 
-    paddingVertical: 8, 
-    borderRadius: 20, 
+  actionBtn: {
+    marginLeft: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
     backgroundColor: '#F3F6FF',
     borderWidth: 1,
     borderColor: '#E1E9FF'
@@ -1259,24 +1227,24 @@ const styles = StyleSheet.create({
   downloadBtn: {
     backgroundColor: '#4CAF50'
   },
-  actionText: { 
-    color: '#3D5AFE', 
+  actionText: {
+    color: '#3D5AFE',
     fontWeight: '700',
-    fontSize: 12 
+    fontSize: 12
   },
   downloadBtnText: {
     color: '#fff'
   },
-  loader: { 
-    position: 'absolute', 
-    top: '40%', 
-    left: 0, 
-    right: 0, 
-    alignItems: 'center' 
+  loader: {
+    position: 'absolute',
+    top: '40%',
+    left: 0,
+    right: 0,
+    alignItems: 'center'
   },
-  loaderText: { 
-    marginTop: 8, 
-    color: '#555' 
+  loaderText: {
+    marginTop: 8,
+    color: '#555'
   },
   downloadOverlay: {
     position: 'absolute',
@@ -1308,85 +1276,85 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center'
   },
-  hint: { 
-    position: 'absolute', 
-    bottom: 20, 
-    left: 20, 
-    right: 20, 
-    backgroundColor: 'rgba(0,0,0,0.8)', 
-    padding: 12, 
-    borderRadius: 8 
+  hint: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    padding: 12,
+    borderRadius: 8
   },
-  hintText: { 
-    color: '#fff', 
-    textAlign: 'center' 
+  hintText: {
+    color: '#fff',
+    textAlign: 'center'
   },
-  modalBackdrop: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.4)', 
-    justifyContent: 'center', 
-    padding: 20 
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    padding: 20
   },
-  modalCard: { 
-    backgroundColor: '#fff', 
-    borderRadius: 12, 
-    padding: 16 
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16
   },
-  modalTitle: { 
-    fontSize: 18, 
-    fontWeight: '700', 
-    marginBottom: 12 
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12
   },
-  sectionHeading: { 
-    fontSize: 14, 
-    fontWeight: '700', 
-    color: '#444', 
+  sectionHeading: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#444',
     marginBottom: 8,
-    marginTop: 8 
+    marginTop: 8
   },
-  fieldLabel: { 
-    marginBottom: 6, 
-    fontWeight: '600', 
-    color: '#222' 
+  fieldLabel: {
+    marginBottom: 6,
+    fontWeight: '600',
+    color: '#222'
   },
-  input: { 
-    borderWidth: 1, 
-    borderColor: '#ddd', 
-    borderRadius: 8, 
-    paddingHorizontal: 12, 
-    paddingVertical: 10, 
-    marginBottom: 10, 
-    backgroundColor: '#fff', 
-    color: '#111' 
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+    backgroundColor: '#fff',
+    color: '#111'
   },
-  modalActions: { 
-    flexDirection: 'row', 
-    justifyContent: 'flex-end', 
-    marginTop: 8 
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8
   },
-  btn: { 
-    paddingHorizontal: 14, 
-    paddingVertical: 10, 
-    borderRadius: 8, 
-    marginLeft: 8 
+  btn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginLeft: 8
   },
-  btnPrimary: { 
-    backgroundColor: '#007AFF' 
+  btnPrimary: {
+    backgroundColor: '#007AFF'
   },
-  btnPrimaryText: { 
-    color: '#fff', 
-    fontWeight: '700' 
+  btnPrimaryText: {
+    color: '#fff',
+    fontWeight: '700'
   },
-  btnGhost: { 
-    backgroundColor: '#f2f2f2' 
+  btnGhost: {
+    backgroundColor: '#f2f2f2'
   },
-  btnGhostText: { 
-    color: '#333', 
-    fontWeight: '600' 
+  btnGhostText: {
+    color: '#333',
+    fontWeight: '600'
   },
-  note: { 
-    marginTop: 10, 
-    color: '#666', 
-    fontSize: 12 
+  note: {
+    marginTop: 10,
+    color: '#666',
+    fontSize: 12
   },
 });

@@ -11,6 +11,8 @@ import { supabase } from '../supabase';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { GestureHandlerRootView, LongPressGestureHandler, State } from 'react-native-gesture-handler';
 import { useOffice } from '../context/OfficeContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type TotalPaidScreenNavigationProp = NavigationProp<RootStackParamList, 'TotalPaid'>;
 
@@ -42,24 +44,24 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
       const [d, m, y] = date.split('/');
       return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
     });
-    
+
     const { data, error } = await supabase
       .from('daily_cash_adjustments')
       .select('*')
       .in('date_key', dateKeys);
-      
+
     if (error) {
       console.error('Error fetching cash adjustments:', error);
       return new Map<string, number>();
     }
-    
+
     const adjustments = new Map<string, number>();
     data?.forEach(item => {
       const date = new Date(item.date_key);
       const formattedDate = date.toLocaleDateString('en-IN');
       adjustments.set(formattedDate, item.adjustment);
     });
-    
+
     return adjustments;
   };
 
@@ -67,31 +69,23 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
     setLoading(true);
     try {
       const currentOfficeId = getCurrentOfficeId();
-      
+
       // Clear cache if requested to get fresh data
       if (forceClearCache) {
-        console.log('🔄 Force clearing cache for fresh data...');
         await clearPaymentCache();
       }
-      
+
       const allPayments = await getAgencyPaymentsLocal(currentOfficeId || undefined);
       const allAgencyEntries = await getAgencyEntry(currentOfficeId || undefined);
-      
-      console.log('📊 Total Paid Data:', {
-        paymentsCount: allPayments.length,
-        entriesCount: allAgencyEntries.length,
-        sampledPayment: allPayments[0],
-        sampledEntry: allAgencyEntries[0]
-      });
-      
+
       const paymentsMap = new Map<string, AgencyPayment[]>();
       const deliveriesMap = new Map<string, AgencyEntry[]>();
-      
+
       // Process payments and remove duplicates by ID
-      const uniquePayments = allPayments.filter((payment, index, self) => 
+      const uniquePayments = allPayments.filter((payment, index, self) =>
         index === self.findIndex(p => p.id === payment.id)
       );
-      
+
       uniquePayments.forEach(payment => {
         const paymentDate = new Date(payment.payment_date).toLocaleDateString('en-IN');
         const currentPayments = paymentsMap.get(paymentDate) || [];
@@ -99,25 +93,25 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
       });
 
       // Filter Mumbai deliveries and remove duplicates by ID
-      const mumbaiDeliveries = allAgencyEntries.filter(entry => 
-        entry.agency_name === 'Mumbai' && 
-        entry.delivery_status === 'yes' && 
+      const mumbaiDeliveries = allAgencyEntries.filter(entry =>
+        entry.agency_name === 'Mumbai' &&
+        entry.delivery_status === 'yes' &&
         entry.entry_type === 'credit'
       );
-      
+
       // Remove duplicates by ID
-      const uniqueDeliveries = mumbaiDeliveries.filter((entry, index, self) => 
+      const uniqueDeliveries = mumbaiDeliveries.filter((entry, index, self) =>
         index === self.findIndex(e => e.id === entry.id)
       );
-      
+
       uniqueDeliveries.forEach(entry => {
         const entryDate = new Date(entry.entry_date).toLocaleDateString('en-IN');
         const currentDeliveries = deliveriesMap.get(entryDate) || [];
         deliveriesMap.set(entryDate, [...currentDeliveries, entry]);
       });
-      
+
       const allDates = [...new Set([...paymentsMap.keys(), ...deliveriesMap.keys()])];
-      
+
       // Get cash adjustments for all dates at once
       const cashAdjustmentMap = await loadCashAdjustments(allDates);
 
@@ -130,17 +124,17 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
 
       const summaries = allDates.map(date => {
         const paymentsOnDate = (paymentsMap.get(date) || [])
-          .filter((payment, index, self) => 
+          .filter((payment, index, self) =>
             index === self.findIndex(p => p.id === payment.id)
           );
         const deliveriesOnDate = (deliveriesMap.get(date) || [])
-          .filter((delivery, index, self) => 
+          .filter((delivery, index, self) =>
             index === self.findIndex(d => d.id === delivery.id)
           );
         const cashAdjustment = cashAdjustmentMap.get(date) || 0;
         const totalPaid = paymentsOnDate.reduce((sum, p) => sum + p.amount, 0);
         const totalDelivery = deliveriesOnDate.reduce((sum, d) => d.entry_type === 'credit' ? sum + d.amount : sum - d.amount, 0);
-        
+
         return {
           date: date,
           total_paid_amount: totalPaid,
@@ -151,7 +145,7 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
           deliveries: deliveriesOnDate,
         };
       });
-      
+
       setDailySummaries(summaries);
     } catch (error) {
       console.error("Error loading paid data:", error);
@@ -168,7 +162,7 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
       return () => {};
     }, [loadPaidData])
   );
-  
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -181,11 +175,11 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
       showAlert('Sync failed. Using local data');
     }
   };
-  
+
   const handleItemPress = (date: string) => {
     setExpandedDate(expandedDate === date ? null : date);
   };
-  
+
   const renderDailySummaryItem = ({ item }: { item: DailyPaidSummary }) => (
     <View style={styles.summaryContainer}>
       <TouchableOpacity onPress={() => handleItemPress(item.date)} activeOpacity={0.8}>
@@ -242,7 +236,7 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
                 {item.cash_adjustment > 0 ? 'Cash Add' : 'Cash Minus'}:
               </Text>
               <Text style={[
-                styles.detailAmount, 
+                styles.detailAmount,
                 item.cash_adjustment > 0 ? styles.creditAmount : styles.debitAmount
               ]}>
                 {item.cash_adjustment > 0 ? '+' : '-'}₹{Math.abs(item.cash_adjustment).toLocaleString('en-IN')}
@@ -253,7 +247,7 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
       )}
     </View>
   );
-  
+
   const renderEmptyState = () => (
     <View style={[GlobalStyles.card, styles.emptyStateCard]}>
       <Icon name="cash-outline" size={60} color={Colors.textSecondary} style={styles.emptyIcon} />
@@ -276,7 +270,7 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
           <Text style={styles.headerTitle}>Total Paid</Text>
           <View style={styles.headerSpacer} />
         </View>
-        
+
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={Colors.primary} />

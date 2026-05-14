@@ -11,6 +11,8 @@ import { GlobalStyles } from '../theme/styles';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
 import { CommonHeader, CommonInput, LoadingSpinner, EmptyState, Dropdown } from '../components';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type PaidSectionScreenNavigationProp = NavigationProp<RootStackParamList, 'PaidSection'>;
 
@@ -76,7 +78,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
   const handleSavePayment = async () => {
     // Dismiss keyboard
     Keyboard.dismiss();
-    
+
     if (!selectedAgency) {
       showAlert('Please select an agency');
       return;
@@ -112,7 +114,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
         const userDataString = await AsyncStorage.getItem('user_profile');
         const userData = userDataString ? JSON.parse(userDataString) : null;
         const userName = userData?.name || 'User';
-        
+
         // Send device notification to admin
         await DeviceNotificationService.notifyAdminEntryAdded(
           'Agency Payment',
@@ -124,7 +126,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
             office: getCurrentOfficeId()
           }
         );
-        
+
         showAlert('Payment saved successfully');
         setBillNo('');
         setPaidAmount('');
@@ -173,7 +175,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
   );
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={GlobalStyles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
@@ -182,7 +184,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
 
       <CommonHeader title="Paid Section" onBackPress={goBack} />
 
-      <ScrollView 
+      <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled"
@@ -221,7 +223,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
         </View>
 
         <Text style={styles.listSectionTitle}>Recent Paid Entries</Text>
-        
+
         {loading ? (
           <LoadingSpinner message="Loading entries..." />
         ) : displayedEntries.length > 0 ? (
@@ -240,7 +242,7 @@ function PaidSectionScreen({ navigation }: PaidSectionScreenProps): React.JSX.El
             message="No paid entries added yet. Add your first payment above."
           />
         )}
-        
+
         <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
           <Text style={GlobalStyles.buttonPrimaryText}>Go Back</Text>
         </TouchableOpacity>

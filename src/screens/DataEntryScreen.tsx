@@ -23,6 +23,8 @@ import { DeliveryRecord } from '../data/Storage';
 import { validateDeliveryRecord } from '../utils/ValidationUtils';
 import { logError, logValidationError, logInfo } from '../utils/ErrorLogger';
 import { ensureMumbaiAgency } from '../utils/ensureMumbaiAgency';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 // Storage key for form data persistence - Validates: Requirement 9.4
 const FORM_DATA_KEY = 'MUMBAI_DELIVERY_FORM_DATA';
@@ -57,7 +59,7 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
   const [consigneeName, setConsigneeName] = useState<string>('');
   const [itemDescription, setItemDescription] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
-  
+
   // UI state
   const [saving, setSaving] = useState<boolean>(false);
   const [recentEntries, setRecentEntries] = useState<DeliveryRecord[]>([]);
@@ -86,7 +88,7 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
         });
       }
     };
-    
+
     loadFormData();
   }, []);
 
@@ -104,7 +106,7 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
         await clearForm();
       }
     };
-    
+
     handleOfficeChange();
   }, [currentOffice?.id]);
 
@@ -129,7 +131,7 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
         });
       }
     };
-    
+
     // Debounce the save to avoid excessive writes
     const timeoutId = setTimeout(saveFormData, 500);
     return () => clearTimeout(timeoutId);
@@ -172,7 +174,7 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
     setItemDescription('');
     setAmount('');
     setErrors({});
-    
+
     // Clear persisted form data - Validates: Requirement 9.4
     try {
       await AsyncStorage.removeItem(FORM_DATA_KEY);
@@ -190,8 +192,7 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
    * Validates: Requirements 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 10.1, 10.5, 6.1
    */
   const handleSave = async () => {
-    console.log('🎯 handleSave: Starting...');
-    
+
     // Validate inputs with comprehensive validation
     const validationResult = validateDeliveryRecord(
       billtyNo,
@@ -201,14 +202,13 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
     );
 
     if (!validationResult.isValid) {
-      console.log('❌ Validation failed:', validationResult.errors);
       // Log validation errors
       Object.entries(validationResult.errors).forEach(([field, error]) => {
         if (error) {
           logValidationError(field, { billtyNo, consigneeName, itemDescription, amount }[field], error);
         }
       });
-      
+
       // Show first error message using AlertContext (Requirement 10.6)
       const firstError = Object.values(validationResult.errors).find(err => err);
       if (firstError) {
@@ -218,24 +218,18 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
       return;
     }
 
-    console.log('✅ Validation passed');
     setSaving(true);
 
     try {
-      console.log('📦 Importing modules...');
       const { saveDeliveryRecord, getDeliveryRecords } = await import('../data/Storage');
       const { isOnline } = await import('../data/modules/NetworkHelper');
-      
+
       // Check online status - Validates: Requirement 6.1
-      console.log('🌐 Checking online status...');
       const online = await isOnline();
-      console.log(`📡 Online: ${online}`);
-      
+
       // Ensure Mumbai agency exists (only when online)
       if (online) {
-        console.log('🏢 Ensuring Mumbai agency exists...');
         const agencyExists = await ensureMumbaiAgency();
-        console.log(`🏢 Agency exists: ${agencyExists}`);
         if (!agencyExists) {
           logError(new Error('Mumbai agency check failed'), {
             functionName: 'DataEntryScreen.handleSave',
@@ -244,21 +238,18 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
           // Continue anyway - offline cache might have it
         }
       }
-      
+
       // Check for duplicate billty number (Requirement 10.5)
       const officeId = getCurrentOfficeId();
-      console.log('🏢 Current office ID:', officeId);
-      
+
       if (officeId) {
-        console.log('🔍 Checking for duplicates...');
         const existingRecords = await getDeliveryRecords(officeId, 'all');
         const duplicate = existingRecords.find(
           record => record.billty_no?.trim().toLowerCase() === billtyNo.trim().toLowerCase()
         );
-        
+
         if (duplicate) {
           // Display warning but allow save to proceed
-          console.log('⚠️ Duplicate found:', duplicate.id);
           logInfo('Duplicate billty number detected', {
             billtyNo: billtyNo.trim(),
             existingRecordId: duplicate.id,
@@ -266,10 +257,9 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
           showAlert(`Warning: Billty No "${billtyNo.trim()}" already exists for this office`);
           // Continue with save after showing warning
         } else {
-          console.log('✅ No duplicates found');
         }
       }
-      
+
       // Prepare delivery record
       const deliveryRecord = {
         billty_no: billtyNo.trim(),
@@ -280,7 +270,6 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
         entry_date: new Date().toISOString().split('T')[0],
       };
 
-      console.log('📝 Delivery record prepared:', {
         billty_no: deliveryRecord.billty_no,
         amount: deliveryRecord.amount,
         office_id: deliveryRecord.office_id,
@@ -294,16 +283,14 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
       });
 
       // Save delivery record
-      console.log('💾 Calling saveDeliveryRecord...');
       const success = await saveDeliveryRecord(deliveryRecord);
-      console.log('💾 Save result:', success);
 
       if (success) {
         logInfo('Delivery record saved successfully', {
           billtyNo: deliveryRecord.billty_no,
           online,
         });
-        
+
         // Show appropriate success message based on online status - Validates: Requirement 6.1
         if (!online) {
           showAlert('Working offline - data will sync when connected');
@@ -320,14 +307,14 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
           const userDataString = await AsyncStorage.getItem('user_profile');
           const userData = userDataString ? JSON.parse(userDataString) : null;
           const userName = userData?.name || 'User';
-          
+
           // Send in-app notification
           const NotificationService = (await import('../services/NotificationService')).default;
           await NotificationService.notifyAdd(
             'mumbai_delivery',
             `New delivery: Billty No ${deliveryRecord.billty_no}, Amount ₹${deliveryRecord.amount}`
           );
-          
+
           // Send device notification to admin
           const DeviceNotificationService = (await import('../services/DeviceNotificationService')).default;
           await DeviceNotificationService.notifyAdminEntryAdded(
@@ -341,8 +328,7 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
               office: getCurrentOfficeId()
             }
           );
-          
-          console.log('✅ Notifications sent to admin for new delivery');
+
         } catch (notifError) {
           // Log but don't fail the save operation if notification fails
           logError(notifError instanceof Error ? notifError : new Error('Notification failed'), {
@@ -402,7 +388,7 @@ function DataEntryScreen({ navigation }: DataEntryScreenProps): React.JSX.Elemen
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollViewContent}
           keyboardShouldPersistTaps="handled"
         >

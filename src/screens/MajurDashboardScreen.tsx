@@ -17,6 +17,8 @@ import { supabase } from '../supabase';
 import { Colors } from '../theme/colors';
 import { GlobalStyles } from '../theme/styles';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type MajurDashboardScreenNavigationProp = NavigationProp<RootStackParamList>;
 
@@ -70,7 +72,7 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
 
     if (isToday) return 'आज';
     if (isYesterday) return 'कल';
-    
+
     return date.toLocaleDateString('hi-IN', {
       day: '2-digit',
       month: 'short',
@@ -96,10 +98,8 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
       if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
         console.error('❌ [MajurDashboard] Error fetching payment data:', error);
       } else if (paymentData) {
-        console.log('💰 [MajurDashboard] Payment data loaded:', paymentData);
         setPaymentData(paymentData);
       } else {
-        console.log('💰 [MajurDashboard] No payment data found for current month');
         setPaymentData(null);
       }
     } catch (error) {
@@ -110,10 +110,9 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
   const loadMajuriData = useCallback(async () => {
     try {
       const allMajuri: AgencyMajuri[] = await getAgencyMajuri();
-      console.log('📊 [MajurDashboard] Loaded majuri data:', allMajuri.length, 'entries');
-      
+
       // Sort by date (newest first)
-      const sortedMajuri = allMajuri.sort((a, b) => 
+      const sortedMajuri = allMajuri.sort((a, b) =>
         new Date(b.majuri_date).getTime() - new Date(a.majuri_date).getTime()
       );
 
@@ -155,7 +154,7 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
         const today = new Date();
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        
+
         const isToday = date.toDateString() === today.toDateString();
         const isYesterday = date.toDateString() === yesterday.toDateString();
 
@@ -178,8 +177,7 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
       });
       const total = selectedDateEntries.reduce((sum, item) => sum + item.amount, 0);
       setDailyTotal(total);
-      
-      console.log('📊 [MajurDashboard] Daily total for', selectedDate.toDateString(), ':', total);
+
 
       // Load payment data
       await loadPaymentData();
@@ -199,7 +197,7 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
   //   if (Platform.OS === 'android') {
   //     setShowDatePicker(false);
   //   }
-  //   
+  //
   //   if (date) {
   //     setSelectedDate(date);
   //     setViewMode('date');
@@ -213,8 +211,8 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
     }, [loadMajuriData])
   );
 
-  const filteredData = viewMode === 'all' 
-    ? majuriData 
+  const filteredData = viewMode === 'all'
+    ? majuriData
     : majuriData.filter(item => new Date(item.majuri_date).toDateString() === selectedDate.toDateString());
 
   const renderMajuriItem = ({ item }: { item: MajuriWithAgency }) => (
@@ -300,7 +298,7 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>मजूर डैशबोर्ड</Text>
-          {/* <TouchableOpacity 
+          {/* <TouchableOpacity
             onPress={() => setShowDatePicker(true)}
             style={styles.dateButton}
           >
@@ -355,7 +353,7 @@ function MajurDashboardScreen({ navigation }: MajurDashboardScreenProps): React.
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>दिनवार सारांश</Text>
         {viewMode === 'date' && (
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => setViewMode('all')}
             style={styles.clearFilterButton}
           >

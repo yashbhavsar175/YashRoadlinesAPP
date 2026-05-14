@@ -17,6 +17,8 @@ import { supabase } from '../supabase';
 import { getProfile, getOffices, Office } from '../data/Storage';
 import CommonHeader from '../components/CommonHeader';
 import Dropdown from '../components/Dropdown';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type ProfileSettingsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -122,11 +124,11 @@ function ProfileSettingsScreen({ navigation }: ProfileSettingsScreenProps): Reac
   return (
     <View style={GlobalStyles.container}>
       <CommonHeader title="Profile Settings" onBackPress={() => navigation.goBack()} />
-      
+
       <ScrollView style={styles.scrollView}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account Information</Text>
-          
+
           <View style={styles.infoRow}>
             <Text style={styles.label}>Email</Text>
             <Text style={styles.value}>{userEmail}</Text>

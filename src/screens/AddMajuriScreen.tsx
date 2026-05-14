@@ -12,6 +12,8 @@ import { supabase } from '../supabase';
 // ✨ Optimized: Using common components
 import { CommonHeader, CommonInput, LoadingSpinner, EmptyState, Dropdown } from '../components';
 import { useOffice } from '../context/OfficeContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type AddMajuriScreenNavigationProp = NavigationProp<RootStackParamList, 'AddMajuri'>;
 
@@ -68,7 +70,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
   const handleSaveMajuri = async () => {
     // Dismiss keyboard
     Keyboard.dismiss();
-    
+
     if (!selectedAgency) {
       showAlert('Please select an agency');
       return;
@@ -95,7 +97,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
       const userDataString = await AsyncStorage.getItem('user_profile');
       const userData = userDataString ? JSON.parse(userDataString) : null;
       const userName = userData?.name || 'User';
-      
+
       // Send device notification to admin
       await DeviceNotificationService.notifyAdminEntryAdded(
         'Majuri Entry',
@@ -107,17 +109,15 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
           office: getCurrentOfficeId()
         }
       );
-      
+
       showAlert('Majuri saved successfully');
       setMajuriAmount('');
       setDescription('');
       await loadData();
-      
+
       // Trigger manual sync to refresh all majur dashboards
-      console.log('AddMajuriScreen - Triggering manual sync after majuri save');
       try {
         await syncAllDataFixed();
-        console.log('AddMajuriScreen - Manual sync completed');
       } catch (error) {
         console.error('AddMajuriScreen - Manual sync failed:', error);
       }
@@ -142,7 +142,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
   );
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={GlobalStyles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
@@ -152,7 +152,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
       {/* ✨ Optimized: Using CommonHeader component */}
       <CommonHeader title="Add Majuri" onBackPress={goBack} />
 
-      <ScrollView 
+      <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ flexGrow: 1, paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled"
@@ -163,7 +163,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
         <View style={styles.cardContent}>
           <Text style={GlobalStyles.title}>Add Majuri Entry</Text>
           <Text style={styles.dateText}>Date: {currentDate}</Text>
-          
+
           {/* ✨ Optimized: Using CommonInput component */}
           <Text style={styles.inputLabel}>Select Agency <Text style={styles.requiredStar}>*</Text></Text>
           <Dropdown
@@ -172,7 +172,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
             onValueChange={setSelectedAgency}
             placeholder={agencyOptions.length > 0 ? "Select Agency" : "No Agencies Added"}
           />
-          
+
           <CommonInput
             label="Majuri Amount"
             required
@@ -181,7 +181,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
             onChangeText={setMajuriAmount}
             keyboardType="numeric"
           />
-          
+
           <CommonInput
             label="Description (Optional)"
             placeholder="Description (Optional)"
@@ -198,7 +198,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
       </View>
 
       <Text style={styles.listSectionTitle}>Recent Majuri Entries</Text>
-      
+
       {/* ✨ Optimized: Using LoadingSpinner and EmptyState components */}
       {loading ? (
         <LoadingSpinner message="Loading entries..." />
@@ -218,7 +218,7 @@ function AddMajuriScreen({ navigation }: AddMajuriScreenProps): React.JSX.Elemen
           message="No majuri entries added yet. Add your first entry above."
         />
       )}
-      
+
       <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
         <Text style={GlobalStyles.buttonPrimaryText}>Go Back</Text>
       </TouchableOpacity>

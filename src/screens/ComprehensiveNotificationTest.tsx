@@ -18,6 +18,8 @@ import NotificationFixer from '../services/NotificationFixer';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import PushNotificationService from '../services/PushNotificationService';
 import NotificationService from '../services/NotificationService';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 export default function ComprehensiveNotificationTest({ navigation }: any) {
   const [loading, setLoading] = useState(false);
@@ -45,22 +47,21 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
   const runAllFixes = async () => {
     setLoading(true);
     try {
-      console.log('🔧 Running all notification fixes...');
-      
+
       const fixes = await NotificationFixer.fixAllNotificationIssues();
       setFixResults(fixes);
-      
+
       const summary = NotificationFixer.getFixSummary();
-      
+
       Alert.alert(
         'Fix Complete!',
         `Fixed: ${summary.successful}/${summary.total} components\n${summary.allFixed ? '✅ All issues fixed!' : '⚠️ Some issues remain'}`,
         [{ text: 'OK' }]
       );
-      
+
       // Refresh token info after fixes
       await getTokenInfo();
-      
+
     } catch (error) {
       Alert.alert('Error', `Fix failed: ${error}`);
     }
@@ -71,19 +72,18 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
   const runAllTests = async () => {
     setLoading(true);
     try {
-      console.log('🧪 Running comprehensive notification tests...');
-      
+
       const results = await SupabaseNotificationTester.runCompleteTest();
       setTestResults(results);
-      
+
       const summary = SupabaseNotificationTester.getTestSummary();
-      
+
       Alert.alert(
         'Test Complete!',
         `Passed: ${summary.passed}/${summary.total} tests\n${summary.success ? '✅ All tests passed!' : '❌ Some tests failed'}`,
         [{ text: 'OK' }]
       );
-      
+
     } catch (error) {
       Alert.alert('Error', `Test failed: ${error}`);
     }
@@ -93,13 +93,12 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
   // Test immediate notification
   const testImmediateNotification = async () => {
     try {
-      console.log('📱 Testing immediate notification...');
-      
+
       const success = await NotificationFixer.testImmediateNotification();
-      
+
       if (success) {
         Alert.alert(
-          'Test Sent!', 
+          'Test Sent!',
           'Check your notification panel. If you don\'t see the notification:\n\n' +
           '1. Check notification permissions\n' +
           '2. Check notification channels\n' +
@@ -116,10 +115,9 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
   // Force multiple notifications
   const forceMultipleNotifications = async () => {
     try {
-      console.log('💪 Forcing multiple notifications...');
-      
+
       const success = await SupabaseNotificationTester.forceDeviceNotificationTest();
-      
+
       if (success) {
         Alert.alert(
           'Multiple Tests Sent!',
@@ -146,7 +144,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
             buttonNegative: 'Deny',
           }
         );
-        
+
         if (granted === PermissionsAndroid.RESULTS.GRANTED) {
           Alert.alert('Success!', 'Notification permission granted');
         } else {
@@ -168,8 +166,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
   const testEdgeFunction = async () => {
     setLoading(true);
     try {
-      console.log('🚀 Testing Supabase Edge Function...');
-      
+
       const { data, error } = await supabase.functions.invoke('quick-processor', {
         body: {
           action: 'send_push',
@@ -195,8 +192,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
   const testCompleteFlow = async () => {
     setLoading(true);
     try {
-      console.log('🔄 Testing complete notification flow...');
-      
+
       // Simulate adding an entry (what happens in real app)
       await DeviceNotificationService.notifyAdminEntryAdded(
         'Test Entry',
@@ -207,7 +203,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
           description: 'Test entry from notification test'
         }
       );
-      
+
       // Also test the notification service
       await NotificationService.sendAdminNotification({
         title: '🧪 Complete Flow Test',
@@ -216,7 +212,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
         severity: 'success',
         metadata: { test: true, flow: 'complete' }
       });
-      
+
       Alert.alert(
         'Complete Flow Tested!',
         'Simulated adding an entry. Check:\n\n' +
@@ -225,7 +221,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
         '3. Server push notifications\n' +
         '4. Console logs for detailed info'
       );
-      
+
     } catch (error) {
       Alert.alert('Error', `Complete flow test failed: ${error}`);
     }
@@ -253,7 +249,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
       setTokenInfo(null);
       setTestResults([]);
       setFixResults([]);
-      
+
       Alert.alert('Cleared', 'All notification data cleared and reset');
     } catch (error) {
       Alert.alert('Error', `Clear failed: ${error}`);
@@ -284,7 +280,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
       <View style={styles.header}>
         <Text style={styles.title}>🔔 Complete Notification Test</Text>
         <Text style={styles.subtitle}>User: {user?.email || 'Not logged in'}</Text>
-        
+
         {tokenInfo && (
           <View style={styles.tokenInfo}>
             <Text style={styles.tokenText}>Token: {tokenInfo.token}</Text>
@@ -303,7 +299,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
         >
           <Text style={styles.buttonText}>🔧 Fix All Issues</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={requestPermissions}
@@ -315,7 +311,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🧪 Test Notifications</Text>
-        
+
         <TouchableOpacity
           style={[styles.button, styles.testButton]}
           onPress={runAllTests}
@@ -323,7 +319,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
         >
           <Text style={styles.buttonText}>🧪 Run All Tests</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={testImmediateNotification}
@@ -331,7 +327,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
         >
           <Text style={styles.buttonText}>📱 Test Immediate</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={forceMultipleNotifications}
@@ -339,7 +335,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
         >
           <Text style={styles.buttonText}>💪 Force Multiple</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={testEdgeFunction}
@@ -347,7 +343,7 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
         >
           <Text style={styles.buttonText}>🚀 Test Edge Function</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={testCompleteFlow}
@@ -359,14 +355,14 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>⚙️ Utilities</Text>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={openNotificationSettings}
         >
           <Text style={styles.buttonText}>⚙️ Settings Guide</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.button}
           onPress={clearAndReset}
@@ -377,10 +373,10 @@ export default function ComprehensiveNotificationTest({ navigation }: any) {
 
       {fixResults.length > 0 && renderResults(fixResults, '🔧 Fix Results')}
       {testResults.length > 0 && renderResults(testResults, '🧪 Test Results')}
-      
+
       <View style={styles.footer}>
         <Text style={styles.footerText}>
-          If notifications still don't work after running fixes and tests, 
+          If notifications still don't work after running fixes and tests,
           check device notification settings and battery optimization.
         </Text>
       </View>

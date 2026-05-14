@@ -20,6 +20,8 @@ import { GlobalStyles } from '../theme/styles';
 import { supabase } from '../supabase';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAlert } from '../context/AlertContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type AdminPasswordChangeScreenNavigationProp = NavigationProp<RootStackParamList, 'AdminPasswordChangeScreen'>;
 
@@ -119,12 +121,6 @@ const AdminPasswordChangeScreen: React.FC<AdminPasswordChangeScreenProps> = ({ n
         try {
             setChangingPassword(true);
 
-            console.log('🔧 DEBUG: Attempting password reset for user:', {
-                userId: selectedUser.id,
-                username: selectedUser.username,
-                email: selectedUser.email
-            });
-
             // Method 1: Try test function first to debug UUID error
             const { data: testData, error: testError } = await supabase.rpc('test_admin_password_change', {
                 target_user_email: selectedUser.email,
@@ -136,7 +132,6 @@ const AdminPasswordChangeScreen: React.FC<AdminPasswordChangeScreenProps> = ({ n
                 throw testError;
             }
 
-            console.log('🔧 DEBUG: Test function result:', testData);
 
             if (testData && !testData.success) {
                 throw new Error(`Test failed at ${testData.step}: ${testData.error}`);
@@ -157,7 +152,6 @@ const AdminPasswordChangeScreen: React.FC<AdminPasswordChangeScreenProps> = ({ n
                 throw new Error(directChangeData.error || 'Password change failed');
             }
 
-            console.log('✅ Password changed successfully via direct method');
             showAlert(`Password successfully changed for ${selectedUser.username}!\n\nNew Password: ${newPassword}\n\nThe user can now login with this password.`);
 
             // Reset form
@@ -167,10 +161,10 @@ const AdminPasswordChangeScreen: React.FC<AdminPasswordChangeScreenProps> = ({ n
 
         } catch (error: any) {
             console.error('Error changing password:', error);
-            
+
             // Parse different types of errors
             let errorMessage = 'Unknown error occurred';
-            
+
             if (error.message?.includes('Access denied') || error.message?.includes('access_denied')) {
                 errorMessage = 'Access denied: You need admin privileges to change passwords. Please ensure you are logged in as an admin user.';
             } else if (error.message?.includes('JWT') || error.message?.includes('token')) {
@@ -186,18 +180,8 @@ const AdminPasswordChangeScreen: React.FC<AdminPasswordChangeScreenProps> = ({ n
             } else if (error.message) {
                 errorMessage = `Password change failed: ${error.message}`;
             }
-            
+
             showAlert(errorMessage);
-            
-            // Log additional debug info
-            console.log('🔧 DEBUG: Error details', {
-                errorType: typeof error,
-                errorMessage: error.message,
-                errorCode: error.code,
-                errorStatus: error.status,
-                selectedUserId: selectedUser?.id,
-                selectedUserEmail: selectedUser?.email
-            });
         } finally {
             setChangingPassword(false);
         }
@@ -250,7 +234,7 @@ const AdminPasswordChangeScreen: React.FC<AdminPasswordChangeScreenProps> = ({ n
     );
 
     return (
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
             style={GlobalStyles.container}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
@@ -266,8 +250,8 @@ const AdminPasswordChangeScreen: React.FC<AdminPasswordChangeScreenProps> = ({ n
                 <View style={styles.headerSpacer} />
             </View>
 
-            <ScrollView 
-                style={styles.content} 
+            <ScrollView
+                style={styles.content}
                 showsVerticalScrollIndicator={true}
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ flexGrow: 1 }}

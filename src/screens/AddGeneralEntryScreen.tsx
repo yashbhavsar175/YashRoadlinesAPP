@@ -12,6 +12,8 @@ import { useOffice } from '../context/OfficeContext';
 import DeviceNotificationService from '../services/DeviceNotificationService';
 import { supabase } from '../supabase';
 import { CommonHeader, CommonInput } from '../components';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 type AddGeneralEntryScreenNavigationProp = NavigationProp<RootStackParamList, 'AddGeneralEntry'>;
 
 interface AddGeneralEntryScreenProps {
@@ -70,11 +72,11 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
         // Get current user info for notifications
         const { data: { user } } = await supabase.auth.getUser();
         const userName = user?.user_metadata?.full_name || user?.email || 'User';
-        
+
         // Send device notification to admin
         await DeviceNotificationService.notifyAdminEntryAdded(
-          'General Entry', 
-          userName, 
+          'General Entry',
+          userName,
           {
             type: entryType,
             amount: numAmount,
@@ -82,7 +84,7 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
             agency: agencyName
           }
         );
-        
+
         showAlert('Entry saved successfully!');
         // Reset fields for next entry
         setDescription('');
@@ -111,7 +113,7 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
         <View style={GlobalStyles.card}>
           <Text style={GlobalStyles.title}>Add General Entry</Text>
-          
+
           <CommonInput
             label="Description"
             required
@@ -121,7 +123,7 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
             style={{ height: 80, textAlignVertical: 'top' }}
             multiline
           />
-          
+
           <CommonInput
             label="Amount"
             required
@@ -131,8 +133,8 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
             keyboardType="numeric"
           />
 
-          
-          
+
+
           <Text style={styles.inputLabel}>Entry Type <Text style={styles.requiredStar}>*</Text></Text>
           <View style={styles.radioContainer}>
             <TouchableOpacity
@@ -150,7 +152,7 @@ function AddGeneralEntryScreen({ navigation }: AddGeneralEntryScreenProps): Reac
               <Text style={[styles.radioText, entryType === 'credit' && styles.radioTextSelected]}>Credit</Text>
             </TouchableOpacity>
           </View>
-          
+
           <TouchableOpacity onPress={handleSaveEntry} disabled={saving} style={[GlobalStyles.buttonPrimary, saving && styles.disabledButton]}>
             <Text style={GlobalStyles.buttonPrimaryText}>{saving ? 'Saving...' : 'Save Entry'}</Text>
           </TouchableOpacity>

@@ -17,6 +17,8 @@ import { supabase } from '../supabase';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useUserAccess } from '../context/UserAccessContext';
 import { getOffices, setUserOfficeAssignment, Office } from '../data/Storage';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 interface UserProfile {
   id: string;
@@ -289,7 +291,6 @@ const UserAccessManagementScreen: React.FC = () => {
     try {
       const officeList = await getOffices();
       setOffices(officeList);
-      console.log('📋 Loaded offices:', officeList.length);
     } catch (error) {
       console.error('Error loading offices:', error);
     }
@@ -321,13 +322,6 @@ const UserAccessManagementScreen: React.FC = () => {
       }));
 
       setUsers(usersWithOffice);
-      console.log('🔍 Debug: Users loaded with office assignments:', usersWithOffice.map(u => ({
-        name: u.full_name,
-        id: u.id,
-        office_name: u.office_name,
-        screen_access: u.screen_access,
-        access_count: u.screen_access?.length || 0
-      })));
     } catch (error) {
       console.error('Error in loadUsers:', error);
       Alert.alert('Error', 'Failed to load users');
@@ -342,7 +336,7 @@ const UserAccessManagementScreen: React.FC = () => {
       if (!user) return;
 
       let currentAccess = user.screen_access || [];
-      
+
       if (hasAccess) {
         // Add screen access
         if (!currentAccess.includes(screenName)) {
@@ -355,7 +349,7 @@ const UserAccessManagementScreen: React.FC = () => {
 
       const { error } = await supabase
         .from('user_profiles')
-        .update({ 
+        .update({
           screen_access: currentAccess,
           updated_at: new Date().toISOString()
         })
@@ -368,8 +362,8 @@ const UserAccessManagementScreen: React.FC = () => {
       }
 
       // Update local state
-      setUsers(prev => prev.map(u => 
-        u.id === userId 
+      setUsers(prev => prev.map(u =>
+        u.id === userId
           ? { ...u, screen_access: currentAccess }
           : u
       ));
@@ -378,21 +372,12 @@ const UserAccessManagementScreen: React.FC = () => {
       const actionText = hasAccess ? 'granted' : 'removed';
       const screenDisplayName = AVAILABLE_SCREENS.find(s => s.screen_name === screenName)?.display_name || screenName;
       Alert.alert(
-        'Success', 
+        'Success',
         `${screenDisplayName} access ${actionText} for ${user.full_name || user.username}. Changes will be visible immediately.`
       );
 
-      console.log('✅ Screen access updated:', {
-        userId,
-        userName: user.full_name || user.username,
-        screenName,
-        hasAccess,
-        newAccess: currentAccess
-      });
-
       // Refresh permissions in context for real-time updates across app
       await refreshPermissions();
-      console.log('🔄 Real-time permissions refreshed after access update');
     } catch (error) {
       console.error('Error in updateUserAccess:', error);
       Alert.alert('Error', 'Failed to update user access');
@@ -409,13 +394,13 @@ const UserAccessManagementScreen: React.FC = () => {
 
     try {
       const success = await setUserOfficeAssignment(selectedUserForOffice.id, officeId);
-      
+
       if (success) {
         const selectedOffice = offices.find(o => o.id === officeId);
-        
+
         // Update local state (office_name is for display only, not in DB)
-        setUsers(prev => prev.map(u => 
-          u.id === selectedUserForOffice.id 
+        setUsers(prev => prev.map(u =>
+          u.id === selectedUserForOffice.id
             ? { ...u, office_id: officeId, office_name: selectedOffice?.name }
             : u
         ));
@@ -424,13 +409,6 @@ const UserAccessManagementScreen: React.FC = () => {
           'Success',
           `${selectedUserForOffice.full_name} has been assigned to ${selectedOffice?.name}`
         );
-
-        console.log('✅ Office assignment updated:', {
-          userId: selectedUserForOffice.id,
-          userName: selectedUserForOffice.full_name,
-          officeId,
-          officeName: selectedOffice?.name
-        });
       } else {
         Alert.alert('Error', 'Failed to update office assignment');
       }
@@ -451,8 +429,7 @@ const UserAccessManagementScreen: React.FC = () => {
 
   const renderUserCard = (user: UserProfile) => {
     const userAccess = user.screen_access || [];
-    console.log(`🔍 Debug: Rendering user ${user.full_name} with access:`, userAccess);
-    
+
     return (
       <View key={user.id} style={styles.userCard}>
         <View style={styles.userHeader}>
@@ -464,12 +441,12 @@ const UserAccessManagementScreen: React.FC = () => {
             </Text>
             <View style={styles.userBadges}>
               {user.is_admin && <Text style={styles.adminBadge}>Admin</Text>}
-              <Text style={[styles.typeBadge, 
+              <Text style={[styles.typeBadge,
                 user.user_type === 'majur' ? styles.majurBadge : styles.normalBadge
               ]}>
                 {user.user_type === 'majur' ? 'Majur' : 'Normal'}
               </Text>
-              <Text style={[styles.statusBadge, 
+              <Text style={[styles.statusBadge,
                 user.is_active ? styles.activeBadge : styles.inactiveBadge
               ]}>
                 {user.is_active ? 'Active' : 'Inactive'}
@@ -481,7 +458,7 @@ const UserAccessManagementScreen: React.FC = () => {
               )}
             </View>
             {user.office_name && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.changeOfficeButton}
                 onPress={() => handleChangeOffice(user)}
               >
@@ -490,7 +467,7 @@ const UserAccessManagementScreen: React.FC = () => {
               </TouchableOpacity>
             )}
             {!user.office_name && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.assignOfficeButton}
                 onPress={() => handleChangeOffice(user)}
               >
@@ -503,10 +480,10 @@ const UserAccessManagementScreen: React.FC = () => {
             style={styles.editButton}
             onPress={() => setSelectedUser(selectedUser?.id === user.id ? null : user)}
           >
-            <Icon 
-              name={selectedUser?.id === user.id ? "chevron-up" : "chevron-down"} 
-              size={20} 
-              color="#3498db" 
+            <Icon
+              name={selectedUser?.id === user.id ? "chevron-up" : "chevron-down"}
+              size={20}
+              color="#3498db"
             />
           </TouchableOpacity>
         </View>
@@ -514,22 +491,17 @@ const UserAccessManagementScreen: React.FC = () => {
         {selectedUser?.id === user.id && (
           <View style={styles.permissionsSection}>
             <Text style={styles.permissionsTitle}>Screen Access Permissions</Text>
-            
+
             {/* Group screens by category */}
             {['Financial Entry', 'Driver & Vehicle', 'Reports', 'Cash Management', 'Administration', 'Dashboards', 'System'].map(category => {
               const categoryScreens = AVAILABLE_SCREENS.filter(screen => screen.category === category);
               if (categoryScreens.length === 0) return null;
-              
+
               return (
                 <View key={category} style={styles.categorySection}>
                   <Text style={styles.categoryTitle}>{category}</Text>
                   {categoryScreens.map(screen => {
                     const hasAccess = userAccess.includes(screen.screen_name);
-                    console.log(`🔍 Permission check: ${screen.display_name} for ${user.full_name}:`, {
-                      screen_name: screen.screen_name,
-                      userAccess,
-                      hasAccess
-                    });
                     return (
                       <View key={screen.screen_name} style={styles.permissionItem}>
                         <View style={styles.permissionInfo}>
@@ -568,11 +540,11 @@ const UserAccessManagementScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       {/* Header */}
       <View style={styles.navigationHeader}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
           <Icon name="arrow-back" size={24} color="#000" />
@@ -641,7 +613,7 @@ const UserAccessManagementScreen: React.FC = () => {
                 <Icon name="close" size={24} color="#2c3e50" />
               </TouchableOpacity>
             </View>
-            
+
             {selectedUserForOffice && (
               <Text style={styles.modalSubtitle}>
                 Assign office for {selectedUserForOffice.full_name}
@@ -659,10 +631,10 @@ const UserAccessManagementScreen: React.FC = () => {
                   onPress={() => handleOfficeSelection(office.id)}
                 >
                   <View style={styles.officeItemContent}>
-                    <Icon 
-                      name="business" 
-                      size={20} 
-                      color={selectedUserForOffice?.office_id === office.id ? "#3498db" : "#7f8c8d"} 
+                    <Icon
+                      name="business"
+                      size={20}
+                      color={selectedUserForOffice?.office_id === office.id ? "#3498db" : "#7f8c8d"}
                     />
                     <View style={styles.officeItemText}>
                       <Text style={[

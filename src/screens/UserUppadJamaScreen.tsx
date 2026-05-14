@@ -23,6 +23,8 @@ import { CommonHeader, CommonInput, Dropdown } from '../components';
 import { saveUppadJamaEntry, UppadJamaEntry } from '../data/Storage';
 import { useOffice } from '../context/OfficeContext';
 import { useAlert } from '../context/AlertContext';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type UserUppadJamaNavigationProp = NavigationProp<RootStackParamList, 'UserUppadJama'>;
 

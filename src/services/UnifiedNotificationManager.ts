@@ -199,6 +199,9 @@ class UnifiedNotificationManager {
   private setupRealtimeSubscriptions() {
     // Admin subscription
     if (this.isAdmin) {
+      // ✅ DISABLED to prevent duplicate notifications. 
+      // FCM via AdminEntryNotificationService already handles both background and foreground push notifications.
+      /*
       NotificationService.subscribeToNotifications((notification) => {
         this.showLocalNotification({
           title: notification.title,
@@ -208,6 +211,7 @@ class UnifiedNotificationManager {
           data: notification,
         });
       });
+      */
     }
 
     // User subscription

@@ -17,6 +17,8 @@ import { NavigationProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { Colors } from '../theme/colors';
 import { supabase } from '../supabase';
+import { useSafeAsync, FLATLIST_OPTIMIZATIONS, useSubscriptionCleanup } from '../utils/performanceOptimizations';
+
 
 type PageBuilderScreenNavigationProp = NavigationProp<any, 'PageBuilder'>;
 
@@ -71,14 +73,14 @@ const SCREEN_OPTIONS: ScreenOption[] = [
 ];
 
 const COLOR_OPTIONS = [
-  '#2196F3', '#4CAF50', '#FF9800', '#9C27B0', 
+  '#2196F3', '#4CAF50', '#FF9800', '#9C27B0',
   '#F44336', '#00BCD4', '#795548', '#607D8B',
   '#E91E63', '#3F51B5', '#009688', '#8BC34A'
 ];
 
 const PageBuilderScreen = ({ navigation }: PageBuilderScreenProps): React.JSX.Element => {
   const { goBack } = navigation;
-  
+
   const [page, setPage] = useState<CustomPage>({
     title: '',
     description: '',
@@ -88,7 +90,7 @@ const PageBuilderScreen = ({ navigation }: PageBuilderScreenProps): React.JSX.El
     text_color: '#FFFFFF',
     sort_order: 0,
   });
-  
+
   const [loading, setLoading] = useState(false);
   const [iconModalVisible, setIconModalVisible] = useState(false);
   const [screenModalVisible, setScreenModalVisible] = useState(false);
@@ -99,7 +101,7 @@ const PageBuilderScreen = ({ navigation }: PageBuilderScreenProps): React.JSX.El
       Alert.alert('Error', 'Please enter page title');
       return;
     }
-    
+
     if (!page.description.trim()) {
       Alert.alert('Error', 'Please enter page description');
       return;
@@ -127,7 +129,6 @@ const PageBuilderScreen = ({ navigation }: PageBuilderScreenProps): React.JSX.El
         return;
       }
 
-      console.log('✅ Page saved successfully:', data);
       Alert.alert(
         'Success',
         'Page created successfully! It will appear on the home screen.',
@@ -212,7 +213,7 @@ const PageBuilderScreen = ({ navigation }: PageBuilderScreenProps): React.JSX.El
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backButton}>
