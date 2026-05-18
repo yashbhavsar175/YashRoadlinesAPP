@@ -260,25 +260,34 @@ class PushNotificationService {
   private async requestPermissions() {
     try {
       if (Platform.OS === 'android') {
+        // Wait for Activity to be ready before requesting permissions
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         // For Android 13+ (API 33+), we need to request POST_NOTIFICATIONS permission
         if (Platform.Version >= 33) {
-          const granted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-            {
-              title: 'Notification Permission',
-              message: 'YashRoadlines needs notification permission to send you important updates about user activities.',
-              buttonNeutral: 'Ask Me Later',
-              buttonNegative: 'Cancel',
-              buttonPositive: 'OK',
+          try {
+            const granted = await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+              {
+                title: 'Notification Permission',
+                message: 'YashRoadlines needs notification permission to send you important updates about user activities.',
+                buttonNeutral: 'Ask Me Later',
+                buttonNegative: 'Cancel',
+                buttonPositive: 'OK',
+              }
+            );
+            
+            if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+              console.log('✅ Android notification permission granted');
+              return true;
+            } else {
+              console.log('❌ Android notification permission denied');
+              return false;
             }
-          );
-          
-          if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-            console.log('✅ Android notification permission granted');
+          } catch (permError) {
+            console.warn('⚠️ Permission request failed (Activity not ready?):', permError);
+            // Return true to continue setup even if permission request fails
             return true;
-          } else {
-            console.log('❌ Android notification permission denied');
-            return false;
           }
         } else {
           // For older Android versions, notifications are enabled by default
@@ -289,7 +298,8 @@ class PushNotificationService {
       return true;
     } catch (error) {
       console.error('❌ Error requesting permissions:', error);
-      return false;
+      // Return true to continue setup even if permission check fails
+      return true;
     }
   }
 

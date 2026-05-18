@@ -194,8 +194,8 @@ const AdminUserManagementScreen = ({ navigation }: AdminUserManagementScreenProp
                 </View>
             </View>
 
-            {/* Users List */}
             <FlatList
+                {...FLATLIST_OPTIMIZATIONS}
                 data={users}
                 renderItem={renderUser}
                 keyExtractor={(item) => item.id}

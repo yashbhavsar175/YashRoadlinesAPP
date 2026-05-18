@@ -1,6 +1,6 @@
 // HistoryScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Alert, Text, TouchableOpacity, FlatList, ActivityIndicator, StatusBar, Platform, RefreshControl } from 'react-native';
+import { View, StyleSheet, Alert, Text, TouchableOpacity, FlatList, ActivityIndicator, StatusBar, Platform, RefreshControl, TextInput } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
@@ -43,6 +43,10 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
   const [adminLoading, setAdminLoading] = useState<boolean>(true);
 
   const [historyLogs, setHistoryLogs] = useState<HistoryLog[]>([]);
+  const [filteredLogs, setFilteredLogs] = useState<HistoryLog[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage] = useState<number>(10);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -84,12 +88,31 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
   const loadHistory = useCallback(async (dateToLoad: Date) => {
     setLoading(true);
     try {
-      const logs = await getHistoryLogs();
-      const filteredLogs = logs.filter(log => {
-        const logDate = new Date(log.created_at);
-        return logDate.toDateString() === dateToLoad.toDateString();
+      // Create start and end of day for the selected date
+      const startOfDay = new Date(dateToLoad);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(dateToLoad);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      const startISO = startOfDay.toISOString();
+      const endISO = endOfDay.toISOString();
+      
+      console.log('📅 Loading history for date:', {
+        date: dateToLoad.toLocaleDateString('en-IN'),
+        startISO,
+        endISO
       });
-      setHistoryLogs(filteredLogs);
+      
+      // Fetch logs with date range filter
+      const logs = await getHistoryLogs(startISO, endISO);
+      
+      console.log('📊 History logs fetched:', logs.length);
+      
+      setHistoryLogs(logs);
+      setFilteredLogs(logs);
+      setCurrentPage(1);
+      setSearchQuery('');
     } catch (error) {
       console.error("Error loading history logs:", error);
       Alert.alert('Error', 'Failed to load history logs.');
@@ -123,6 +146,60 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
     }
   };
 
+  // Search filter function
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    setCurrentPage(1);
+
+    if (!query.trim()) {
+      setFilteredLogs(historyLogs);
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const filtered = historyLogs.filter(log => {
+      // Search in action
+      if (log.action.toLowerCase().includes(lowerQuery)) return true;
+      
+      // Search in table name
+      if (log.table_name.toLowerCase().includes(lowerQuery)) return true;
+      
+      // Search in user name
+      if (log.user_name.toLowerCase().includes(lowerQuery)) return true;
+      
+      // Search in record ID
+      if (log.record_id.toLowerCase().includes(lowerQuery)) return true;
+      
+      // Search in details
+      if (log.details) {
+        const detailsStr = JSON.stringify(log.details).toLowerCase();
+        if (detailsStr.includes(lowerQuery)) return true;
+      }
+      
+      return false;
+    });
+
+    setFilteredLogs(filtered);
+  }, [historyLogs]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
+
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
   const renderLogItem = ({ item }: { item: HistoryLog }) => (
     <View style={GlobalStyles.card}>
       <View style={styles.logHeader}>
@@ -149,16 +226,23 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
   const renderEmptyState = () => (
     <View style={[GlobalStyles.card, styles.emptyStateCard]}>
       <Icon name="archive-outline" size={48} color={Colors.textSecondary} style={styles.emptyIcon} />
-      <Text style={[GlobalStyles.title, styles.emptyStateTitle]}>No History Found</Text>
-      <Text style={[GlobalStyles.bodyText, styles.emptyStateText]}>
-        It looks like no actions have been logged yet for this date.
+      <Text style={[GlobalStyles.title, styles.emptyStateTitle]}>
+        {searchQuery ? 'No Results Found' : 'No History Found'}
       </Text>
-      <TouchableOpacity
-        onPress={handleRefresh}
-        style={GlobalStyles.buttonPrimary}
-      >
-        <Text style={GlobalStyles.buttonPrimaryText}>Refresh Data</Text>
-      </TouchableOpacity>
+      <Text style={[GlobalStyles.bodyText, styles.emptyStateText]}>
+        {searchQuery 
+          ? `No history logs match "${searchQuery}". Try a different search term.`
+          : 'It looks like no actions have been logged yet for this date.'
+        }
+      </Text>
+      {!searchQuery && (
+        <TouchableOpacity
+          onPress={handleRefresh}
+          style={GlobalStyles.buttonPrimary}
+        >
+          <Text style={GlobalStyles.buttonPrimaryText}>Refresh Data</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -212,22 +296,84 @@ function HistoryScreen({ navigation }: HistoryScreenProps): React.JSX.Element {
         />
       )}
 
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Icon name="search-outline" size={20} color={Colors.textSecondary} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by action, table, user, or details..."
+          placeholderTextColor={Colors.textSecondary}
+          value={searchQuery}
+          onChangeText={handleSearch}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => handleSearch('')} style={styles.clearButton}>
+            <Icon name="close-circle" size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Results count */}
+      {!loading && filteredLogs.length > 0 && (
+        <View style={styles.resultsContainer}>
+          <Text style={styles.resultsText}>
+            Showing {startIndex + 1}-{Math.min(endIndex, filteredLogs.length)} of {filteredLogs.length} results
+          </Text>
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Loading history...</Text>
         </View>
       ) : (
-        <FlatList
-          data={historyLogs}
-          renderItem={renderLogItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={renderEmptyState}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
-          }
-        />
+        <>
+          <FlatList
+            {...FLATLIST_OPTIMIZATIONS}
+            data={paginatedLogs}
+            renderItem={renderLogItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={renderEmptyState}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={Colors.primary} />
+            }
+          />
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <View style={styles.paginationContainer}>
+              <TouchableOpacity
+                onPress={goToPreviousPage}
+                disabled={currentPage === 1}
+                style={[styles.paginationButton, currentPage === 1 && styles.paginationButtonDisabled]}
+              >
+                <Icon name="chevron-back" size={20} color={currentPage === 1 ? Colors.textSecondary : Colors.primary} />
+                <Text style={[styles.paginationButtonText, currentPage === 1 && styles.paginationButtonTextDisabled]}>
+                  Previous
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.pageIndicator}>
+                <Text style={styles.pageIndicatorText}>
+                  {currentPage} / {totalPages}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={goToNextPage}
+                disabled={currentPage === totalPages}
+                style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
+              >
+                <Text style={[styles.paginationButtonText, currentPage === totalPages && styles.paginationButtonTextDisabled]}>
+                  Next
+                </Text>
+                <Icon name="chevron-forward" size={20} color={currentPage === totalPages ? Colors.textSecondary : Colors.primary} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
       )}
 
       <TouchableOpacity onPress={goBack} style={[GlobalStyles.buttonPrimary, styles.bottomBackButton]}>
@@ -354,6 +500,88 @@ const styles = StyleSheet.create({
     color: Colors.surface,
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.textPrimary,
+    paddingVertical: 4,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  resultsContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginBottom: 4,
+  },
+  resultsText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    marginBottom: 8,
+  },
+  paginationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: Colors.primaryLight,
+  },
+  paginationButtonDisabled: {
+    backgroundColor: Colors.border,
+  },
+  paginationButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.primary,
+    marginHorizontal: 4,
+  },
+  paginationButtonTextDisabled: {
+    color: Colors.textSecondary,
+  },
+  pageIndicator: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 8,
+  },
+  pageIndicatorText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.primary,
   },
 });
 

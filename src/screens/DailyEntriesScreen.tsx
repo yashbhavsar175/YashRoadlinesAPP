@@ -839,6 +839,7 @@ function DailyEntriesScreen({ navigation }: DailyEntriesScreenProps): React.JSX.
 
     return (
       <FlatList
+        {...FLATLIST_OPTIMIZATIONS}
         data={sortedDates}
         keyExtractor={(date) => date}
         refreshControl={

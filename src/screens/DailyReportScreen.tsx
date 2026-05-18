@@ -467,6 +467,19 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         const agencyEntries: AgencyEntry[] = [];
         const otherTransactions: (DriverTransaction | GeneralEntry | TruckFuelEntry | UppadJamaEntry | AgencyMajuri)[] = [];
 
+        console.log('📊 DailyReport: Processing transactions, total count:', allTransactions.length);
+        
+        // Debug: Check if "Shjwj" entry is in allTransactions
+        const shjwjInAll = allTransactions.find((t: any) => 
+          t.description && t.description.toLowerCase().includes('shjwj')
+        );
+        if (shjwjInAll) {
+          console.log('✅ DailyReport: Found "Shjwj" in allTransactions');
+          console.log('   Entry details:', JSON.stringify(shjwjInAll, null, 2));
+        } else {
+          console.log('❌ DailyReport: "Shjwj" NOT found in allTransactions');
+        }
+
         allTransactions.forEach(item => {
           const dateKey =
             'payment_date' in item ? item.payment_date :
@@ -500,6 +513,12 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
             otherTransactions.push(item as AgencyMajuri);
           } else if ('entry_type' in item && 'agency_id' in item) {
             agencyEntries.push(item as AgencyEntry);
+            // Debug: Log when agency_entry is added
+            const agencyEntry = item as AgencyEntry;
+            if (agencyEntry.description && agencyEntry.description.toLowerCase().includes('shjwj')) {
+              console.log('✅ DailyReport: Adding "Shjwj" to agencyEntries array');
+              console.log('   Entry:', JSON.stringify(agencyEntry, null, 2));
+            }
           } else {
             otherTransactions.push(item as DriverTransaction | GeneralEntry | TruckFuelEntry | UppadJamaEntry);
           }
@@ -687,22 +706,43 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         // Mumbai entries are shown via general_entries (created during confirmation)
         // But for backward compatibility, show Mumbai entries from agency_entries
         // if they don't have a corresponding general_entry
+        
+        console.log('📋 DailyReport: Processing agencyEntries, count:', agencyEntries.length);
+        
+        // Debug: Check if "Shjwj" is in agencyEntries
+        const shjwjInAgency = agencyEntries.find((e: any) => 
+          e.description && e.description.toLowerCase().includes('shjwj')
+        );
+        if (shjwjInAgency) {
+          console.log('✅ DailyReport: Found "Shjwj" in agencyEntries array');
+          console.log('   Entry:', JSON.stringify(shjwjInAgency, null, 2));
+        } else {
+          console.log('❌ DailyReport: "Shjwj" NOT in agencyEntries array');
+        }
+        
         const processedAgencyEntries: TransactionItem[] = agencyEntries
           .filter(item => {
-            // For Mumbai entries, only skip if we're sure they're in general_entries
-            // (i.e., they have metadata or were created after the redesign)
+            // Debug logging for each item
+            const isShjwj = item.description && item.description.toLowerCase().includes('shjwj');
+            if (isShjwj) {
+              console.log('🔍 DailyReport: Filtering "Shjwj" entry');
+              console.log('   agency_name:', item.agency_name);
+              console.log('   confirmation_status:', item.confirmation_status);
+              console.log('   payment_type:', item.payment_type);
+            }
+            
+            // For Mumbai entries, show ALL entries in Daily Report
+            // Both pending and confirmed entries should be visible
             if (item.agency_name === 'Mumbai') {
-              // Skip pending entries - they shouldn't show in daily report
-              if (item.confirmation_status === 'pending') {
-                return false;
-              }
-              // For confirmed entries, check if there's a corresponding general_entry
+              // For confirmed entries with payment_type, check if there's a corresponding general_entry
               // If payment_type exists, it means it was created with new system
-              // and should have a general_entry
+              // and should have a general_entry, so skip to avoid duplication
               if (item.confirmation_status === 'confirmed' && item.payment_type) {
+                if (isShjwj) console.log('   ❌ Skipping: confirmed with payment_type (should be in general_entries)');
                 return false; // Skip - will show from general_entries
               }
-              // Otherwise, show it (backward compatibility for old entries)
+              // Show all other Mumbai entries (pending or confirmed without payment_type)
+              if (isShjwj) console.log('   ✅ Including: showing in Daily Report');
               return true;
             }
             // For other agencies, show all entries
@@ -711,19 +751,25 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           .map(item => {
             const time = new Date(item.entry_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-            // Special formatting for Mumbai deliveries (old format)
+            // Special formatting for Mumbai deliveries
             let label = item.description || 'Agency Entry';
             let subLabel = `Agency: ${item.agency_name}`;
 
-            // For old Mumbai confirmed entries (without payment_type), format them nicely
-            if (item.agency_name === 'Mumbai' && item.confirmation_status === 'confirmed') {
-              // Try to extract billty_no from description or use billty_no field
-              const billtyNo = item.billty_no || 'N/A';
-              const consigneeName = item.consignee_name || 'N/A';
-              const itemDesc = item.item_description || 'Item details';
+            // Format Mumbai entries based on their status
+            if (item.agency_name === 'Mumbai') {
+              if (item.confirmation_status === 'confirmed') {
+                // Confirmed entries - show full details
+                const billtyNo = item.billty_no || 'N/A';
+                const consigneeName = item.consignee_name || 'N/A';
+                const itemDesc = item.item_description || 'Item details';
 
-              label = `Mumbai Delivery - ${billtyNo}`;
-              subLabel = `${consigneeName} | ${itemDesc}`;
+                label = `Mumbai Delivery - ${billtyNo}`;
+                subLabel = `${consigneeName} | ${itemDesc}`;
+              } else {
+                // Pending entries - show description and mark as pending
+                label = `Mumbai Delivery - ${item.description || 'Pending'}`;
+                subLabel = `Status: Pending | Amount: ₹${item.amount}`;
+              }
             }
 
             return {
@@ -741,6 +787,23 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           });
 
         const allProcessedTransactions = [...processedGroupedTransactions, ...processedOtherTransactions, ...processedAgencyEntries];
+
+        console.log('📊 DailyReport: Final transaction counts:');
+        console.log('   processedGroupedTransactions:', processedGroupedTransactions.length);
+        console.log('   processedOtherTransactions:', processedOtherTransactions.length);
+        console.log('   processedAgencyEntries:', processedAgencyEntries.length);
+        console.log('   allProcessedTransactions:', allProcessedTransactions.length);
+        
+        // Debug: Check if "Shjwj" made it to final list
+        const shjwjInFinal = allProcessedTransactions.find((t: any) => 
+          t.label && t.label.toLowerCase().includes('shjwj')
+        );
+        if (shjwjInFinal) {
+          console.log('✅ DailyReport: "Shjwj" in final transaction list!');
+          console.log('   Transaction:', JSON.stringify(shjwjInFinal, null, 2));
+        } else {
+          console.log('❌ DailyReport: "Shjwj" NOT in final transaction list');
+        }
 
 
         // Sort like manual refresh: credits first, then debits, each sorted by time
@@ -790,9 +853,21 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
 
   // Refresh data when screen gains focus (e.g., returning from BackdatedEntry or ManageCash)
+  // Skip refresh if calculator is open to prevent unnecessary reload
+  const lastFocusTime = useRef<number>(0);
+  
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      
+      // Prevent rapid consecutive reloads (debounce)
+      const now = Date.now();
+      if (now - lastFocusTime.current < 500) {
+        console.log('⏭️ Skipping reload - too soon after last focus');
+        return;
+      }
+      lastFocusTime.current = now;
+      
       (async () => {
         try {
           // Reload cash adjustment
@@ -962,7 +1037,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
       setPreviewBusy(true);
       const cachePath = `${RNFS.CachesDirectoryPath}/${selectedPhoto.name}`;
       await RNFS.downloadFile({ fromUrl: selectedPhoto.url, toFile: cachePath }).promise;
-      await Share.open({ url: `file://${cachePath}`, type: 'image/*' });
+      await Share.open({ url: `file://${cachePath}`, type: 'image/*', failOnCancel: false });
     } catch (e) {
       console.error('share photo error:', e);
       showAlert('Could not share the image.');
@@ -1472,13 +1547,17 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
 
       const processedAgencyEntries: TransactionItem[] = agencyEntries
         .filter(item => {
-          // Skip Mumbai confirmed entries - they show via general_entries now
-          if (item.agency_name === 'Mumbai' && item.confirmation_status === 'confirmed') {
-            return false;
-          }
-          // For Mumbai pending entries, don't show in daily report
-          if (item.agency_name === 'Mumbai' && item.confirmation_status === 'pending') {
-            return false;
+          // For Mumbai entries, show ALL entries in Daily Report
+          // Both pending and confirmed entries should be visible
+          if (item.agency_name === 'Mumbai') {
+            // For confirmed entries with payment_type, check if there's a corresponding general_entry
+            // If payment_type exists, it means it was created with new system
+            // and should have a general_entry, so skip to avoid duplication
+            if (item.confirmation_status === 'confirmed' && item.payment_type) {
+              return false; // Skip - will show from general_entries
+            }
+            // Show all other Mumbai entries (pending or confirmed without payment_type)
+            return true;
           }
           // For other agencies, show all entries
           return true;
@@ -1490,9 +1569,22 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
         let label = item.description || 'Agency Entry';
         let subLabel = `Agency: ${item.agency_name}`;
 
-        // Mumbai confirmed entries should NOT show here anymore
-        // They are now handled via general_entries created during confirmation
-        // This prevents duplicate display
+        // Format Mumbai entries based on their status
+        if (item.agency_name === 'Mumbai') {
+          if (item.confirmation_status === 'confirmed') {
+            // Confirmed entries - show full details
+            const billtyNo = item.billty_no || 'N/A';
+            const consigneeName = item.consignee_name || 'N/A';
+            const itemDesc = item.item_description || 'Item details';
+
+            label = `Mumbai Delivery - ${billtyNo}`;
+            subLabel = `${consigneeName} | ${itemDesc}`;
+          } else {
+            // Pending entries - show description and mark as pending
+            label = `Mumbai Delivery - ${item.description || 'Pending'}`;
+            subLabel = `Status: Pending | Amount: ₹${item.amount}`;
+          }
+        }
 
         return {
           id: item.id,
@@ -2121,16 +2213,60 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           || (item.label || '').replace(/^\s*Majuri:\s*/i, '');
         descriptionText = `${agencyN || ''}`;
       } else if (item.storageKey === OFFLINE_KEYS.AGENCY_ENTRIES) {
-        // Type: Agency Credit/Debit; Description: AgencyName (Description)
-        typeLabel = item.type === 'credit' ? 'Agency Credit' : 'Agency Debit';
-        const agencyN = (item as any).originalTransactions?.[0]?.agency_name
-          || (item.subLabel || '').replace(/^\s*Agency:\s*/i, '');
-        const desc = item.label || '';
-        descriptionText = agencyN ? (desc ? `${agencyN} (${desc})` : agencyN) : desc;
+        // Check if it's a Mumbai Delivery entry
+        const agencyN = (item as any).originalTransactions?.[0]?.agency_name || '';
+        
+        if (agencyN === 'Mumbai') {
+          // Mumbai Delivery format: "Mumbai Delivery - Billty No"
+          typeLabel = 'Mumbai Delivery';
+          const billtyNo = (item as any).originalTransactions?.[0]?.billty_no || '';
+          const consigneeName = (item as any).originalTransactions?.[0]?.consignee_name || '';
+          const itemDesc = (item as any).originalTransactions?.[0]?.item_description || '';
+          
+          // Format: "Billty: XXX | Consignee: YYY | Item: ZZZ"
+          descriptionText = `Billty: ${billtyNo}${consigneeName ? ` | ${consigneeName}` : ''}${itemDesc ? ` | ${itemDesc}` : ''}`;
+        } else {
+          // Regular agency entry
+          typeLabel = item.type === 'credit' ? 'Agency Credit' : 'Agency Debit';
+          const desc = item.label || '';
+          descriptionText = agencyN ? (desc ? `${agencyN} (${desc})` : agencyN) : desc;
+        }
       } else if (item.storageKey === OFFLINE_KEYS.GENERAL_ENTRIES) {
-        // Type: General Credit/Debit; Description: User's description
-        typeLabel = item.type === 'credit' ? 'General Credit' : 'General Debit';
-        descriptionText = `${item.label || ''}`;
+        // Check if it's a Mumbai Delivery payment entry
+        const desc = item.label || '';
+        const descLower = desc.toLowerCase();
+        
+        if (descLower.includes('mumbai delivery')) {
+          // Mumbai Delivery payment format
+          typeLabel = 'Mumbai Delivery';
+          
+          // Try to extract metadata for better formatting
+          const metadata = (item as any).originalTransactions?.[0]?.metadata;
+          if (metadata) {
+            try {
+              const parsed = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+              const billtyNo = parsed.billty_no || '';
+              const consigneeName = parsed.consignee_name || '';
+              const itemDesc = parsed.item_description || '';
+              
+              descriptionText = `Billty: ${billtyNo}${consigneeName ? ` | ${consigneeName}` : ''}${itemDesc ? ` | ${itemDesc}` : ''}`;
+            } catch (e) {
+              // Fallback to description
+              descriptionText = desc;
+            }
+          } else {
+            // Fallback to description
+            descriptionText = desc;
+          }
+        } else if (descLower.includes('yash roadlines gpay')) {
+          // Yash Roadlines GPay entry
+          typeLabel = 'Yash Roadlines GPay';
+          descriptionText = 'Mumbai Delivery Payment';
+        } else {
+          // Regular general entry
+          typeLabel = item.type === 'credit' ? 'General Credit' : 'General Debit';
+          descriptionText = desc;
+        }
       } else if (item.storageKey === OFFLINE_KEYS.TRUCK_FUEL) {
         typeLabel = 'Fuel';
         descriptionText = `${item.label ?? ''}`;
@@ -2277,33 +2413,30 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           // Copy file to organized folder in Downloads
           await RNFS.copyFile(tempPdf.filePath, finalFilePath);
 
-          // Clean up temp file
-          await RNFS.unlink(tempPdf.filePath).catch(() => {
-          });
-
-          // Try sharing the PDF file from organized Downloads folder
+          // Try sharing the PDF file using the cache path
           try {
-
+            const cachePath = `${RNFS.CachesDirectoryPath}/${pdfFileName}`;
+            await RNFS.copyFile(tempPdf.filePath, cachePath);
             const shareOptions = {
               title: 'Share Daily Report',
               message: `Daily Report for ${selectedDate.toLocaleDateString()}`,
-              url: `file://${finalFilePath}`,
+              url: `file://${cachePath}`,
               type: 'application/pdf',
+              failOnCancel: false,
             };
 
             await Share.open(shareOptions);
+            
+            // Show success message with organized folder location
+            showAlert('PDF saved to Downloads/Yash Roadlines');
 
           } catch (shareError) {
-
-            // Show success message with organized folder location
-            const folderHint = Platform.OS === 'android'
-              ? 'File Manager > Downloads > Yash Roadlines > Daily Report'
-              : 'Files app > On My iPhone/iPad > Yash Roadlines > Daily Report';
-            const humanPath = Platform.OS === 'android'
-              ? 'Downloads/Yash Roadlines/Daily Report/'
-              : 'Documents/Yash Roadlines/Daily Report/';
-            showAlert('PDF saved to Downloads/Yash Roadlines');
+             console.log('Share cancelled or failed', shareError);
           }
+
+          // Clean up temp file after sharing
+          await RNFS.unlink(tempPdf.filePath).catch(() => {});
+          await RNFS.unlink(`${RNFS.CachesDirectoryPath}/${pdfFileName}`).catch(() => {});
 
         } catch (copyError) {
 
@@ -2431,6 +2564,7 @@ function DailyReportScreen({ navigation }: DailyReportScreenProps): React.JSX.El
           </View>
         ) : (
           <FlatList
+            {...FLATLIST_OPTIMIZATIONS}
             data={transactions}
             renderItem={renderItem}
             keyExtractor={keyExtractor}

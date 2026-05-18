@@ -278,6 +278,7 @@ function TotalPaidScreen({ navigation }: TotalPaidScreenProps): React.JSX.Elemen
           </View>
         ) : (
           <FlatList
+            {...FLATLIST_OPTIMIZATIONS}
             data={dailySummaries}
             renderItem={renderDailySummaryItem}
             keyExtractor={(item) => item.date}

@@ -18,6 +18,7 @@ import {
   RefreshControl
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserAccess } from '../context/UserAccessContext';
 import { useOffice } from '../context/OfficeContext';
 import OfficeSelector from '../components/OfficeSelector';
@@ -68,6 +69,7 @@ interface HomeScreenProps {
 const ADMIN_EMAIL = 'yashbhavsar175@gmail.com';
 
 function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenProps): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const { navigate, replace } = navigation;
   const { isAdmin: contextIsAdmin, screenAccess, hasScreenAccess: contextHasScreenAccess, refreshPermissions, isLoading: contextLoading, lastUpdated } = useUserAccess();
   const { currentOffice, getCurrentOfficeId, isLoading: officeLoading, availableOffices, switchOffice } = useOffice();  const [userInitial, setUserInitial] = useState<string>('');
@@ -602,7 +604,7 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
     appBar: {
       backgroundColor: BWColors.primary,
       padding: 20,
-      paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 16 : 50,
+      paddingTop: 20,
       paddingBottom: 24,
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -1214,8 +1216,8 @@ function HomeScreen({ navigation, syncStatus, onSyncStatusPress }: HomeScreenPro
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={BWColors.primary} />
-      <View style={styles.appBar}>
+      <StatusBar barStyle="light-content" backgroundColor={BWColors.primary} translucent={true} />
+      <View style={[styles.appBar, { paddingTop: Math.max(insets.top, StatusBar.currentHeight || 20) + 10 }]}>
         <View style={{ flex: 1, marginRight: 12 }}>
           <Text style={styles.appBarTitle} numberOfLines={1}>Yash Roadlines</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>

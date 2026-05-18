@@ -72,44 +72,38 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
       }
     });
 
-    // 4s fallback — checkSessionAndNavigate call karo
-    const timeoutId = setTimeout(async () => {
-      if (hasNavigated.current) return;
-
-      SplashDiag.info('4s fallback triggered — animation may still be running');
-
-      if (!animationComplete.current) {
-        // Wait for animation to finish if it's slow
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-
+    // 4s fallback — checkSessionAndNavigate call karo if not navigated
+    const fallbackId = setTimeout(() => {
       if (!hasNavigated.current) {
-        await checkSessionAndNavigate();
+        SplashDiag.info('4s fallback triggered');
+        checkSessionAndNavigate();
       }
-
-      // Show retry button after 8 seconds if still not navigated
-      setTimeout(() => {
-        if (!hasNavigated.current) {
-          setShowRetry(true);
-          SplashDiag.info('Stuck detected — showing Retry button');
-        }
-      }, 4000);
-
-      // Hard fallback — agar checkSessionAndNavigate bhi hang ho
-      setTimeout(async () => {
-        if (!hasNavigated.current) {
-          hasNavigated.current = true;
-          await SplashDiag.forceFinishSession('Hard 12s fallback — everything hung');
-          navigation.dispatch(
-            CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
-          );
-        }
-      }, 8000);
     }, 4000);
+
+    // Show retry button after 8 seconds if still not navigated
+    const retryBtnId = setTimeout(() => {
+      if (!hasNavigated.current) {
+        setShowRetry(true);
+        SplashDiag.info('Stuck detected — showing Retry button');
+      }
+    }, 8000);
+
+    // Hard fallback — agar checkSessionAndNavigate bhi hang ho, 12s pe force navigate
+    const hardResetId = setTimeout(async () => {
+      if (!hasNavigated.current) {
+        hasNavigated.current = true;
+        await SplashDiag.forceFinishSession('Hard 12s fallback — everything hung');
+        navigation.dispatch(
+          CommonActions.reset({ index: 0, routes: [{ name: 'Login' }] })
+        );
+      }
+    }, 12000);
 
     return () => {
       authListener.subscription.unsubscribe();
-      clearTimeout(timeoutId);
+      clearTimeout(fallbackId);
+      clearTimeout(retryBtnId);
+      clearTimeout(hardResetId);
       if (navigationTimer.current) clearTimeout(navigationTimer.current);
     };
   }, [fadeAnim, scaleAnim, navigation]);
@@ -168,7 +162,7 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
 
       if (finalSession && otpPending === '1') {
         SplashDiag.info('OTP pending — signing out');
-        await supabase.auth.signOut();
+        await withTimeout(supabase.auth.signOut(), 3000, null);
         screen = 'Login';
       } else if (finalSession) {
         // Step 3: Profile fetch with 4s timeout
@@ -204,7 +198,7 @@ const SplashScreen = ({ navigation }: SplashScreenProps): React.JSX.Element => {
 
           if (waitingForAdmin === 'true' || loginRequestId) {
             SplashDiag.info('Non-admin waiting for approval — signing out');
-            await supabase.auth.signOut();
+            await withTimeout(supabase.auth.signOut(), 3000, null);
             await AsyncStorage.removeItem('login_request_id');
             await AsyncStorage.removeItem('waiting_for_admin');
             screen = 'Login';

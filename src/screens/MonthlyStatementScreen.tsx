@@ -295,12 +295,15 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
           !(t.confirmation_status === 'confirmed' && t.billty_no) &&
           includeGeneral
         );
+
+        // Do not show global general entries in an agency report
+        generalEntries = [];
       } else {
         // For non-Mumbai agencies, just filter normally
         agencyGeneral = agencyGeneral.filter(t => t.agency_name === agencyName && includeGeneral);
+        generalEntries = [];
       }
 
-      generalEntries = [];
       driverTransactions = [];
       fuelEntries = [];
     } else if (reportType === 'other') {
@@ -643,21 +646,31 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
         }
 
         await RNFS.copyFile(tempPdf.filePath, finalFilePath);
-        await RNFS.unlink(tempPdf.filePath).catch(() => {});
+
+        const cachePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+        await RNFS.copyFile(tempPdf.filePath, cachePath);
 
         const shareOptions = {
           title: 'Share Monthly Statement',
           message: `Monthly Statement for ${getMonthName(selectedMonth)} ${selectedYear}${agencyName ? ` - ${agencyName}` : ''}`,
-          url: `file://${finalFilePath}`,
+          url: `file://${cachePath}`,
           type: 'application/pdf',
+          failOnCancel: false,
         };
 
-        await Share.open(shareOptions);
+        try {
+          await Share.open(shareOptions);
+        } catch (shareErr) {
+          console.log('Share cancelled or failed', shareErr);
+        }
+
+        await RNFS.unlink(tempPdf.filePath).catch(() => {});
+        await RNFS.unlink(cachePath).catch(() => {});
         setShowPreview(false);
       }
     } catch (error) {
       console.error('Share error:', error);
-      Alert.alert('Error', 'Failed to share PDF.');
+      Alert.alert('Error', 'Failed to generate or share PDF.');
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -707,9 +720,11 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
           } catch (dirError) {}
 
           await RNFS.copyFile(tempPdf.filePath, finalFilePath);
-          await RNFS.unlink(tempPdf.filePath).catch(() => {});
-
-          pdfPaths.push(finalFilePath);
+          
+          const cachePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+          await RNFS.copyFile(tempPdf.filePath, cachePath);
+          pdfPaths.push(cachePath); // Keep cache path for sharing
+          await RNFS.unlink(tempPdf.filePath).catch(() => {}); // Clean up external temp file
         }
       }
 
@@ -719,9 +734,20 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
           message: `Monthly Statements for ${getMonthName(selectedMonth)} ${selectedYear} - ${selectedAgencies.length} agencies`,
           urls: pdfPaths.map(path => `file://${path}`),
           type: 'application/pdf',
+          failOnCancel: false,
         };
 
-        await Share.open(shareOptions);
+        try {
+          await Share.open(shareOptions);
+        } catch (shareErr) {
+          console.log('Share cancelled or failed', shareErr);
+        }
+
+        // Unlink all temp files after sharing
+        for (const path of pdfPaths) {
+          await RNFS.unlink(path).catch(() => {});
+        }
+
         setShowAgencySelector(false);
         setSelectedAgencies([]);
       }
@@ -808,12 +834,15 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
             !(t.confirmation_status === 'confirmed' && t.billty_no) &&
             includeGeneral
           );
+
+          // Do not show global general entries in an agency report
+          generalEntries = [];
         } else {
           // For non-Mumbai agencies, just filter normally
           agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
+          generalEntries = [];
         }
 
-        generalEntries = [];
         driverTransactions = [];
         fuelEntries = [];
       } else if (reportType === 'other') {
@@ -1244,33 +1273,35 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
           // Copy file to organized folder in Downloads
           await RNFS.copyFile(tempPdf.filePath, finalFilePath);
 
-          // Clean up temp file
-          await RNFS.unlink(tempPdf.filePath).catch(() => {
-          });
-
           setGeneratedPdfPath(finalFilePath);
 
-          // Try sharing the PDF file from organized Downloads folder
+          // Try sharing the PDF file using the cache path
           try {
-
+            const cachePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+            await RNFS.copyFile(tempPdf.filePath, cachePath);
             const shareOptions = {
               title: 'Share Monthly Statement',
               message: `Monthly Statement for ${getMonthName(selectedMonth)} ${selectedYear}${selectedAgency ? ` - ${selectedAgency}` : ''}`,
-              url: `file://${finalFilePath}`,
+              url: `file://${cachePath}`,
               type: 'application/pdf',
+              failOnCancel: false,
             };
 
             await Share.open(shareOptions);
-
-          } catch (shareError) {
-
-            // Show success message with organized Downloads location
+            
             Alert.alert(
               'PDF Saved Successfully! 📄',
-              `Monthly statement has been saved to organized Downloads folder.\n\nFile: ${fileName}\n\nLocation: Downloads/Yash Roadlines/Monthly Statement/\n\nYou can find it in:\n• File Manager > Downloads > Yash Roadlines > Monthly Statement\n• Share it via WhatsApp, Gmail, etc.`,
+              `Monthly statement has been saved to organized Downloads folder.\n\nFile: ${fileName}\n\nLocation: Downloads/Yash Roadlines/Monthly Statement/`,
               [{ text: 'OK', style: 'default' }]
             );
+
+          } catch (shareError) {
+            console.log('Share cancelled or failed', shareError);
           }
+
+          // Clean up temp file after sharing
+          await RNFS.unlink(tempPdf.filePath).catch(() => {});
+          await RNFS.unlink(`${RNFS.CachesDirectoryPath}/${fileName}`).catch(() => {});
 
         } catch (copyError) {
 
@@ -1364,8 +1395,35 @@ function MonthlyStatementScreen({ navigation }: MonthlyStatementScreenProps): Re
       if (reportType === 'agency' && selectedAgency) {
         paid = paid.filter(t => t.agency_name === selectedAgency && includePaid);
         majuri = majuri.filter(t => t.agency_name === selectedAgency && includeMajuri);
-        agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
-        generalEntries = [];
+
+        // Separate Mumbai Delivery entries from general entries
+        const isMumbaiAgency = selectedAgency.toLowerCase().includes('mumbai');
+
+        if (isMumbaiAgency) {
+          // Filter agency general entries for Mumbai
+          const allAgencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency);
+
+          // Separate Mumbai Delivery entries (confirmed deliveries)
+          const mumbaiDeliveryEntries = allAgencyGeneral.filter(t =>
+            t.confirmation_status === 'confirmed' &&
+            t.billty_no &&
+            includeDelivery
+          );
+
+          // Normal general entries (exclude Mumbai Delivery)
+          agencyGeneral = allAgencyGeneral.filter(t =>
+            !(t.confirmation_status === 'confirmed' && t.billty_no) &&
+            includeGeneral
+          );
+
+          // Do not show global general entries in an agency report
+          generalEntries = [];
+        } else {
+          // For non-Mumbai agencies, just filter normally
+          agencyGeneral = agencyGeneral.filter(t => t.agency_name === selectedAgency && includeGeneral);
+          generalEntries = [];
+        }
+
         driverTransactions = [];
         fuelEntries = [];
       } else if (reportType === 'other') {

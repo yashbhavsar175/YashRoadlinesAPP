@@ -93,12 +93,6 @@ export const FLATLIST_OPTIMIZATIONS = {
   initialNumToRender: 15,
   // Window size for rendering
   windowSize: 5,
-  // Get item layout for better performance
-  getItemLayout: (data: any, index: number, itemHeight: number = 80) => ({
-    length: itemHeight,
-    offset: itemHeight * index,
-    index,
-  }),
 };
 
 /**

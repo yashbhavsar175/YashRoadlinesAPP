@@ -870,6 +870,7 @@ function App(): React.JSX.Element {
     const appStateRef = useRef(AppState.currentState);
     const wasInBackgroundRef = useRef(false);
     const isCameraActiveRef = useRef(false); // Track if camera is active
+    const isCalculatorActiveRef = useRef(false); // Track if calculator is active
   
     useEffect(() => {
       log('🚀 APP LAUNCH: Initial setup, wasInBackgroundRef =', wasInBackgroundRef.current);
@@ -896,6 +897,14 @@ function App(): React.JSX.Element {
         
         if (nextAppState === 'active') {
           log('▶️ APP BECOMING ACTIVE: wasInBackgroundRef =', wasInBackgroundRef.current);
+          
+          // Check if calculator was active - if yes, skip sync
+          if (isCalculatorActiveRef.current) {
+            log('🧮 Calculator was active - skipping sync to prevent refresh');
+            isCalculatorActiveRef.current = false; // Reset flag
+            appStateRef.current = nextAppState;
+            return;
+          }
           
           // Check if camera was active
           const cameraActive = await AsyncStorage.getItem('camera_active');
@@ -1012,6 +1021,17 @@ function App(): React.JSX.Element {
     
     const [showCalc, setShowCalc] = useState(false);
     const [currentRouteName, setCurrentRouteName] = useState<string | undefined>(undefined);
+    
+    // Track calculator state to prevent unnecessary refresh
+    useEffect(() => {
+      if (showCalc) {
+        log('🧮 Calculator opened - setting flag to prevent refresh');
+        isCalculatorActiveRef.current = true;
+      } else {
+        log('🧮 Calculator closed - clearing flag');
+        isCalculatorActiveRef.current = false;
+      }
+    }, [showCalc]);
     
     // Hide calculator only on specific screens: Splash, Login, BiometricAuth, and EWayBillConsolidated
     const hideCalculatorScreens = ['Splash', 'Login', 'BiometricAuth', 'EWayBillConsolidated'];
@@ -1271,12 +1291,21 @@ function App(): React.JSX.Element {
                     <TouchableOpacity
                       activeOpacity={0.85}
                       style={styles.calcFab}
-                      onPress={() => setShowCalc(true)}
+                      onPress={() => {
+                        isCalculatorActiveRef.current = true;
+                        setShowCalc(true);
+                      }}
                     >
                       <Icon name="calculator" size={22} color="#fff" />
                     </TouchableOpacity>
                   </View>
-                  <CalculatorOverlay visible={showCalc} onClose={() => setShowCalc(false)} />
+                  <CalculatorOverlay visible={showCalc} onClose={() => {
+                    setShowCalc(false);
+                    // Keep flag set for a moment to prevent reload on close
+                    setTimeout(() => {
+                      isCalculatorActiveRef.current = false;
+                    }, 300);
+                  }} />
                 </>
               )}
             </View>

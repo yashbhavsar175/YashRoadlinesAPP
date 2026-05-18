@@ -335,7 +335,7 @@ const formatDateForComparison = (date: Date): string => {
 interface PendingOperation {
   id: string;
   table: string;
-  action: 'INSERT' | 'UPDATE' | 'DELETE';
+  action: 'INSERT' | 'UPDATE' | 'DELETE' | 'DELETE_BY_DESCRIPTION';
   data: any;
   office_id?: string;
   timestamp: string;
@@ -691,6 +691,29 @@ class SyncManager {
           
           if (deleteError) {
             console.error('❌ SyncManager: Delete error:', deleteError);
+            return false;
+          }
+          return true;
+          
+        case 'DELETE_BY_DESCRIPTION':
+          // Special case for deleting Mumbai Delivery related entries
+          let deleteQuery = supabase
+            .from(table)
+            .delete()
+            .ilike('description', `${data.description_pattern}%`);
+          
+          if (data.office_id) {
+            deleteQuery = deleteQuery.eq('office_id', data.office_id);
+          }
+          
+          if (data.entry_date) {
+            deleteQuery = deleteQuery.eq('entry_date', data.entry_date);
+          }
+          
+          const { error: deleteByDescError } = await deleteQuery;
+          
+          if (deleteByDescError) {
+            console.error('❌ SyncManager: Delete by description error:', deleteByDescError);
             return false;
           }
           return true;
@@ -1860,12 +1883,23 @@ export const logHistory = async (action: 'add' | 'update' | 'delete', tableName:
   }
 };
 
-export const getHistoryLogs = async (): Promise<HistoryLog[]> => {
+export const getHistoryLogs = async (startDate?: string, endDate?: string): Promise<HistoryLog[]> => {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('history_logs')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*');
+    
+    // Apply date range filter if provided
+    if (startDate) {
+      query = query.gte('created_at', startDate);
+    }
+    if (endDate) {
+      query = query.lte('created_at', endDate);
+    }
+    
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .limit(1000); // Limit to last 1000 logs for performance
 
     if (error) throw error;
     return data as HistoryLog[];
@@ -4458,87 +4492,89 @@ export const confirmDeliveryPayment = async (
     };
 
     if (online) {
-      // First, upload photos to Supabase storage
-      console.log('📤 Uploading bilty photo to Supabase storage...');
-      const biltyStoragePath = `${confirmation.delivery_record_id}/bilty_${Date.now()}.jpg`;
-      
-      // Convert photo URI to blob for upload
-      const biltyPhotoUri = confirmation.bilty_photo.uri.replace('file://', '');
+      // Upload both photos in parallel for better performance
+      console.log('📤 Uploading photos to Supabase storage in parallel...');
+      const timestamp = Date.now();
       const RNFS = await import('react-native-fs');
-      const biltyBase64 = await RNFS.default.readFile(biltyPhotoUri, 'base64');
-      const biltyBytes = Uint8Array.from(atob(biltyBase64), c => c.charCodeAt(0));
       
-      const { data: biltyUploadData, error: biltyUploadError } = await supabase.storage
-        .from('delivery-photos')
-        .upload(biltyStoragePath, biltyBytes, {
-          contentType: confirmation.bilty_photo.mimeType,
-          upsert: false,
-        });
+      // Prepare both photo uploads in parallel
+      const [biltyUploadResult, signatureUploadResult] = await Promise.all([
+        // Bilty photo upload
+        (async () => {
+          const biltyStoragePath = `${confirmation.delivery_record_id}/bilty_${timestamp}.jpg`;
+          const biltyPhotoUri = confirmation.bilty_photo.uri.replace('file://', '');
+          const biltyBase64 = await RNFS.default.readFile(biltyPhotoUri, 'base64');
+          const biltyBytes = Uint8Array.from(atob(biltyBase64), c => c.charCodeAt(0));
+          
+          const { data, error } = await supabase.storage
+            .from('delivery-photos')
+            .upload(biltyStoragePath, biltyBytes, {
+              contentType: confirmation.bilty_photo.mimeType,
+              upsert: false,
+            });
+          
+          if (error) throw new Error(`Bilty photo upload failed: ${error.message}`);
+          
+          const { data: { publicUrl } } = supabase.storage
+            .from('delivery-photos')
+            .getPublicUrl(data.path);
+          
+          return { data, publicUrl };
+        })(),
+        
+        // Signature photo upload
+        (async () => {
+          const signatureStoragePath = `${confirmation.delivery_record_id}/signature_${timestamp + 1}.jpg`;
+          const signaturePhotoUri = confirmation.signature_photo.uri.replace('file://', '');
+          const signatureBase64 = await RNFS.default.readFile(signaturePhotoUri, 'base64');
+          const signatureBytes = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
+          
+          const { data, error } = await supabase.storage
+            .from('delivery-photos')
+            .upload(signatureStoragePath, signatureBytes, {
+              contentType: confirmation.signature_photo.mimeType,
+              upsert: false,
+            });
+          
+          if (error) throw new Error(`Signature photo upload failed: ${error.message}`);
+          
+          const { data: { publicUrl } } = supabase.storage
+            .from('delivery-photos')
+            .getPublicUrl(data.path);
+          
+          return { data, publicUrl };
+        })(),
+      ]);
       
-      if (biltyUploadError) {
-        console.error('❌ Bilty photo upload error:', biltyUploadError);
-        throw new Error('Failed to upload bilty photo');
-      }
+      console.log('✅ Both photos uploaded successfully');
       
-      console.log('✅ Bilty photo uploaded:', biltyUploadData.path);
-      
-      // Get public URL for bilty photo
-      const { data: { publicUrl: biltyPublicUrl } } = supabase.storage
-        .from('delivery-photos')
-        .getPublicUrl(biltyUploadData.path);
-      
-      console.log('📤 Uploading signature photo to Supabase storage...');
-      const signatureStoragePath = `${confirmation.delivery_record_id}/signature_${Date.now()}.jpg`;
-      
-      const signaturePhotoUri = confirmation.signature_photo.uri.replace('file://', '');
-      const signatureBase64 = await RNFS.default.readFile(signaturePhotoUri, 'base64');
-      const signatureBytes = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
-      
-      const { data: signatureUploadData, error: signatureUploadError } = await supabase.storage
-        .from('delivery-photos')
-        .upload(signatureStoragePath, signatureBytes, {
-          contentType: confirmation.signature_photo.mimeType,
-          upsert: false,
-        });
-      
-      if (signatureUploadError) {
-        console.error('❌ Signature photo upload error:', signatureUploadError);
-        throw new Error('Failed to upload signature photo');
-      }
-      
-      console.log('✅ Signature photo uploaded:', signatureUploadData.path);
-      
-      // Get public URL for signature photo
-      const { data: { publicUrl: signaturePublicUrl } } = supabase.storage
-        .from('delivery-photos')
-        .getPublicUrl(signatureUploadData.path);
-      
-      // Now save photo records with storage paths
-      const biltyPhotoId = await savePhotoRecord({
-        delivery_record_id: confirmation.delivery_record_id,
-        photo_type: 'bilty',
-        file_path: biltyUploadData.path, // Use storage path, not local path
-        file_name: confirmation.bilty_photo.fileName,
-        file_size: confirmation.bilty_photo.fileSize,
-        mime_type: confirmation.bilty_photo.mimeType,
-        uploaded: true, // Mark as uploaded
-        upload_url: biltyPublicUrl, // Save public URL
-        created_by: currentUser?.id,
-        office_id: deliveryRecord.office_id,
-      });
-
-      const signaturePhotoId = await savePhotoRecord({
-        delivery_record_id: confirmation.delivery_record_id,
-        photo_type: 'signature',
-        file_path: signatureUploadData.path, // Use storage path, not local path
-        file_name: confirmation.signature_photo.fileName,
-        file_size: confirmation.signature_photo.fileSize,
-        mime_type: confirmation.signature_photo.mimeType,
-        uploaded: true, // Mark as uploaded
-        upload_url: signaturePublicUrl, // Save public URL
-        created_by: currentUser?.id,
-        office_id: deliveryRecord.office_id,
-      });
+      // Save both photo records in parallel
+      const [biltyPhotoId, signaturePhotoId] = await Promise.all([
+        savePhotoRecord({
+          delivery_record_id: confirmation.delivery_record_id,
+          photo_type: 'bilty',
+          file_path: biltyUploadResult.data.path,
+          file_name: confirmation.bilty_photo.fileName,
+          file_size: confirmation.bilty_photo.fileSize,
+          mime_type: confirmation.bilty_photo.mimeType,
+          uploaded: true,
+          upload_url: biltyUploadResult.publicUrl,
+          created_by: currentUser?.id,
+          office_id: deliveryRecord.office_id,
+        }),
+        savePhotoRecord({
+          delivery_record_id: confirmation.delivery_record_id,
+          photo_type: 'signature',
+          file_path: signatureUploadResult.data.path,
+          file_name: confirmation.signature_photo.fileName,
+          file_size: confirmation.signature_photo.fileSize,
+          mime_type: confirmation.signature_photo.mimeType,
+          uploaded: true,
+          upload_url: signatureUploadResult.publicUrl,
+          created_by: currentUser?.id,
+          office_id: deliveryRecord.office_id,
+        }),
+      ]);
 
       // Update delivery record with confirmation data and photo IDs
       const { data, error } = await supabase
@@ -4582,11 +4618,17 @@ export const confirmDeliveryPayment = async (
           console.error('Error creating credit entry for cash payment:', creditError);
         }
       } else if (paymentType === 'gpay_yash') {
-        // GPay Yash Roadlines: Create credit entry + debit entry for Yash Roadlines GPay
+        // GPay Yash Roadlines: Create credit entry + debit entry in parallel
         console.log('💰 Creating GPay Yash entries for Mumbai Delivery:', {
           billty_no: deliveryRecord.billty_no,
           amount: confirmation.confirmed_amount,
           office_id: deliveryRecord.office_id,
+        });
+        
+        const metadata = JSON.stringify({
+          consignee_name: deliveryRecord.consignee_name,
+          item_description: deliveryRecord.item_description || deliveryRecord.description,
+          billty_no: deliveryRecord.billty_no,
         });
         
         const creditEntry = {
@@ -4596,28 +4638,9 @@ export const confirmDeliveryPayment = async (
           entry_date: confirmedAt,
           office_id: deliveryRecord.office_id,
           created_by: currentUser?.id,
-          // Store metadata for display formatting
-          metadata: JSON.stringify({
-            consignee_name: deliveryRecord.consignee_name,
-            item_description: deliveryRecord.item_description || deliveryRecord.description,
-            billty_no: deliveryRecord.billty_no,
-          }),
+          metadata,
         };
         
-        console.log('✅ Inserting CREDIT entry:', creditEntry);
-        const { data: creditData, error: creditError } = await supabase
-          .from('general_entries')
-          .insert([creditEntry])
-          .select();
-        
-        if (creditError) {
-          console.error('❌ Error creating credit entry for GPay Yash payment:', creditError);
-          console.error('❌ Credit entry that failed:', creditEntry);
-        } else {
-          console.log('✅ Credit entry created successfully:', creditData);
-        }
-        
-        // Create debit entry for Yash Roadlines GPay
         const debitEntry = {
           description: `Yash Roadlines GPay - Mumbai Delivery`,
           amount: confirmation.confirmed_amount,
@@ -4625,25 +4648,27 @@ export const confirmDeliveryPayment = async (
           entry_date: confirmedAt,
           office_id: deliveryRecord.office_id,
           created_by: currentUser?.id,
-          // Store metadata for display formatting
-          metadata: JSON.stringify({
-            consignee_name: deliveryRecord.consignee_name,
-            item_description: deliveryRecord.item_description || deliveryRecord.description,
-            billty_no: deliveryRecord.billty_no,
-          }),
+          metadata,
         };
         
-        console.log('✅ Inserting DEBIT entry:', debitEntry);
-        const { data: debitData, error: debitError } = await supabase
-          .from('general_entries')
-          .insert([debitEntry])
-          .select();
+        // Insert both entries in parallel for better performance
+        const [creditResult, debitResult] = await Promise.allSettled([
+          supabase.from('general_entries').insert([creditEntry]).select(),
+          supabase.from('general_entries').insert([debitEntry]).select(),
+        ]);
         
-        if (debitError) {
-          console.error('❌ Error creating debit entry for Yash Roadlines GPay:', debitError);
-          console.error('❌ Debit entry that failed:', debitEntry);
+        if (creditResult.status === 'rejected' || (creditResult.status === 'fulfilled' && creditResult.value.error)) {
+          console.error('❌ Error creating credit entry for GPay Yash payment:', 
+            creditResult.status === 'rejected' ? creditResult.reason : creditResult.value.error);
         } else {
-          console.log('✅ Debit entry created successfully:', debitData);
+          console.log('✅ Credit entry created successfully:', creditResult.value.data);
+        }
+        
+        if (debitResult.status === 'rejected' || (debitResult.status === 'fulfilled' && debitResult.value.error)) {
+          console.error('❌ Error creating debit entry for Yash Roadlines GPay:', 
+            debitResult.status === 'rejected' ? debitResult.reason : debitResult.value.error);
+        } else {
+          console.log('✅ Debit entry created successfully:', debitResult.value.data);
         }
       }
       // else if paymentType === 'gpay_sapan': No entry in daily report, only confirmation
@@ -4996,11 +5021,53 @@ export const deleteTransactionByIdImproved = async (id: string, key: string): Pr
 
     let supabaseDeleteSuccess = false;
     const online = await isOnline();
-    // ... (rest of the function remains the same)
     
     if (online) {
       const { data: record, error: selectError } = await supabase.from(tableName).select('*').eq('id', id).maybeSingle();
       if (selectError) throw selectError;
+      
+      // Special handling for agency_entries (Mumbai Delivery) - delete associated general_entries
+      if (tableName === 'agency_entries' && record) {
+        console.log('🗑️ Deleting Mumbai entry and associated Daily Report entries:', {
+          id,
+          billty_no: record.billty_no,
+          confirmation_status: record.confirmation_status,
+        });
+        
+        // If entry was confirmed, delete associated general_entries
+        if (record.confirmation_status === 'confirmed') {
+          const billtyNo = record.billty_no;
+          
+          // Delete credit entry (Mumbai Delivery - {billty_no})
+          const { error: creditDeleteError } = await supabase
+            .from('general_entries')
+            .delete()
+            .eq('office_id', record.office_id)
+            .ilike('description', `Mumbai Delivery - ${billtyNo}%`);
+          
+          if (creditDeleteError) {
+            console.error('❌ Error deleting credit entry:', creditDeleteError);
+          } else {
+            console.log('✅ Deleted credit entry for Mumbai Delivery');
+          }
+          
+          // Delete debit entry if it was GPay Yash payment
+          if (record.payment_type === 'gpay_yash') {
+            const { error: debitDeleteError } = await supabase
+              .from('general_entries')
+              .delete()
+              .eq('office_id', record.office_id)
+              .ilike('description', `Yash Roadlines GPay - Mumbai Delivery%`)
+              .eq('entry_date', record.confirmed_at || record.entry_date);
+            
+            if (debitDeleteError) {
+              console.error('❌ Error deleting debit entry:', debitDeleteError);
+            } else {
+              console.log('✅ Deleted debit entry for Yash Roadlines GPay');
+            }
+          }
+        }
+      }
       
       const { error: deleteError } = await supabase.from(tableName).delete().eq('id', id);
       if (!deleteError) {
@@ -5037,6 +5104,58 @@ export const deleteTransactionByIdImproved = async (id: string, key: string): Pr
       // Get the record to extract office_id before deleting
       const recordToDelete = allItems[itemIndex];
       const officeId = recordToDelete?.office_id;
+      
+      // Special handling for agency_entries (Mumbai Delivery) - delete associated general_entries from local storage
+      if (tableName === 'agency_entries' && recordToDelete?.confirmation_status === 'confirmed') {
+        console.log('🗑️ Deleting associated Daily Report entries from local storage:', {
+          billty_no: recordToDelete.billty_no,
+          payment_type: recordToDelete.payment_type,
+        });
+        
+        // Delete from local general_entries
+        const generalEntriesJson = await AsyncStorage.getItem(OFFLINE_KEYS.GENERAL_ENTRIES);
+        if (generalEntriesJson) {
+          const generalEntries = JSON.parse(generalEntriesJson);
+          const billtyNo = recordToDelete.billty_no;
+          
+          // Filter out credit entry and debit entry (if GPay Yash)
+          const filteredEntries = generalEntries.filter((entry: any) => {
+            const isCreditEntry = entry.description?.includes(`Mumbai Delivery - ${billtyNo}`);
+            const isDebitEntry = recordToDelete.payment_type === 'gpay_yash' && 
+                                 entry.description?.includes('Yash Roadlines GPay - Mumbai Delivery');
+            return !(isCreditEntry || isDebitEntry);
+          });
+          
+          await AsyncStorage.setItem(OFFLINE_KEYS.GENERAL_ENTRIES, JSON.stringify(filteredEntries));
+          console.log('✅ Deleted associated general_entries from local storage');
+        }
+        
+        // Add pending operations to delete from server when online
+        if (!online) {
+          await SyncManager.getInstance().addPendingOperation({
+            table: 'general_entries',
+            action: 'DELETE_BY_DESCRIPTION',
+            data: { 
+              description_pattern: `Mumbai Delivery - ${recordToDelete.billty_no}`,
+              office_id: officeId,
+            },
+            office_id: officeId,
+          });
+          
+          if (recordToDelete.payment_type === 'gpay_yash') {
+            await SyncManager.getInstance().addPendingOperation({
+              table: 'general_entries',
+              action: 'DELETE_BY_DESCRIPTION',
+              data: { 
+                description_pattern: 'Yash Roadlines GPay - Mumbai Delivery',
+                office_id: officeId,
+                entry_date: recordToDelete.confirmed_at || recordToDelete.entry_date,
+              },
+              office_id: officeId,
+            });
+          }
+        }
+      }
       
       const updatedItems = allItems.filter((item: any) => item.id !== id);
       await AsyncStorage.setItem(key, JSON.stringify(updatedItems));
@@ -5163,21 +5282,23 @@ export const getAllTransactionsForDate = async (targetDate: Date, officeId?: str
       const day = String(targetDate.getDate()).padStart(2, '0');
       const dateString = `${year}-${month}-${day}`;
       
-      // Query for the entire day in UTC (00:00 to 23:59)
-     // IST offset = 330 minutes
-const IST_OFFSET = 5.5 * 60 * 60 * 1000;
-const startOfDayIST = new Date(
-  Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()) - IST_OFFSET
-);
-const endOfDayIST = new Date(startOfDayIST.getTime() + 24 * 60 * 60 * 1000 - 1);
-
-const startISO = startOfDayIST.toISOString();
-const endISO = endOfDayIST.toISOString();
+      // Query for the entire day in IST (00:00 to 23:59:59.999)
+      // Create start and end times in local timezone (IST)
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
       
-      console.log('🔍 Query date range:', {
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const startISO = startOfDay.toISOString();
+      const endISO = endOfDay.toISOString();
+      
+      console.log('🔍 Query date range (SINGLE DAY):', {
         dateString,
         startISO,
-        endISO
+        endISO,
+        localStart: startOfDay.toLocaleString('en-IN'),
+        localEnd: endOfDay.toLocaleString('en-IN')
       });
       
       // Build queries with optional office filter
@@ -5232,13 +5353,36 @@ const endISO = endOfDayIST.toISOString();
       const mumbaiEntries = (agencyEntries.data || []).filter((e: any) => e.agency_name === 'Mumbai');
       console.log('🏙️ Mumbai entries in agencyEntries:', mumbaiEntries.length);
       if (mumbaiEntries.length > 0) {
-        console.log('   Sample Mumbai entry:', {
-          id: mumbaiEntries[0].id,
-          billty_no: mumbaiEntries[0].billty_no,
-          amount: mumbaiEntries[0].amount,
-          confirmation_status: mumbaiEntries[0].confirmation_status,
-          entry_date: mumbaiEntries[0].entry_date,
+        console.log('   Mumbai entries details:');
+        mumbaiEntries.forEach((entry: any, index: number) => {
+          console.log(`   [${index}] ID: ${entry.id}, Billty: ${entry.billty_no || 'N/A'}, Amount: ${entry.amount}, Date: ${entry.entry_date}, Desc: ${entry.description}, Confirmation: ${entry.confirmation_status}`);
+          console.log(`       Full entry:`, JSON.stringify(entry, null, 2));
         });
+      } else {
+        console.log('   ⚠️ No Mumbai entries found');
+        if (agencyEntries.error) {
+          console.error('   Error:', agencyEntries.error);
+        }
+      }
+      
+      // Debug: Show ALL agency entries to see what's being fetched
+      if (agencyEntries.data && agencyEntries.data.length > 0) {
+        console.log('📋 ALL Agency Entries (first 10):');
+        agencyEntries.data.slice(0, 10).forEach((entry: any, index: number) => {
+          console.log(`   [${index}] Agency: ${entry.agency_name}, Amount: ${entry.amount}, Date: ${entry.entry_date}, Desc: ${entry.description}`);
+        });
+      }
+      
+      // CRITICAL DEBUG: Check if "Shjwj" entry is in the results
+      const shjwjEntry = (agencyEntries.data || []).find((e: any) => 
+        e.description && e.description.toLowerCase().includes('shjwj')
+      );
+      if (shjwjEntry) {
+        console.log('✅ FOUND "Shjwj" entry in query results!');
+        console.log('   Full Shjwj entry:', JSON.stringify(shjwjEntry, null, 2));
+      } else {
+        console.log('❌ "Shjwj" entry NOT found in query results');
+        console.log('   Checking if it exists in database with different date...');
       }
       
       const allTransactions = [

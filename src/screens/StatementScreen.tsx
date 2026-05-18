@@ -1,6 +1,6 @@
 // StatementScreen.tsx
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl, Platform, StatusBar, Alert, ActivityIndicator, TextInput, Text, Modal, Dimensions, ScrollView } from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl, Platform, StatusBar, Alert, ActivityIndicator, TextInput, Text, Modal, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import {
@@ -793,31 +793,34 @@ function StatementScreen({ navigation }: StatementScreenProps): React.JSX.Elemen
           // Copy file to organized folder in Downloads
         await RNFS.copyFile(tempPdf.filePath, finalFilePath);
 
-          // Clean up temp file
-          await RNFS.unlink(tempPdf.filePath).catch(() => {
-          });
-
-          // Try sharing the PDF file from organized Downloads folder
+          // Try sharing the PDF file using the cache directory
         try {
-
+            const cachePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+            await RNFS.copyFile(tempPdf.filePath, cachePath);
             const shareOptions = {
               title: 'Share Statement Report',
               message: `Statement Report for ${selectedAgency}`,
-              url: `file://${finalFilePath}`,
+              url: `file://${cachePath}`,
               type: 'application/pdf',
+              failOnCancel: false,
             };
 
             await Share.open(shareOptions);
+            
+            Alert.alert(
+              'PDF Saved Successfully! 📄',
+              `Statement has been saved to organized Downloads folder.\n\nFile: ${fileName}\n\nLocation: Downloads/Yash Roadlines/Statement/`,
+              [{ text: 'OK', style: 'default' }]
+            );
 
           } catch (shareError) {
-
-            // Show success message with organized Downloads location
-          Alert.alert(
-            'PDF Saved Successfully! 📄',
-            `Statement has been saved to organized Downloads folder.\n\nFile: ${fileName}\n\nLocation: Downloads/Yash Roadlines/Statement/\n\nYou can find it in:\n• File Manager > Downloads > Yash Roadlines > Statement\n• Share it via WhatsApp, Gmail, etc.`,
-            [{ text: 'OK', style: 'default' }]
-          );
+             console.log('Share cancelled or failed', shareError);
           }
+
+          // Clean up temp files
+          await RNFS.unlink(tempPdf.filePath).catch(() => {});
+          await RNFS.unlink(`${RNFS.CachesDirectoryPath}/${fileName}`).catch(() => {});
+
 
         } catch (copyError) {
 
@@ -969,6 +972,7 @@ Generated on: ${new Date().toLocaleString('en-IN')}
         message: textContent,
         title: `${selectedAgency} Statement Report`,
         subject: `${selectedAgency} Statement Report - ${new Date().toLocaleDateString('en-IN')}`,
+        failOnCancel: false,
       });
       Alert.alert(
         'Success! 📄',
@@ -976,8 +980,7 @@ Generated on: ${new Date().toLocaleString('en-IN')}
         [{ text: 'OK', style: 'default' }]
       );
     } catch (error) {
-      console.error('Share error:', error);
-      Alert.alert('Error', 'Failed to share statement report.');
+      console.log('Share error or cancelled:', error);
     }
   };
   const handleSharePress = () => {
@@ -1168,6 +1171,7 @@ return (
     {/* Middle Content - Scrollable area */}
     <View style={styles.middleContainer}>
       <FlatList<CombinedEntryWithDate>
+        {...FLATLIST_OPTIMIZATIONS}
         data={filteredEntries}
         renderItem={renderEntryItem}
         keyExtractor={(item) => item.id}
